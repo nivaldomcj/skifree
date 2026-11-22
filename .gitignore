@@ -17,3 +17,7 @@ dist/
 
 # Personal progress notes — local only
 TODO.md
+
+# Agent skills — installed locally from skills-lock.json, not vendored
+.agents/
+.claude/skills/
