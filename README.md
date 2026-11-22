@@ -36,6 +36,9 @@ downloaded or committed.
    table, and metadata into `assets/`. Both `originals/` and the generated
    `assets/` files are gitignored.
 
+   There are no placeholder assets: `build.rs` verifies the extraction and
+   **fails the build** when `assets/` is missing or incomplete.
+
 ## Build & run
 
 ```bash

@@ -13,3 +13,4 @@ assets/icons/
 assets/strings.json
 assets/meta.json
 .DS_Store
+dist/

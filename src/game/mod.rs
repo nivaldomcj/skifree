@@ -1,6 +1,8 @@
 #[allow(dead_code)]
 pub mod actor;
 #[allow(dead_code)]
+pub mod assets;
+#[allow(dead_code)]
 pub mod camera;
 #[allow(dead_code)]
 pub mod collision;

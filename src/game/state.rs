@@ -78,7 +78,7 @@ impl GameState {
     }
 
     fn load_sprite_dims() -> Vec<(i16, i16)> {
-        let meta_path = std::path::Path::new("assets/meta.json");
+        let meta_path = super::assets::asset_root().join("meta.json");
         let mut dims = vec![(16i16, 16i16); 90]; // default
         if let Ok(data) = std::fs::read_to_string(meta_path) {
             if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&data) {

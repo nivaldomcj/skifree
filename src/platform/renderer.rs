@@ -8,14 +8,16 @@ pub struct Renderer {
 impl Renderer {
     pub async fn new() -> Self {
         let mut sprites = HashMap::new();
+        let root = skifree::game::assets::asset_root();
         for id in 1..=89u32 {
-            let path = format!("assets/sprites/bitmap_{:02}.png", id);
-            match load_texture(&path).await {
+            let path = root.join(format!("sprites/bitmap_{:02}.png", id));
+            let path_str = path.to_string_lossy().into_owned();
+            match load_texture(&path_str).await {
                 Ok(tex) => {
                     sprites.insert(id, tex);
                 }
                 Err(e) => {
-                    eprintln!("warning: failed to load sprite {}: {}", path, e);
+                    eprintln!("warning: failed to load sprite {}: {}", path_str, e);
                 }
             }
         }
