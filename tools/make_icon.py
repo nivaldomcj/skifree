@@ -19,7 +19,7 @@ GLYPH_PATH = os.path.join("assets", "icons", "icon_3.png")
 CANVAS = 1024
 SQUIRCLE_SIZE = 824  # 80.5% of canvas, per Apple HIG geometry
 SQUIRCLE_RADIUS = 185  # ~22.5% corner radius
-GLYPH_SIZE = 448
+GLYPH_SIZE = 600  # ~73% of the squircle, like the reference app icons
 
 SIZES = [16, 32, 128, 256, 512]
 
