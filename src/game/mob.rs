@@ -6,7 +6,7 @@ use super::types::*;
 /// Dog behavior (FUN_00403540, class 1)
 pub fn update_dog(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
     let state = actor.state;
-    if state > 0x1a {
+    if state > 0x18 {
         return;
     }
 
@@ -31,12 +31,12 @@ pub fn update_dog(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
 pub fn update_snowboarder(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
     match actor.state {
         0x1b => {
-            actor.vx = (rng.rand_range(3) as i16).wrapping_sub(1);
+            actor.vy = (rng.rand_range(3) as i16).wrapping_sub(1);
             physics::integrate(actor, fast_forward);
             physics::change_state(actor, 0x1c);
         }
         0x1c => {
-            actor.vy = 4;
+            actor.vx = 4;
             physics::integrate(actor, fast_forward);
             physics::change_state(actor, 0x1b);
         }
@@ -45,7 +45,7 @@ pub fn update_snowboarder(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) 
             actor.vy = 0;
             physics::integrate(actor, fast_forward);
             let r = rng.rand_range(0x20);
-            physics::change_state(actor, if r != 0 { 0x1b } else { 0x1e });
+            physics::change_state(actor, if r != 0 { 0x1e } else { 0x1b });
         }
         0x1e => {
             if rng.rand_range(100) != 0 {
@@ -65,17 +65,17 @@ pub fn update_snowboarder(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) 
 /// Ambient mob behavior (FUN_00404290, class 4)
 /// Crosses the slope horizontally, wraps at boundaries
 pub fn update_ambient(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
-    // Wrap at y boundaries
-    if actor.y < -1024 {
+    // Wrap at y boundaries (FUN_00404290: resets x and vertical velocity)
+    if actor.y < -1023 {
         physics::change_state(actor, 0x29);
-        actor.vx = 2;
-        actor.x = -112; // 0xff90 as i16
+        actor.vy = 2;
+        actor.x = -144; // 0xff70 as i16
         return;
     }
     if actor.y > 23551 {
         physics::change_state(actor, 0x27);
-        actor.vx = -2; // 0xfffe as i16
-        actor.x = -128; // 0xff80 as i16
+        actor.vy = -2; // 0xfffe as i16
+        actor.x = -112; // 0xff90 as i16
         return;
     }
 

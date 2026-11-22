@@ -1,5 +1,10 @@
 # The monster (yeti) AI in `ski32.exe`
 
+> **Note:** a few details below are superseded by the deeper analysis in
+> `docs/monster-mob-physics.md` (4-direction sprites, the arrival *hop* rather
+> than a pause, and the rubber-band step being the window dimensions). Read
+> that doc for the authoritative physics; this one remains a good overview.
+
 How the SkiFree monster works, from the Ghidra decompilation. Key functions: `0x404350.c` (monster brain), `0x404b50.c` (course generator), `0x403a00.c` (collisions), `0x4041c0.c` / `0x404290.c` (mover dispatchers), in `/tmp/ski32_decomp2/functions/`.
 
 ## Architecture: actors, not scripts

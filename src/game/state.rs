@@ -166,7 +166,14 @@ impl GameState {
                 ActorClass::MonsterLeft | ActorClass::MonsterRight |
                 ActorClass::MonsterTop | ActorClass::MonsterBottom => {
                     if let Some(actor) = self.pool.get_mut(idx) {
-                        monster::update_monster(actor, player.as_ref(), &mut self.rng, self.elapsed_ms);
+                        monster::update_monster(
+                            actor,
+                            player.as_ref(),
+                            &mut self.rng,
+                            self.elapsed_ms,
+                            self.screen_w,
+                            self.screen_h,
+                        );
                     }
                 }
                 ActorClass::Eating => {
