@@ -11,7 +11,7 @@ trace_rand.js. <port-rng-log.txt>: stderr of
 Every original call's post-call LCG state is mapped to its stream index
 (seed 0), so the two sides are compared by stream position: same index,
 same modulus. Prints the first divergence with surrounding context: the
-original's caller address (tick = integrated-tick count at the call) next to
+original's caller address (tick = main-tick call index, = port tick) next to
 the port's file:line.
 """
 import ast
@@ -28,7 +28,9 @@ def original_calls(path):
         if d.get("t") == "tick":
             ticks += 1
         elif d.get("t") == "r":
-            calls.append((ticks, d["ra"], d["n"], d["s"]))
+            # Prefer the main-tick index; older captures only have the
+            # integrated-tick count (which stalls while the skier is crashed).
+            calls.append((d.get("call", ticks), d["ra"], d["n"], d["s"]))
     need, idx, s = {c[3] for c in calls}, {}, 0
     for i in range(1, 50_000_000):
         s = (s * 214013 + 2531011) % 2**32
