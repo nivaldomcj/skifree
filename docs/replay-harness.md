@@ -34,6 +34,25 @@ Level 2 fidelity adds a deterministic replay harness to the SkiFree port. It let
 - `descend.json` — 500 ticks, DOWN pressed once. The skier accelerates downhill and scrolls the course; the main descent baseline.
 - `steer_and_jump.json` — 500 ticks with a DOWN start, left/right fan steering, direct diagonal states, a mouse jump, a keyboard jump, a brake, and fast-forward toggles. Exercises the full skier state machine and control set.
 
+### Verified against the original
+
+The `compare_*.json` scenarios were run against the original `ski32.exe` in
+a VM (`tools/vm/compare.sh`) and match it call for call — every `rand()` call
+and every player tick. Their goldens therefore encode the original game's
+behavior, not just the port's: `verified_*` tests in `tests/replay.rs` fail
+if a change breaks that agreement. See `docs/vm-ground-truth.md` for the
+table of scenarios and how they were verified.
+
+- `compare_vm.json` — straight descent, no input after the tick-0 DOWN.
+- `compare_steer.json` — every input type: turns, diagonals, brake, both jumps, air tricks.
+- `compare_size_640x480.json`, `compare_size_1024x700.json` — the steering inputs at other window sizes.
+- `compare_slalom.json`, `compare_tree_slalom.json` — down the two gated strips, with crashes and recoveries.
+- `compare_monster.json` — walking uphill past y −2000: the monster's chase, meal and departure.
+
+Their inputs use only what the original's handlers accept (`steer`,
+`steer_absolute` 1/3/4/6, `jump`, `click`), and the scenario's
+`screen_w`/`screen_h` is the client size the original's world is built at.
+
 ## Determinism
 
 Two key changes make the harness deterministic:

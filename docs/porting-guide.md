@@ -104,14 +104,13 @@ may be gone after a reboot. To regenerate: configure Ghidra 12.x
   is a stub awaiting free replacement sounds.
 - **Ambient-mob secondary spawn** (1-in-1000) and the **snowboarder jump
   effect** are ported via `SpawnRequest` (see `docs/monster-mob-physics.md`).
-  The one simplification: the original re-materializes culled proxy actors
-  when they scroll back into view; the port keeps actors alive instead.
-- **Monster/mob proxy vs actor**: the port uses one actor instead of the
-  proxy+actor pair; observable behavior is preserved, internal structure is not.
-- **Collision nuances**: the original's `bVar4` (moving-apart) gates a few
-  graze/bounce subtleties, and collisions run for both pair orders; the port
-  applies the dominant branch, player side only (see
-  `docs/course-populator.md`).
+- **Monster/mob proxy vs actor**: the port uses one merged actor instead of
+  the original's mob node + actor pair, with `flags.on_screen` standing in
+  for "the node has a live actor" (materialization, culling, density and
+  collisions all honor it). Observable behavior — down to every RNG call —
+  matches; internal structure does not.
+- **Collisions** now follow the original exactly — both pair orders, the
+  crossing flag, every first-actor class (see `docs/vm-ground-truth.md`).
 - **Diagonal keys** map through the cardinal transitions rather than setting
   states entirely independently (Home/End/PgUp/PgDn now map to states 3/1/6/4).
 

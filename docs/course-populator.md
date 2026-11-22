@@ -61,43 +61,43 @@ they scroll out of the padded viewport.
 | 0xf (15) | RockLarge | 47 or 48 (1/3) |
 | 0x10 (16) | Banner | 52 (32×8 rainbow freestyle ramp) |
 
-## Scenery collisions (`FUN_00403a00` case 0)
+## Collisions (`FUN_00403a00`)
 
-- **SnowBump**: skier in state 0 → `vz = 1`, state `0x0d`; `vy` halved if > 4
-  (re-fires on every overlapping tick, so a slow crossing halves repeatedly).
-- **Tree / Dog / Obstacle / Ambient / Lift / Eating**: z-overlap test —
-  flying over (or under) → **+6 style**, no crash. Otherwise grounded → crash
-  (`0x0b`), airborne → crash-landing (`0x11`), **−32 style**. Hitting the
-  **dead tree (sprite 50)** airborne breaks it (+16, it becomes a class-9
-  breaking animation in state `0x38`).
-- **Rock**: airborne above → sail over (a rock previously flipped to sprite
-  86 is collected for **+100**); airborne level → bounce (`vz = vy/2`, +1);
-  grounded → crash −32 — **except** uphill hits (`vy < 0`) on sprite 46,
-  which flip the rock flat (sprite 86) with no penalty.
-- **RockLarge**: grounded → auto-hop (`vz = 4`, +1, state `0x0d`); airborne →
-  bounce.
-- **Banner (ramp)**: skier below half its height and moving down → launched
-  at its own speed (`vz = vy`, +1, state `0x0d`).
-- **Snowboarder / Gate / Effect (classes 2/0x0c/0x11)**: a graze halves `vy`
-  on **every overlapping tick**; brushing the snowboarder's **jump puff
-  (sprite 0x52)** also costs **−16 style**. Verified against the original's
-  inner switch (table `0x404000`, indexed by class−1): cases 2/12/17 jump to
-  one block that halves `vy` when its flag argument is nonzero (it always is
-  in practice — the callee reads a caller stack slot holding a stable
-  pointer) and then tests the sprite for `0x52`.
-- **Entrance banners (sprites 61/62/63) never collide**: they hang 0x42 (66)
-  units up on their poles (spawn-record field `+0x10`), so their AABB stays
-  above the skier's. The port spawns markers with `z = 0x42` and draws actors
-  at `sy − z`, which reproduces both the visual (sign aloft) and the
-  non-collision.
+The original handles each intersecting pair (at least one of them moved this
+tick) twice: (later, earlier) then (earlier, later) in actor-list order, and
+the *first* actor's class picks the behavior. The port mirrors that
+(`collision::check_all_collisions` / `handle_collision`); the full rules,
+verified call-for-call against the original, are in
+`docs/vm-ground-truth.md` item 5. In short, with the skier first:
 
-### Deliberate simplifications
+- **SnowBump**: skier in state 0 → `vz = 1`, state `0x0d`; `vy` halved if > 4.
+- **Tree / Dog / Obstacle / Ambient / Lift / Eating** (solid path): flying
+  over (or under) → **+6 style**. Otherwise nothing happens except on the
+  **crossing tick** (the tick the skier's y reaches the obstacle's y, using
+  both actors' start-of-tick y): a tree hit off-centre by more than half the
+  wider sprite only halves `vy`; anything else downs the skier — grounded
+  and still → crash `0x0b`, otherwise crash-landing `0x11` — for **−32
+  style**. The **dead tree (sprite 50)** breaks instead (+16, class-9
+  breaking animation `0x38`); hurdling the **eating monster** scores +1000
+  and leaves a dead tree.
+- **Rock (0xe)**: grounded → the solid path, where an uphill hit (`vy < 0`)
+  on sprite 46 flips it flat (sprite 86) and downs the skier without the
+  −32; airborne above its top → a flipped rock is collected (**+100**);
+  airborne below its top, on the crossing tick → bounce (`vz = vy/2`, +1).
+- **RockLarge (0xf)**: grounded → auto-hop (`vz = 4`, +1, state `0x0d`);
+  airborne below its top → bounce; above it → nothing.
+- **Banner (ramp, 0x10)**: on the crossing tick, below half its top and
+  moving down → launched at its own speed (`vz = vy`, +1, state `0x0d`).
+- **Snowboarder / Gate / Effect (classes 2/0x0c/0x11)**: on the crossing
+  tick a graze halves `vy`; brushing the snowboarder's **jump puff (sprite
+  0x52)** also costs **−16 style**.
+- **Monsters**: nothing skier-first; the monster-first call eats the player.
 
-- The original runs the collision switch for both pair orders (so the dog's
-  own side — +20 and fleeing states — also fires); the port resolves only the
-  player side.
-- Hitting an Eating actor mid-flight converts it to a dead tree for +1000
-  (original quirk) — ported as-is.
+Other first actors: a **dog** yelps/flees (`0x19`/`0x1a`, +20 if it was the
+player), a **snowboarder** falls (`0x1d`, +3 if the player) when hit by
+something moving, a **crossing skier** falls (`0x22`; +20 if the player) on
+dogs/skiers/trees/rocks or jumps (`vz = vy/2`, state `0x21`) off large rocks
+and the ramp, a **lift chair** stops (`vx = 0`, state `0x3c`).
 
 ## Culling and re-materialization
 

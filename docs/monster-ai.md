@@ -58,11 +58,11 @@ Collision (`FUN_00403a00`, `case 5..8`) triggers only against the player pointer
 The AI then runs the eating animation as a **wall-clock state machine** (that's why it plays even while the game is "paused"):
 
 - `0x32 → 0x33` immediately (grab)
-- `0x33 → 0x34` after 500 ms
+- `0x33 → 0x34` once ≥ 500 ms, else back to `0x32` (chewing loop)
 - `0x34 → 0x35` after 700 ms
 - `0x35 → 0x36` after 1000 ms
 - `0x36 → 0x37` immediately
-- `0x37 → 0x2a` after 3000 ms — back to chase state, ready for the next victim
+- `0x37 → 0x2a` once ≥ 3000 ms, else back to `0x36` (chewing loop) — back to chase state, ready for the next victim
 
 ## Ambient mobs
 

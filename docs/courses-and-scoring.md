@@ -14,24 +14,27 @@ strips:
 | Course | Strip (world x) | Finish (y) | Gates | Scored by |
 |--------|-----------------|-----------|-------|-----------|
 | Slalom | [-0x240, -0x140] | 0x21c0 (540 m) | 22 flag gates | **time** |
-| Tree slalom | [0x140, 0x200] | 0x4100 (4160 m) | gates + a tree per row | **time** |
+| Tree slalom | [0x140, 0x200] | 0x4100 (4160 m) | gates (trees come from the populator) | **time** |
 | Freestyle | [-0xa0, 0xa0] | 0x4100 (4160 m) | none | **style** |
 
 Course identity is settled by the entrance banner sprites: 61 "Slalom ↙"
 (left), 62 "Tree Slalom ↘" (right), 63 "Free style ↓" (center). Records:
 
 - **Entrance banner** (class 0x11, sprites 61/62/63) near the spawn area;
-  its x comes from a camera formula clamped into the strip's direction.
-  Markers hang **0x42 (66) units up** (spawn-record field `+0x10`), so the
-  skier passes *under* them — visually and in the collision AABBs (verified
-  against the original's cached actor boxes). The port spawns markers with
-  `z = 0x42`.
+  its x comes from a camera formula clamped into the strip's direction, its
+  y is `client_h − client_h/3 − 0x3c` (clamped to 0x208 past 0x280) at the
+  client size of world-build time. Course markers' event nodes carry z = 0;
+  materialized they draw 16 units up, and the skier grazes the banner on the
+  crossing tick.
 - **Start posts** (sprites 57/58, "Start" arrows) at the strip edges, y=0x280.
 - **Gate posts** (class 0x0c, sprites 0x17/0x18 alternating): slalom at
   x=-496/-400, y from 0x3c0 step 0x140; tree slalom at x=400/432, y from
-  0x410 step 400, each row also adding a random tree (sprites 49-51) — the
-  RNG consumption per row is `rand(8)` (sprite), `rand(0x20)` (x), and a
-  discarded `rand(400)`.
+  0x410 step 400. Each tree-slalom row also *prepares* a random tree record
+  (`rand(8)` sprite, `rand(0x20)` x, a discarded `rand(400)`) but the
+  original never adds it — the loop head overwrites the record with the next
+  gate (see `docs/vm-ground-truth.md` item 2). The rolls still happen, so
+  world-build RNG consumption is unchanged; the strip's trees come from the
+  populator's zone-B picker.
 - **Finish posts** (sprites 59/60) at the finish line.
 - **Lift poles** (class 0xd, sprite 64) at x=-128 every 0x800 — the pole
   line the lift chairs ride.

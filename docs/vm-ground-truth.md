@@ -1,7 +1,11 @@
 # Ground truth from the original: Frida on Windows 11 ARM (VM)
 
 How we verify the port against the original game itself, and what we learned.
-This is the methodology that produced the collision/RNG fidelity fixes.
+The port is checked **call for call** against a fresh `ski32-autoplay.exe`:
+every `rand()` call (stream position and modulus) and the player's full state
+on every tick must be identical. Seven scenarios covering steering, all three
+courses, a monster encounter and three window sizes pass this test, and are
+locked in as golden replays (`tests/replay.rs`, `verified_*`).
 
 ## Setup
 
@@ -14,28 +18,41 @@ This is the methodology that produced the collision/RNG fidelity fixes.
 - `frida-server-x86.exe -l 0.0.0.0:27042` (32-bit build, matches the x86
   game). Runs as scheduled task `FridaServer` (SSH-spawned processes get
   job-killed when the session closes; scheduled tasks survive).
-- Game launched via scheduled task `SkiAutoplay` (`/it` so it lands on the
-  interactive desktop). SSH key auth works for orchestration.
+- SSH key auth into the VM, used only to kill leftover game processes.
 - frida-tools (pipx) on the Mac connects to `<vm-ip>:27042`. Frida's
   x86-under-Prism instrumentation works — a key result for future
-  DX6-era ports.
+  DX6-era ports. Under Frida the game runs at ~19 ticks/s instead of 25.
 
 ## Key addresses (module base is always 0x400000, no ASLR)
 
 | Address | Meaning |
 |---------|---------|
 | `0x0040c16c` | MSVC LCG state (`rand` is statically linked at `0x406cda`, `srand` at `0x406cd0`) |
-| `0x00402be0` | physics integrator (`__thiscall`, ecx = actor) — hook to trace any actor |
-| `0x00401e50` | main tick |
-| `0x00403a00` | collision dispatch |
-| `0x00402390` | position setter (ecx=actor, edx=x, [esp+4]=y, [esp+8]=z) |
+| `0x00401000` | timer callback: `GetTickCount` → `DAT_0040c698`, then the main tick |
+| `0x00401e50` | main tick (call N = the port's replay tick N) |
+| `0x00402be0` | physics integrator (`__thiscall`, ecx = actor) |
+| `0x004028e0` | per-actor updater (classes < 0xb, first tick loop) |
+| `0x00403a00` | collision handler for one ordered pair (ecx = first, edx = second) |
+| `0x00402390` | position setter (sets flag 0x20 "moved"; moves the camera for the player) |
 | `0x004020d0` | create actor (ecx=class, edx=state) → eax |
-| `0x004020b0` | `rand() % n` wrapper — hook `0x406cda` and unwind past it for real callers |
-| `0x0040c618` | actor-list-related global |
+| `0x004020b0` | `rand() % n` wrapper (ecx = n) — hook it to get every caller |
+| `0x00404b50` | world build (course events, mob nodes) |
+| `0x004040a0` / `0x004046e0` | mob-node pass / course spawn-event scan |
+| `0x00406170` | keyboard handler (ecx = virtual-key code) |
+| `0x004066d0` | mouse-click (jump) handler, no arguments |
+| `0x0040c618` | actor list head (newest first; next pointer at `+0`) |
+| `0x0040c72c` | player actor |
+| `0x0040c6c8` | main window handle |
+| `0x0040c720` | mob-node list (`[+0]` begin, `[+4]` end, 0x24-byte nodes) |
 
-Actor struct (0x50 bytes): `+0x10` sprite, `+0x14` sprite-data ptr,
+Actor struct (0x50 bytes): `+0x04` previous-position copy (see item 5),
+`+0x0c` mob-node link, `+0x10` sprite, `+0x14` sprite-table entry,
 `+0x18` class, `+0x1c` state, `+0x20`/`+0x30` cached screen AABBs,
-`+0x40/42/44` x/y/z, `+0x46/48/4a` vx/vy/vz (all s16), `+0x4c` flags.
+`+0x40/42/44` x/y/z, `+0x46/48/4a` vx/vy/vz (all s16), `+0x4c` flags
+(`0x08` being removed, `0x20` moved this tick).
+
+Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
+`+0x0a` width, `+0x0c` height, `+0x0e` area.
 
 ## Verified facts
 
@@ -44,29 +61,60 @@ Actor struct (0x50 bytes): `+0x10` sprite, `+0x14` sprite-data ptr,
    `DAT_0040c16c` value maps to an exact stream index — the universal
    alignment key between runs and between original and port.
 2. **World build consumes exactly 117 rand calls** (39 cycles of 3:
-   24 slalom rows + 15 tree-slalom rows). The port matches exactly.
-   F2 re-seeds (srand) and rebuilds, but **an F2-restarted world is NOT
-   identical to a fresh-process world** (populator accumulators carry
-   over) — always compare against fresh processes.
-3. **Descent physics** (vy acceleration, integrator) match the port
-   tick-for-tick. The tick trace hooks the integrator, so it emits one
-   record per *integrated* tick: a crashed skier (state 0xb) is not
-   integrated, so the trace appears frozen while it decelerates.
+   24 slalom rows + 15 tree-slalom rows). F2 re-seeds (srand) and rebuilds,
+   but **an F2-restarted world is NOT identical to a fresh-process world**
+   (populator accumulators carry over) — always compare fresh processes.
+   The tree-slalom rows *prepare* a tree record (class 0xd, sprite via
+   `FUN_00402850` → rand(8), x = 400 + rand(32), then a discarded rand(400))
+   **but never add it**: the loop head overwrites the record with the next
+   gate before calling `FUN_00405120` (`0x404df8..0x404e32`). The strip's
+   trees come from the populator's zone B only. The port used to add them.
+3. **The world is built at the client size of that moment.** The banner y
+   is `client_h − client_h/3 − 0x3c` (clamped), and other layout depends
+   on the size too. The window is created at a size derived from the screen
+   (768×768 outer; the client size varies between launches), so comparisons
+   must force the client size *before* the build (see "Harness"). An
+   earlier "+32 title bar" correction in the port only compensated for runs
+   whose world had been built at a different size than the one played at.
 4. **Course markers** carry z = 0 in their spawn-event nodes; once
    materialized they draw 16 units up, and the skier grazes the banner's box
    on the crossing tick (see item 5).
-5. **Collision switch** (`FUN_00403a00`): first-actor class ≥ 0xb → early
-   out; the `cmp [var_ch], 0x11` is a *state* check (crash-landing), not a
-   class check. The inner switch is indexed by (class−1). Its
-   **crossing flag** (`local_4`) compares the skier's current and saved
-   pre-move y against the other actor's y (`FUN_00404070` returns a static
-   actor itself as its "previous" copy) and is set on exactly one tick per
-   crossing: the tick the skier's y reaches or passes the other's y. It
-   gates the graze (cases 2/12/17: halve vy) and the solid-obstacle hit
-   (cases 1/3/4/9/10/13: crash, or for trees a glancing blow — `|dx| >
-   max(w)/2` only halves vy). Port: `collision::crossed`.
-   Case 0xf (large rock): grounded → hop (vz 4); airborne below the rock's
-   top (`z < other.z + h`) → bounce at vy/2; at or above the top → nothing.
+5. **Collision pass** (`FUN_00401e50` → `FUN_00403a00`):
+   - **Pairs**: for each actor `j` in list order, against each actor `i`
+     *before* it (the inner loop stops at the outer actor, so every
+     unordered pair is visited once); the pair is tested only if at least
+     one of them moved this tick (flag 0x20) and the cached boxes intersect.
+     The handler then runs for **(later, earlier)** and, unless either got
+     removed (flag 0x08), **(earlier, later)**.
+   - **Outer switch** by the *first* actor's class: 0 skier; 1 dog (state
+     < 0x19 → 0x19, or 0x1a if the other is airborne; +20 style if it was the
+     player); 2 snowboarder (state < 0x1d and the other is moving → 0x1d;
+     +3 if the player); 3 crossing skier (by the other's class via the byte
+     table at `0x404054`: player → +20 then as below; dog/skier/tree/rock →
+     below the other's top falls to 0x22; large rock/ramp → below the top
+     jumps, vz = vy/2, state 0x21); 5–8 monster vs the player → eat; 10 lift
+     → vx = 0, state 0x3c; 4, 9 and ≥ 0xb → nothing.
+   - **Crossing flag** (`local_4`): compares both actors' current y with
+     their previous y — `FUN_00404070` returns the previous-position copy at
+     `[actor+4]` (the position at the start of the tick; the paint shadow),
+     or the actor itself. Set when their vertical order flipped or they met,
+     i.e. exactly one tick per crossing. Using `y − vy` as "previous y" is
+     wrong whenever vy changed during the tick (e.g. getting up after a
+     crash next to the obstacle that caused it).
+   - **Skier first** (inner switch by the other's class − 1): graze
+     (cases 2/12/17, crossing tick only: halve vy; sprite 0x52 → −16);
+     solid obstacles (1/3/4/9/10/13, and 14 when grounded): fly over/under
+     → +6 (+1000 over the eating monster, which leaves a dead tree); else
+     crossing tick only: a tree hit off-centre by more than half the wider
+     sprite halves vy; otherwise down — state 0xb if grounded and still,
+     else 0x11 (the dead tree 0x32 breaks for +16 instead); an uphill hit
+     (vy < 0) on the small rock 0x2e flips it to 0x56 and still downs the
+     skier but without the −32; any other hit −32. Rock 0xe airborne: above
+     its top a flipped rock is collected (+100); below its top, on the
+     crossing tick, bounce (vz = vy/2, +1). Large rock 0xf: grounded → hop
+     (vz 4, state 0xd, +1); airborne below its top → bounce; above → nothing.
+     Ramp 0x10: crossing tick, z < top/2, vy > 0 → vz = vy, state 0xd, +1.
+     Monsters (5–8): nothing (the eating runs monster-first).
 6. **Sprite sizes**: the sprite table's `+0x0a/+0x0c` are the bitmap's
    width/height; skier sprites 1–6 are 16×32 / 24×28. (The port once read
    the 32×32 *icon* resources 1–6 over them — only `RT_BITMAP` counts.)
@@ -82,7 +130,8 @@ Actor struct (0x50 bytes): `+0x10` sprite, `+0x14` sprite-data ptr,
    update in the tick it is culled. The class-4 1-in-1000 roll
    (`0x40430a`) happens only while the node has a live actor. Class-4 rows
    start at y = ±1024 + 2048k (up-drifters at +1024…, down-drifters from
-   −1024), drifting 2/tick from world build.
+   −1024), drifting 2/tick from world build. Nodes without a live actor are
+   not in the actor list, so they never collide.
 8. **Populator density** `DAT_0040c6fc` is a running sum of the sprite areas
    (`+0x0e`) of live actors only: off-screen mob nodes contribute nothing.
    The cap compares against `DAT_0040c748 = (w+0xf0)(h+0xf0)`.
@@ -94,50 +143,108 @@ Actor struct (0x50 bytes): `+0x10` sprite, `+0x14` sprite-data ptr,
    player moves, so actors ahead of it see the pre-move view; (2) the four
    course spawn-event lists (`FUN_004046e0`: y window `[pad_top−0x3c,
    pad_bottom+0x3c)`, then `FUN_00404130`'s box test with the node's own
-   sprite at z = 0); (3) mob nodes (`FUN_004040a0`); (4) collisions; (5)
-   scroll accumulators → populator edge spawns (`FUN_004025c0`); (6) the
-   1-in-666 crossing-skier roll, whose x is `rand_range(screen_w)` inside
-   `FUN_004024f0` direction 2.
+   sprite at z = 0); (3) mob nodes (`FUN_004040a0`); (4) collisions (item
+   5); (5) scroll accumulators → populator edge spawns (`FUN_004025c0`);
+   (6) the 1-in-666 crossing-skier roll, whose x is `rand_range(screen_w)`
+   inside `FUN_004024f0` direction 2. Removed actors (flag 0x08) are freed
+   after the tick — `DAT_0040c72c` still points at a just-eaten player until
+   then.
 10. **Crash (state 0xb)**: `FUN_004028e0` steps vx/vy one unit toward zero
     per tick *without integrating* (the skier stays put), then switches to
     state 0xc once both are zero.
+11. **Monster meal** (`FUN_00404350`, switch at `0x4043be`, elapsed =
+    `DAT_0040c698 − node+0x20`): 0x32 → 0x33; 0x33 → 0x34 once ≥ 500 ms,
+    else back to 0x32 (chewing); 0x34 → 0x35 after 700 ms; 0x35 → 0x36
+    after 1000 ms; 0x36 → 0x37; 0x37 → 0x2a (running again) once ≥ 3000 ms,
+    else back to 0x36 (chewing). The port used to walk straight through
+    0x32–0x37.
+12. **Inputs**: the window procedure calls `FUN_00406170(vk)` for
+    WM_KEYDOWN and `FUN_004066d0()` for a left click; both act immediately
+    on the player actor. Calling them at the start of a main-tick call is
+    exactly the port's "input at tick N, then `tick()`".
+13. **Time**: `GetTickCount` is read only by the timer callback (before
+    every main tick), new game and timer setup. Everything wall-clock based
+    (monster meal, course timers) derives from `DAT_0040c698`.
 
-### Result: call-level lockstep
+## Verified scenarios
 
-With items 4–10 in the port, a seeded descent (`replays/compare_vm.json`:
-seed 0, 704×681, a single "down" at tick 0 to stand in for the autoplay
-start-state patch, no other input) consumes the RNG **identically to a
-fresh `ski32-autoplay.exe` process for all 2519 calls of a 30 s capture**:
-same stream index, same modulus, call for call, including a tree crash at
-integrated tick 228. Spawned obstacle layouts are therefore identical too.
+All run with seed 0, from a fresh process, world built at the scenario's
+size. "Calls" = rand() calls compared (the original runs for the capture
+time, the port for the scenario's ticks; the shorter side bounds the check).
 
-## Reproducing a comparison
+| Scenario (`replays/`) | Size | What it covers | Ticks | Calls | Result |
+|---|---|---|---|---|---|
+| `compare_vm.json` | 704×681 | straight descent, no input; tree crash | 617 | 2772 | identical |
+| `compare_steer.json` | 704×681 | turns, diagonals, brake, both jumps, air tricks, crash + get-up | 618 | 3004 | identical |
+| `compare_size_640x480.json` | 640×480 | same inputs as `compare_steer` | 655 | 2796 | identical |
+| `compare_size_1024x700.json` | 1024×700 | same inputs as `compare_steer` | 656 | 3157 | identical |
+| `compare_slalom.json` | 704×681 | slalom strip: gates, rocks, repeated crash/recovery | 1250 | 6566 | identical |
+| `compare_tree_slalom.json` | 704×681 | tree-slalom strip (populator zone B trees) | 1250 | 6414 | identical |
+| `compare_monster.json` | 704×681 | uphill walk past y −2000: monster chase, meal, departure | 1350 | 5339 | identical |
 
-Scripts live in `tools/vm/` (Frida on the Mac; the frida-server scheduled
-task must be running in the VM).
+Each scenario has a golden log in `replays/golden/`; `cargo test` replays
+them (`verified_*` in `tests/replay.rs`), so a port change that would break
+agreement with the original fails the test suite even without the VM.
+
+## Harness
+
+`tools/vm/compare.sh` drives one comparison (or `--suite` for all of the
+above). Pieces:
+
+| File | Role |
+|---|---|
+| `spawn_locked.py` | spawns a fresh game under Frida; `--size WxH` resizes the window **on entry to the world build** (`FUN_00404b50`), on the game thread, so `MoveWindow`'s synchronous WM_SIZE updates the client-rect globals before the build reads them; tears down with a timeout (Frida's detach can hang) |
+| `scenario_inputs.py` | turns a replay scenario's inputs into a Frida script that calls `FUN_00406170` / `FUN_004066d0` on entry to main-tick call N (steer: down/up/left/right in the port's order; `steer_absolute` 1/3/4/6 → End/Home/PgDn/PgUp; `jump` → Insert; `click` → the click handler) |
+| `fixed_clock.js` | makes the clock deterministic: after each of the three `GetTickCount` call sites in the game module, sets `eax = T0 + 40 · timer callbacks`, matching the replay's 40 ms ticks (hooking the kernel32 export does not take effect under the VM's emulation) |
+| `trace_player.js` | player state at the end of every main-tick call (a player flagged 0x08 is reported as gone) |
+| `trace_rand.js` | every `rand_range` call: caller, modulus, post-call LCG state, main-tick index |
+| `trace_ticks.js` | player per *integrated* tick plus skier collisions (legacy view; defines `tick2`) |
+| `trace_updates.js` | each `FUN_004028e0` update (class/state/position) per tick — diff with the port's `SKIFREE_LOG_UPDATES=1` |
+| `trace_pairs.js` | each collision-handler call (both actors, both orders) per tick |
+| `rng_align.py` | maps LCG states to stream indices and prints the first call where original and port differ, with call sites on both sides |
+| `player_align.py` | first tick where the player's x/y/z/vx/vy/vz/state differ |
 
 ```bash
-FRIDA_PY="$HOME/Library/Application Support/pipx/venvs/frida-tools/bin/python"
-EXE='C:\path\to\ski32-autoplay.exe'   # in the VM
-VM=<vm-host>
-# kill leftovers: every capture must be a fresh process
-ssh "$VM" 'taskkill /f /im ski32-autoplay.exe'
-# 1. original: per-tick player records + every rand() call (30 s)
-"$FRIDA_PY" tools/vm/spawn_locked.py "$EXE" 30 "$VM" \
-    tools/vm/trace_ticks.js tools/vm/trace_rand.js > /tmp/orig_run.txt
-# 2. port: every rand() call in order, with its call site
-SKIFREE_LOG_RNG=1 cargo run -q --features rng_sites --bin replay -- \
-    replays/compare_vm.json 2> /tmp/port_rng.txt > /tmp/port_ticks.jsonl
-# 3. first divergence, with both sides' call sites around it
-python3 tools/vm/rng_align.py /tmp/orig_run.txt /tmp/port_rng.txt
+export SKIFREE_VM_HOST=<vm-ip>             # frida-server :27042
+export SKIFREE_VM_SSH=user@vm-host         # for killing leftovers
+export SKIFREE_VM_EXE='C:\Users\<you>\Downloads\ski32-autoplay.exe'
+tools/vm/compare.sh replays/compare_steer.json /tmp/steer 32
+tools/vm/compare.sh --suite /tmp/suite     # all verified scenarios (~6 min)
 ```
 
-When `rng_align.py` reports a divergence, the original's caller address
-(e.g. `0x40430a` = class-4 roll, `0x40467c` = monster roll, `0x402569` =
-populator position, `0x402718` = open-slope picker, `0x40208e` = 1-in-666)
-says which consumer ran or didn't; dump the relevant state with an extra
-Frida script appended to step 1 (`tick2` from `trace_ticks.js` is in scope).
+New scenarios need a duration that covers their ticks at ~19 ticks/s.
+`fast_forward` (the F cheat) has no deterministic mapping and is rejected
+by `scenario_inputs.py`.
+
+## Debugging a divergence
+
+1. `rng_align.py` names the first call that differs. The original's caller
+   address says which consumer ran or didn't: `0x40430a` class-4 roll,
+   `0x40467c` monster roll, `0x4039c2`/`0x4039e2` crossing-skier wander,
+   `0x403829` lift wander, `0x402569` populator position, `0x402718`
+   open-slope picker, `0x402808` tree-slalom-strip picker, `0x40286e` tree
+   sprite, `0x40208e` 1-in-666.
+2. `player_align.py` shows whether the player differs first (a physics or
+   collision bug) or the RNG does (a consumer bug).
+3. Diff actor updates: `trace_updates.js` (edit its tick window) vs
+   `SKIFREE_LOG_UPDATES=1`; collisions: `trace_pairs.js` vs
+   `SKIFREE_LOG_COLLISIONS=1`; spawns: `SKIFREE_LOG_SPAWNS=1`.
+4. Read the responsible routine with rizin
+   (`rizin -q -e scr.color=0 -c 'aaa; pdf @ 0x…' originals/ski32.exe`) and
+   dump whatever state it reads with a small Frida script appended to the
+   capture.
+
+Pitfalls met along the way:
+
+- Labelling original events by integrated-tick count drifts during crashes
+  (the crashed skier is not integrated); always key on main-tick calls.
+- Posting window messages for input is asynchronous; call the handlers.
+- Resizing the window after the world build mixes two sizes.
+- Wall-clock code needs the fixed clock, or the meal timing drifts.
+- `DAT_0040c72c` lags one tick behind a removal; check flag 0x08.
+- Each actor appears twice when walking memory around it: its live record
+  and its previous-position copy.
 
 Port-side RNG call-site histogram: `cargo run --features rng_sites --bin
 replay -- replays/compare_vm.json` (via `#[track_caller]` in
-`Rng::rand_range`).
+`Rng::rand_range`); ordered call log: add `SKIFREE_LOG_RNG=1`.

@@ -89,13 +89,15 @@ monster enters state `0x32` with a timestamp. The eating animation is a
 wall-clock state machine (runs even while "paused"):
 
 - `0x32 → 0x33` immediately
-- `0x33 → 0x34` after 500 ms
+- `0x33 → 0x34` once ≥ 500 ms have passed, **else back to `0x32`** (chewing)
 - `0x34 → 0x35` after 700 ms
 - `0x35 → 0x36` after 1000 ms
 - `0x36 → 0x37` immediately
-- `0x37 → 0x2a` after 3000 ms
+- `0x37 → 0x2a` once ≥ 3000 ms have passed, **else back to `0x36`** (chewing)
 
-(The port already matched these timings; it is unchanged.)
+(Switch at `0x4043be`; verified via Frida with a fixed 40 ms/tick clock —
+see `docs/vm-ground-truth.md` item 11. The port originally walked straight
+through `0x32–0x37` without the two chewing loops.)
 
 ## Mobs
 
