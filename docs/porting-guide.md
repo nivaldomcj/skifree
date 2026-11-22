@@ -103,7 +103,9 @@ may be gone after a reboot. To regenerate: configure Ghidra 12.x
   from the shipped `ski32.exe` (`FindResourceA` returns NULL). The audio layer
   is a stub awaiting free replacement sounds.
 - **Ambient-mob secondary spawn** (1-in-1000) and the **snowboarder jump
-  effect** need the proxy-spawner architecture; not yet ported (see TODO.md).
+  effect** are ported via `SpawnRequest` (see `docs/monster-mob-physics.md`).
+  The one simplification: the original re-materializes culled proxy actors
+  when they scroll back into view; the port keeps actors alive instead.
 - **Monster/mob proxy vs actor**: the port uses one actor instead of the
   proxy+actor pair; observable behavior is preserved, internal structure is not.
 - **Diagonal keys** map through the cardinal transitions rather than setting

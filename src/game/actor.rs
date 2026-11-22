@@ -38,6 +38,23 @@ impl ActorPool {
         Some(idx)
     }
 
+    /// Allocate an actor with a raw sprite id (FUN_004026a0), bypassing the
+    /// state-to-sprite table. Used for class >= 0xb effect actors whose
+    /// "state" field is really a sprite id (e.g. the snowboarder jump puff).
+    pub fn alloc_with_sprite(&mut self, class: ActorClass, sprite_id: u16) -> Option<usize> {
+        let idx = self.free.pop()?;
+        self.actors[idx] = Actor {
+            active: true,
+            class,
+            state: 0,
+            sprite_id,
+            next: self.head,
+            ..Default::default()
+        };
+        self.head = Some(idx);
+        Some(idx)
+    }
+
     pub fn free(&mut self, idx: usize) {
         if idx >= self.actors.len() || !self.actors[idx].active {
             return;

@@ -13,6 +13,10 @@ pub enum ActorClass {
     MonsterBottom = 8,
     Eating = 9,
     Lift = 10,
+    /// Class 0x11: inert visual effect (e.g. the snowboarder jump puff).
+    /// The original gives classes >= 0xb no behavior update; the actor just
+    /// holds its raw sprite until it scrolls out and is culled.
+    Effect = 17,
 }
 
 impl ActorClass {
@@ -29,6 +33,7 @@ impl ActorClass {
             8 => Some(Self::MonsterBottom),
             9 => Some(Self::Eating),
             10 => Some(Self::Lift),
+            17 => Some(Self::Effect),
             _ => None,
         }
     }
@@ -83,6 +88,21 @@ impl Default for Actor {
             next: None,
         }
     }
+}
+
+/// A request to spawn a secondary actor, returned by behavior updates that
+/// create actors mid-tick (the ambient mob's 1-in-1000 crossing skier, the
+/// snowboarder's jump effect). Exactly one of `state` / `sprite` is set:
+/// `state` goes through the state-to-sprite table (FUN_004020d0), `sprite`
+/// sets a raw sprite id (FUN_004026a0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SpawnRequest {
+    pub class: ActorClass,
+    pub state: Option<u16>,
+    pub sprite: Option<u16>,
+    pub x: i16,
+    pub y: i16,
+    pub z: i16,
 }
 
 /// Spawn event — consumed as the player scrolls past its y coordinate

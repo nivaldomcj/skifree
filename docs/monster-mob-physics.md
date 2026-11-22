@@ -110,11 +110,39 @@ direction: `rand(3)` → state `0x16 / 0x17 / 0x18`.
 - `0x1b`: `vy = rand(3) - 1`, integrate, → `0x1c`
 - `0x1c`: `vx = 4`, integrate, → `0x1b`
 - `0x1d`: `vx = vy = 0`, integrate, `rand(32)` → **`0x1e` if non-zero else `0x1b`**
-- `0x1e`: `rand(100)` non-zero → integrate, → `0x1d`; else spawns a jump-effect
-  actor (the port does not yet spawn this effect)
+- `0x1e`: `rand(100)` non-zero → integrate, → `0x1d`; else (1-in-100) **jump**:
+  spawn an effect actor (see below) at `(x-4, y-2, z)` from the
+  pre-integration position, fire a sound (`FUN_00402ba0` — silent, the WAVE
+  resource is absent from the shipped binary), then integrate and → `0x1b`.
 
-(The port previously had `vx`/`vy` swapped in `0x1b`/`0x1c` and the `0x1d`
-transition inverted; both are fixed.)
+The jump effect is a **class `0x11` actor with raw sprite `0x52`** (16×8,
+created via `FUN_004026a0`, which bypasses the state→sprite table). Classes
+≥ `0xb` get no behavior update (`FUN_00401e50` only dispatches classes
+< `0xb`), so the puff just sits where it spawned until it scrolls out and is
+culled. (The port previously stayed in `0x1e` after a jump and never spawned
+the effect; both are fixed.)
+
+### Secondary-actor spawns
+
+Two behavior routines create actors mid-tick. Both allocate from the actor
+pool, then place the actor with `FUN_00402390` (a full pool returns NULL and
+the spawn is dropped):
+
+| Source | Creator | Class | State/Sprite | Position |
+|--------|---------|-------|--------------|----------|
+| Snowboarder `0x1e` jump | `FUN_004026a0` | `0x11` (effect) | sprite `0x52` | `(x-4, y-2, z)` pre-integration |
+| Ambient mob `0x27` (1-in-1000) | `FUN_004020d0` | 3 (obstacle) | state `0x21` | mob's `(x, y, z)` post-integration |
+| Main tick tail (1-in-666) | `FUN_004020d0` + `FUN_00402350` | 3 (obstacle) | state `0x1f` | random x across window, `viewport_top - 0x3c`, z 0 |
+
+The ambient-spawned class-3 actor inherits the mob's **z = 0x20**, so it
+visibly drops in from above; state `0x21` means "airborne" and lands to
+`0x20`. The 1-in-666 spawn enters above the top edge in state `0x1f`
+(down-left, max vy 18 > the player's 16), so it overtakes the player from
+behind — that is where the crossing skiers come from. `FUN_00402350`
+direction 2's position is `camera + (rand(client_w), -0x3c)`; the Win32
+window-frame offsets it subtracts (`DAT_0040c704`/`DAT_0040c5fc`) have no
+equivalent in the port's camera model and are 0. (The port previously spawned
+the wrong class — ambient mob — at `(0,0,0)`; fixed.)
 
 ### Obstacle / tree (`FUN_00403910`, class 3)
 
@@ -124,16 +152,21 @@ Integrates, applies `SNOWBOARDER_PHYSICS[state - 0x1f]`, then:
 
 ### Ambient mob (`FUN_00404290`, class 4)
 
-A boundary-wrapped spawner that moves **vertically**:
+A boundary-wrapped spawner that drifts **vertically** just left of the slope
+center. Course generation (`FUN_00404b50`) seeds pairs of these proxies every
+`0x800` units of y: state `0x27` at `x = -112, vy = -2` (drifting up) and
+state `0x29` at `x = -144, vy = +2` (drifting down), all floating at
+**z = `0x20`** (proxy integration has no gravity, so they never land).
 
 - `y < -1023`: state `0x29`, `x = -144`, `vy = 2`
 - `y > 23551`: state `0x27`, `x = -112`, `vy = -2`
-- otherwise, 1-in-1000 chance to spawn a secondary actor (type 3, state `0x21`)
-  and set state `0x28`
+- otherwise, in state `0x27`, 1-in-1000 chance to drop a crossing skier
+  (class 3, state `0x21`) at the mob's position — z = `0x20` included, so the
+  skier falls in from above — and set state `0x28`
 
-(The port previously used `vx`, wrong x positions, and a `-1024` threshold;
-these are fixed. The original is a persistent *proxy* spawner — the port's
-actor-based approximation does not yet spawn the secondary actor.)
+The original gates the spawn on the proxy having a live visible actor
+(`*proxy != 0`); the port's merged actor/proxy always satisfies that while
+active. The spawn itself is implemented (see "Secondary-actor spawns").
 
 ### Lift chair (`FUN_004037b0`, class 10) and Eating (`FUN_00403750`, class 9)
 

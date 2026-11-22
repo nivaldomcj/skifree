@@ -114,21 +114,25 @@ fn generate_tree_slalom(events: &mut Vec<SpawnEvent>, _screen_w: i16, screen_h: 
     });
 }
 
+/// Ambient mob spawner records (FUN_00404b50): pairs of class-4 proxies every
+/// 0x800 units of y, floating at z = 0x20. State 0x27 drifts up (vy = -2) at
+/// x = -112; state 0x29 drifts down (vy = +2) at x = -144. `param` carries
+/// the initial vy for the port's merged actor.
 fn generate_mob_spawns(events: &mut Vec<SpawnEvent>) {
     let mut y = -0x400i16;
     while y < 0x5c01 {
-        // Left-moving mob
+        // Up-drifting mob (all but the first y)
         if y > -0x400 {
             events.push(SpawnEvent {
-                actor_idx: None, event_type: 0x04, state: 0, class: 4,
-                x: -112, y, z: 0, param: 0x27,
+                actor_idx: None, event_type: 0x04, state: 0x27, class: 4,
+                x: -112, y, z: 0x20, param: -2,
             });
         }
-        // Right-moving mob
+        // Down-drifting mob (all but the last y)
         if y < 0x5c00 {
             events.push(SpawnEvent {
-                actor_idx: None, event_type: 0x04, state: 0, class: 4,
-                x: -128, y, z: 0, param: 0x29,
+                actor_idx: None, event_type: 0x04, state: 0x29, class: 4,
+                x: -144, y, z: 0x20, param: 2,
             });
         }
         y = y.wrapping_add(0x800);

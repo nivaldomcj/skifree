@@ -127,7 +127,8 @@ impl GameState {
         // Consume spawn events as player scrolls
         self.consume_spawn_events();
 
-        // Update all actors
+        // Update all actors, collecting secondary-actor spawn requests
+        let mut spawn_requests: Vec<SpawnRequest> = Vec::new();
         let indices = self.pool.active_indices();
         for idx in indices {
             let class = match self.pool.get(idx) {
@@ -150,7 +151,9 @@ impl GameState {
                 }
                 ActorClass::Snowboarder => {
                     if let Some(actor) = self.pool.get_mut(idx) {
-                        mob::update_snowboarder(actor, &mut self.rng, self.fast_forward);
+                        if let Some(req) = mob::update_snowboarder(actor, &mut self.rng, self.fast_forward) {
+                            spawn_requests.push(req);
+                        }
                     }
                 }
                 ActorClass::Obstacle => {
@@ -160,7 +163,9 @@ impl GameState {
                 }
                 ActorClass::AmbientMob => {
                     if let Some(actor) = self.pool.get_mut(idx) {
-                        mob::update_ambient(actor, &mut self.rng, self.fast_forward);
+                        if let Some(req) = mob::update_ambient(actor, &mut self.rng) {
+                            spawn_requests.push(req);
+                        }
                     }
                 }
                 ActorClass::MonsterLeft | ActorClass::MonsterRight |
@@ -186,7 +191,17 @@ impl GameState {
                         mob::update_lift(actor, &mut self.rng, self.fast_forward);
                     }
                 }
+                // Classes >= 0xb get no behavior update in the original
+                // (FUN_00401e50 only dispatches classes < 0xb): the effect
+                // actor just holds its sprite until it scrolls away.
+                ActorClass::Effect => {}
             }
+        }
+
+        // Fulfill secondary-actor spawn requests (FUN_004020d0/0x26a0 + 0x2390).
+        // A full pool drops the request, like the original's NULL return.
+        for req in spawn_requests {
+            self.fulfill_spawn(req);
         }
 
         // Check collisions
@@ -228,10 +243,38 @@ impl GameState {
             }
         }
 
-        // Random ambient spawn (1-in-666)
+        // Random crossing-skier spawn, 1-in-666 per tick (FUN_00401e50 tail):
+        // class 3 state 0x1f entering above the viewport's top edge at a
+        // random x across the window (FUN_00402350 direction 2), so it
+        // overtakes the player from behind. The original's Win32 window-frame
+        // offsets (DAT_0040c704/DAT_0040c5fc) are 0 in the port's camera
+        // model, which tracks the viewport center.
         if self.rng.rand_range(0x29a) == 0 {
-            // Spawn a random mob
-            let _ = self.pool.alloc(ActorClass::AmbientMob, 0x1f);
+            let x = self.camera.cx - self.screen_w / 2 + self.rng.rand_range(self.screen_w as u16) as i16;
+            let y = self.camera.cy - self.screen_h / 2 - 0x3c;
+            self.fulfill_spawn(SpawnRequest {
+                class: ActorClass::Obstacle,
+                state: Some(0x1f),
+                sprite: None,
+                x,
+                y,
+                z: 0,
+            });
+        }
+    }
+
+    /// Spawn a secondary actor from a behavior request (FUN_004020d0 via
+    /// `state`, or FUN_004026a0 via `sprite`), placing it with FUN_00402390.
+    fn fulfill_spawn(&mut self, req: SpawnRequest) {
+        let idx = match (req.state, req.sprite) {
+            (Some(state), None) => self.pool.alloc(req.class, state),
+            (None, Some(sprite)) => self.pool.alloc_with_sprite(req.class, sprite),
+            _ => None,
+        };
+        if let Some(idx) = idx {
+            if let Some(actor) = self.pool.get_mut(idx) {
+                physics::set_position(actor, req.x, req.y, req.z);
+            }
         }
     }
 
@@ -260,6 +303,10 @@ impl GameState {
                         actor.x = event.x;
                         actor.y = event.y;
                         actor.z = event.z;
+                        if class == ActorClass::AmbientMob {
+                            // param carries the proxy's initial vy (-2/+2)
+                            actor.vy = event.param;
+                        }
                         actor.event_idx = Some(event.actor_idx.unwrap_or(0));
                     }
                     event.actor_idx = Some(idx);
@@ -445,5 +492,95 @@ mod tests {
         physics::change_state(a, 0);
         g.steer_absolute(6);
         assert_eq!(g.pool.get(idx).unwrap().state, 0); // unchanged
+    }
+
+    fn seed_with_first_roll_zero(n: u16) -> u32 {
+        (0..1_000_000u32)
+            .find(|&s| {
+                let mut r = Rng::new(s);
+                r.rand_range(n) == 0
+            })
+            .expect("an LCG seed with first roll 0 exists")
+    }
+
+    #[test]
+    fn fulfill_spawn_by_state_uses_sprite_table() {
+        let mut g = GameState::new_seeded(640, 480, 1);
+        g.fulfill_spawn(SpawnRequest {
+            class: ActorClass::Obstacle,
+            state: Some(0x21),
+            sprite: None,
+            x: -112,
+            y: 498,
+            z: 0x20,
+        });
+        let a = g.pool.get(g.pool.head.unwrap()).unwrap();
+        assert_eq!(a.class, ActorClass::Obstacle);
+        assert_eq!(a.state, 0x21);
+        assert_eq!(a.sprite_id, crate::game::state_table::STATE_TO_SPRITE[0x21 as usize]);
+        assert_eq!((a.x, a.y, a.z), (-112, 498, 0x20));
+    }
+
+    #[test]
+    fn fulfill_spawn_by_sprite_sets_raw_sprite() {
+        let mut g = GameState::new_seeded(640, 480, 1);
+        g.fulfill_spawn(SpawnRequest {
+            class: ActorClass::Effect,
+            state: None,
+            sprite: Some(0x52),
+            x: 196,
+            y: 298,
+            z: 6,
+        });
+        let a = g.pool.get(g.pool.head.unwrap()).unwrap();
+        assert_eq!(a.class, ActorClass::Effect);
+        assert_eq!(a.sprite_id, 0x52);
+        assert_eq!(a.state, 0);
+        assert_eq!((a.x, a.y, a.z), (196, 298, 6));
+    }
+
+    #[test]
+    fn tick_fulfills_snowboarder_jump_effect() {
+        let seed = seed_with_first_roll_zero(100);
+        let mut g = GameState::new_seeded(640, 480, seed);
+        let idx = g.pool.alloc(ActorClass::Snowboarder, 0x1e).unwrap();
+        {
+            let a = g.pool.get_mut(idx).unwrap();
+            a.x = 200;
+            a.y = 300;
+            a.z = 0;
+        }
+        g.tick(40);
+        let effect = g.pool.active_indices().into_iter()
+            .filter_map(|i| g.pool.get(i))
+            .find(|a| a.class == ActorClass::Effect)
+            .expect("jump effect actor spawned");
+        assert_eq!(effect.sprite_id, 0x52);
+        assert_eq!((effect.x, effect.y), (196, 298));
+        assert_eq!(g.pool.get(idx).unwrap().state, 0x1b);
+    }
+
+    #[test]
+    fn ambient_spawn_event_applies_initial_vy() {
+        let mut g = GameState::new_seeded(640, 480, 1);
+        g.spawn_events.push(SpawnEvent {
+            actor_idx: None,
+            event_type: 0x04,
+            state: 0x27,
+            class: 4,
+            x: -112,
+            y: 100,
+            z: 0x20,
+            param: -2,
+        });
+        g.tick(40);
+        let mob = g.pool.active_indices().into_iter()
+            .filter_map(|i| g.pool.get(i))
+            .find(|a| a.class == ActorClass::AmbientMob)
+            .expect("ambient mob materialized");
+        assert_eq!(mob.vy, -2);
+        assert_eq!(mob.z, 0x20);
+        // It drifted up this tick (proxy integration, no gravity).
+        assert_eq!(mob.y, 98);
     }
 }
