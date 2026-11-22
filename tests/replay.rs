@@ -102,3 +102,42 @@ fn deterministic_across_runs() {
     let d = records_to_jsonl(&b);
     assert_eq!(c, d);
 }
+
+// Scenarios verified call-for-call against the original ski32.exe in the VM
+// (every rand() call and every player tick identical; see
+// docs/vm-ground-truth.md). Their goldens lock that fidelity in: a change
+// that breaks one of these no longer matches the original game.
+#[test]
+fn verified_descent_matches() {
+    check("compare_vm");
+}
+
+#[test]
+fn verified_steering_matches() {
+    check("compare_steer");
+}
+
+#[test]
+fn verified_slalom_matches() {
+    check("compare_slalom");
+}
+
+#[test]
+fn verified_tree_slalom_matches() {
+    check("compare_tree_slalom");
+}
+
+#[test]
+fn verified_monster_matches() {
+    check("compare_monster");
+}
+
+#[test]
+fn verified_640x480_matches() {
+    check("compare_size_640x480");
+}
+
+#[test]
+fn verified_1024x700_matches() {
+    check("compare_size_1024x700");
+}
