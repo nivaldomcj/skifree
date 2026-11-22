@@ -440,6 +440,10 @@ impl GameState {
                 self.check_gate_pass(ci, px, py);
             }
         }
+
+        // Style points accumulate only inside the freestyle course
+        // (FUN_00403420 gates on DAT_0040c954, the freestyle flag).
+        self.scoring.enabled = self.courses[2].active;
     }
 
     /// First gate record index within a course strip (DAT_0040c94c/c950).
@@ -960,5 +964,32 @@ mod course_tests {
         place_player(&mut g, -400, 0x280, 4);
         g.tick(40);
         assert_eq!(g.hud_dist_m(), (0x21c0 - 0x284) / 16);
+    }
+}
+
+#[cfg(test)]
+mod scoring_gate_tests {
+    use super::*;
+
+    #[test]
+    fn style_only_accumulates_in_freestyle() {
+        let mut g = GameState::new_seeded(640, 480, 1);
+        g.new_game();
+        let idx = g.player_idx.unwrap();
+        // Outside any course: points are ignored (FUN_00403420 gate).
+        g.scoring.add(100);
+        assert_eq!(g.scoring.score, 0);
+        // Enter freestyle: the gate opens.
+        {
+            let a = g.pool.get_mut(idx).unwrap();
+            a.x = 0;
+            a.y = 0x280;
+            a.vy = 4;
+            a.state = 0;
+        }
+        g.tick(40);
+        assert!(g.courses[2].active);
+        g.scoring.add(100);
+        assert_eq!(g.scoring.score, 100);
     }
 }

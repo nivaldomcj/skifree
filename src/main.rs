@@ -13,6 +13,18 @@ fn window_conf() -> Conf {
     window::conf()
 }
 
+#[derive(serde::Deserialize)]
+struct ScriptEvent {
+    at_ms: u64,
+    key: String,
+}
+
+fn load_script() -> Option<Vec<ScriptEvent>> {
+    let path = std::env::var("SKIFREE_SCRIPT").ok()?;
+    let data = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&data).ok()
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     let renderer = Renderer::new().await;
@@ -31,6 +43,13 @@ async fn main() {
         None => GameState::new(window::DEFAULT_WIDTH as i16, window::DEFAULT_HEIGHT as i16),
     };
     game.new_game();
+
+    // SKIFREE_SCRIPT=<json file> replays timed key events for side-by-side
+    // comparison with the original (which is driven by the same schedule
+    // through Frida PostMessage). Format: [{"at_ms": 2000, "key": "down"}]
+    let script = load_script();
+    let script_start = std::time::Instant::now();
+    let mut script_fired = 0usize;
 
     let mut running = true;
 
@@ -124,6 +143,23 @@ async fn main() {
                 GameAction::Click(_, _) => {
                     game.click();
                 }
+            }
+        }
+
+        // Fire due scripted events (side-by-side testing only).
+        if let Some(events) = &script {
+            let now_ms = script_start.elapsed().as_millis() as u64;
+            while script_fired < events.len() && events[script_fired].at_ms <= now_ms {
+                match events[script_fired].key.as_str() {
+                    "down" => game.steer_keyboard(false, false, false, true),
+                    "up" => game.steer_keyboard(false, false, true, false),
+                    "left" => game.steer_keyboard(true, false, false, false),
+                    "right" => game.steer_keyboard(false, true, false, false),
+                    "jump" => game.jump_keyboard(),
+                    "click" => game.click(),
+                    _ => {}
+                }
+                script_fired += 1;
             }
         }
 

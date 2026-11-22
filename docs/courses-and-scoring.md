@@ -82,6 +82,14 @@ they are world objects you simply ski away from:
 (recomputed on `WM_SIZE`), not at the center. All screen-edge logic
 (populator, culling, banners) uses the viewport derived from that anchor.
 
+## Style scoring gate (FUN_00403420)
+
+Style points (`FUN_00403420(delta)` → `DAT_0040c6a8`) accumulate **only
+while the freestyle course is active** (`DAT_0040c954 != 0`). Points earned
+in freestyle stay on the display after the run ends, which is why the HUD
+can show a nonzero Style while the Dist row reads "free-skiing". The port
+mirrors this by gating `Scoring.add` on the freestyle course flag.
+
 ## Port notes
 
 - The original interpolates the exact y=0x280 / finish crossing point
