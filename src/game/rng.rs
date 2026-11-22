@@ -29,7 +29,13 @@ impl Rng {
         }
         #[cfg(feature = "rng_sites")]
         self::rng_sites::record(n, std::panic::Location::caller());
-        self.rand() % n
+        let r = self.rand() % n;
+        #[cfg(feature = "rng_sites")]
+        if self::rng_sites::log_calls() {
+            let loc = std::panic::Location::caller();
+            eprintln!("rng {} {} {}:{}", self.calls, n, loc.file(), loc.line());
+        }
+        r
     }
 }
 
@@ -41,6 +47,14 @@ pub mod rng_sites {
     use std::sync::{Mutex, OnceLock};
 
     static SITES: OnceLock<Mutex<HashMap<(u16, &'static str, u32), u64>>> = OnceLock::new();
+    static LOG_CALLS: OnceLock<bool> = OnceLock::new();
+
+    /// `SKIFREE_LOG_RNG=1`: print every call in order as
+    /// `rng <stream index> <n> <file>:<line>` (for aligning against an
+    /// original-side Frida rand() trace).
+    pub fn log_calls() -> bool {
+        *LOG_CALLS.get_or_init(|| std::env::var_os("SKIFREE_LOG_RNG").is_some())
+    }
 
     pub fn record(n: u16, loc: &'static std::panic::Location<'static>) {
         let map = SITES.get_or_init(|| Mutex::new(HashMap::new()));
