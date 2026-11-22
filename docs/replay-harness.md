@@ -30,9 +30,9 @@ Level 2 fidelity adds a deterministic replay harness to the SkiFree port. It let
 
 ## Scenarios
 
-- `idle.json` — 250 ticks, no input. Baseline for monster approach and ambient spawns.
-- `drift_left.json` — 500 ticks, no input. The skier accelerates left in the current port, so this is the long-term drift baseline.
-- `steer_and_jump.json` — 500 ticks with scripted left/right steering, two jumps, and fast-forward toggles. Exercises the skier state machine, jump states, and fast-forward doubling.
+- `idle.json` — 250 ticks, no input. The skier stays at the start; baseline for monster approach and ambient spawns.
+- `descend.json` — 500 ticks, DOWN pressed once. The skier accelerates downhill and scrolls the course; the main descent baseline.
+- `steer_and_jump.json` — 500 ticks with a DOWN start, left/right steering through the direction fan, a jump, a brake, and fast-forward toggles. Exercises the full skier state machine.
 
 ## Determinism
 
@@ -43,11 +43,14 @@ Two key changes make the harness deterministic:
 
 The original `GameState::new()` still uses the system clock, so `cargo run` remains a normal, non-deterministic play session.
 
-## Known issue surfaced by the harness
+## Resolved: downhill physics
 
-The first golden logs immediately showed that the skier's `y` coordinate never changes: the current `physics::apply_steering` only accelerates `vx` based on the state-table `direction` field and only decays `vy` via friction. There is no downhill acceleration at all. This means gates, finish lines, and most course events are never reached in the current port.
-
-This is a known Phase 3 approximation. The state-table constants (`SKIER_PHYSICS`) are byte-for-byte verified against `ski32.exe`, but `apply_steering` appears to oversimplify how the original interprets them. Recovering the exact original physics is the next fidelity step; the replay harness now gives us a safe way to verify any fix.
+The first golden logs showed the skier's `y` never changed: the early
+`apply_steering` was an approximation that only accelerated `vx` and decayed
+`vy`, so the skier never descended. This was fixed by porting the real
+`FUN_00403430` (downhill `vy` accelerates toward `max_speed`) and the real
+`FUN_00406170` steering (DOWN enters state 0). See `docs/skier-physics.md`.
+The `descend` scenario now locks the corrected descent with a golden log.
 
 ## Verification
 

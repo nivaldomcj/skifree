@@ -48,7 +48,7 @@ Cheat keys (`WM_CHAR` handler):
 ### Physics & world
 
 - Integrator `FUN_00402be0`: `position += velocity` per axis, gravity decrementing z
-- Steering / acceleration function `FUN_00403430` consumes the state-table physics entry (`DAT_0040a308`). The table values are byte-for-byte verified, but the exact way `direction`, `accel`, `max_speed`, `decel`, and `friction_div` combine into `vx`/`vy` is still an approximation in the current port. See `docs/replay-harness.md` for the regression harness that surfaced this.
+- Movement `FUN_00403430` and steering `FUN_00406170` are ported faithfully — vy is the downhill speed (accelerates toward `max_speed`), vx is lateral and coupled to vy via a friction term. See `docs/skier-physics.md` for the full model.
 - Distances in **1/16-meter units** — e.g. slalom course length constant `0x4100` = 16640 units = 1040 m; freestyle counts down from `0x21c0`
 
 ### Rendering

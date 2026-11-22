@@ -65,9 +65,22 @@ pub const SNOWBOARDER_PHYSICS: [PhysicsEntry; 8] = [
 /// Crash landing table (DAT_0040a434), indexed by state 0x0d-0x15
 pub const CRASH_LANDING: [u16; 9] = [0x0, 0x3, 0x6, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb];
 
-/// Skier direction transition table (DAT_0040a258)
-/// Maps current direction to new direction on left/right input
+/// Skier direction transition table (DAT_0040a258), raw interleaved bytes.
+/// Each state occupies 8 bytes: a LEFT-transition u32 at +0 and a
+/// RIGHT-transition u32 at +4. This is the flat u32 view (states 0..=10).
 pub const DIRECTION_TRANSITION: [u16; 22] = [1, 4, 2, 0, 3, 1, 7, 2, 0, 5, 4, 6, 5, 8, 3, 2, 5, 6, 9, 2, 5, 10];
+
+/// LEFT-key transition table, one u32 per state (DAT_0040a258 + state*8).
+/// Cycles 0→1→2→3→7 (state 7 = hard carve, also kicks vx).
+pub const LEFT_TRANSITION: [u16; 22] = [
+    1, 2, 3, 7, 0, 4, 5, 3, 5, 9, 5, 3, 3, 0xe, 0x10, 0xd, 0xf, 0xe, 0x14, 0x14, 0x10, 0xd,
+];
+
+/// RIGHT-key transition table, one u32 per state (DAT_0040a258 + state*8 + 4).
+/// Cycles 0→4→5→6→8 (state 8 = hard carve, also kicks vx).
+pub const RIGHT_TRANSITION: [u16; 22] = [
+    4, 0, 1, 2, 5, 6, 8, 2, 6, 2, 0xa, 6, 6, 0xf, 0xd, 0x10, 0xe, 0xf, 0x15, 0x15, 0xd, 0x10,
+];
 
 /// Mouse steering direction table (FUN_004065e0)
 /// Returns direction 0-6 based on slope ratio dy/dx
@@ -138,6 +151,16 @@ mod tests {
         for (i, &want) in DIRECTION_TRANSITION.iter().enumerate() {
             let got = u32_at(&exe, 0xa258 + i * 4) as u16;
             assert_eq!(got, want, "index {i}");
+        }
+    }
+
+    #[test]
+    fn left_right_transitions_match_binary() {
+        let exe = read_exe();
+        for state in 0..22usize {
+            let base = 0xa258 + state * 8;
+            assert_eq!(u32_at(&exe, base) as u16, LEFT_TRANSITION[state], "state {state:#04x} left");
+            assert_eq!(u32_at(&exe, base + 4) as u16, RIGHT_TRANSITION[state], "state {state:#04x} right");
         }
     }
 

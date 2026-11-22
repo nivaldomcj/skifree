@@ -3,5 +3,7 @@
   "course": "freestyle",
   "ticks": 500,
   "delta_ms": 40,
-  "inputs": []
+  "inputs": [
+    { "tick": 0, "type": "steer", "down": true }
+  ]
 }

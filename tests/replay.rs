@@ -51,8 +51,20 @@ fn golden_idle_matches() {
 }
 
 #[test]
-fn golden_drift_left_matches() {
-    check("drift_left");
+fn golden_descend_matches() {
+    check("descend");
+}
+
+#[test]
+fn descend_reaches_finish_area() {
+    // Pressing DOWN must actually move the skier downhill (+y).
+    let scenario = load_scenario("descend");
+    let records = run_scenario(&scenario);
+    let first = records.first().unwrap();
+    let last = records.last().unwrap();
+    let y0 = first.player.as_ref().unwrap().y;
+    let y1 = last.player.as_ref().unwrap().y;
+    assert!(y1 > y0 + 5000, "skier should descend the course, y {} -> {}", y0, y1);
 }
 
 #[test]

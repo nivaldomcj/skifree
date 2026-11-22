@@ -1,0 +1,78 @@
+# Skier physics and steering
+
+Faithful port of the skier movement model, recovered from `ski32.exe` (Ghidra
+12.2 decompilation). The actor field offsets come from the integrator
+`FUN_00402be0`; the movement math comes from `FUN_00403430`; the steering comes
+from `FUN_00406170`.
+
+## Actor layout (offsets used by movement)
+
+| Offset | Field |
+|--------|-------|
+| `0x18` | class (0 = skier) |
+| `0x1c` | state |
+| `0x40` | x |
+| `0x42` | y |
+| `0x44` | z (height) |
+| `0x46` | vx (lateral velocity) |
+| `0x48` | vy (downhill velocity) |
+| `0x4a` | vz (vertical velocity) |
+
+The skier spawns in **state 3** (`FUN_00404a80` → `FUN_004020d0(0, 3)`) at
+`(0, 0, 0)`. Distances are in **1/16-meter units** and velocities in units per
+40 ms tick.
+
+## Movement (`FUN_00403430`, `physics::apply_steering`)
+
+Each skiing state has a 5-field physics entry (`DAT_0040a308`, 16 bytes per
+state, first 10 bytes used): `accel, max_speed, decel, friction_div, direction`.
+
+- **vy is the downhill speed.** It accelerates by `accel` toward `max_speed`,
+  and decays by 2 when above `max_speed`:
+  - `vy > max_speed` → `vy = max(vy - 2, max_speed)`
+  - `vy <= max_speed` → `vy = min(vy + accel, max_speed)`
+- **vx is the lateral speed**, coupled to vy through a friction term. With
+  `dir = direction` (or the sign of `vx` when `direction == 0`):
+  - `s4 = dir * vx` (signed lateral magnitude)
+  - `friction = friction_div * max(vy, 0) / 2`
+  - `s2 = clamp(friction, s4 - 2, s4 + decel)`
+  - `vx = dir * s2`
+
+All intermediate math is done in `int` and truncated to `short` on store; the
+port mirrors this with `i32` intermediates and `as i16` stores.
+
+Key consequence: **state 0 (straight down)** has `accel=1, max_speed=16,
+direction=0`, so vy climbs 1→16 and the skier descends 16 units/tick (1 m/tick,
+≈25 m/s). **States 3 and 6 (hard turns)** have `max_speed=0`, so vy scrubs to 0
+— turning fully sideways stops your descent, exactly as in the real game.
+
+## Steering (`FUN_00406170`, `skier::steer_keyboard`)
+
+Each cardinal key is a discrete event:
+
+| Key | Action |
+|-----|--------|
+| **Down** (`0x28`/numpad2) | On the ground → **state 0** (ski straight down). In the air → cycle jump-trick poses (`0xd→0x13→0x12→0xd`, `0x14→0xe`, `0x15→0xf`). |
+| **Up** (`0x26`/numpad8) | On the ground → snowplow brake into state 9/10 with `vy = -4`. In the air → cycle trick poses the other way. |
+| **Left** (`0x25`/numpad4) | Step through `LEFT_TRANSITION`: `0→1→2→3→7`. Reaching state 7 also kicks `vx = max(vx - 8, -8)`. |
+| **Right** (`0x27`/numpad6) | Step through `RIGHT_TRANSITION`: `0→4→5→6→8`. Reaching state 8 also kicks `vx = min(vx + 8, 8)`. |
+
+The transition tables are stored interleaved at `DAT_0040a258` (8 bytes per
+state: LEFT u32 then RIGHT u32). States 0–6 are the direction fan (straight,
+slight/medium/hard left, slight/medium/hard right); 7 and 8 are hard-carve
+snaps that `update_skier` immediately settles back to 3 and 6; 9/10 are brake
+states; `0xb`/`0xc` are crash/stopped; `0xd`–`0x15` are jump/trick poses.
+
+Diagonal keys (numpad 1/3/7/9 and Home/End/PgUp/PgDn) set states 1/4/3/6
+directly. The port's input layer maps them onto the four cardinal actions, so
+they are reachable but routed through the cardinal transitions.
+
+## Verification
+
+- `state_table` tests compare `SKIER_PHYSICS`, `LEFT_TRANSITION`,
+  `RIGHT_TRANSITION`, `CRASH_LANDING`, and `STATE_TO_SPRITE` byte-for-byte
+  against `ski32.exe`.
+- `physics` tests assert downhill acceleration to max speed, decay above max
+  speed, and speed-scrubbing on hard turns.
+- The `descend` replay scenario drives the skier from `(0,0)` to
+  `y ≈ 7864` over 500 ticks and is locked by a golden log.

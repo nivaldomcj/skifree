@@ -52,42 +52,77 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool) {
     }
 }
 
-/// Handle keyboard steering input (FUN_00406170)
+/// Handle keyboard steering input (FUN_00406170, faithful port)
+///
+/// The original handles each cardinal key as a discrete event:
+/// - DOWN (ground): straight down (state 0) — the fastest descent.
+/// - UP (ground): snowplow brake into states 9/10 with vy = -4.
+/// - LEFT/RIGHT: step through the left/right transition fan (0→1→2→3→7 and
+///   0→4→5→6→8); the hard-carve states 7/8 also kick lateral velocity to ±8.
+/// - In the air, UP/DOWN cycle the jump-trick poses instead of steering.
 pub fn steer_keyboard(actor: &mut Actor, left: bool, right: bool, up: bool, down: bool) {
     if actor.state == 0x0b || actor.state == 0x11 {
         return; // crashed or jumping
     }
 
-    let current = actor.state as usize;
-    if current >= DIRECTION_TRANSITION.len() {
-        return;
+    if down {
+        if actor.z == 0 {
+            physics::change_state(actor, 0);
+        } else {
+            let next = match actor.state {
+                0x0d => 0x13,
+                0x12 => 0x0d,
+                0x13 => 0x12,
+                0x14 => 0x0e,
+                0x15 => 0x0f,
+                _ => actor.state,
+            };
+            physics::change_state(actor, next);
+        }
+    }
+
+    if up {
+        match actor.state {
+            3 | 7 | 0x0c => {
+                if actor.vy == 0 {
+                    physics::change_state(actor, 9);
+                    actor.vy = -4;
+                }
+            }
+            6 | 8 => {
+                if actor.vy == 0 {
+                    physics::change_state(actor, 10);
+                    actor.vy = -4;
+                }
+            }
+            0x0d => physics::change_state(actor, 0x12),
+            0x0e => physics::change_state(actor, 0x14),
+            0x0f => physics::change_state(actor, 0x15),
+            0x12 => physics::change_state(actor, 0x13),
+            0x13 => physics::change_state(actor, 0x0d),
+            _ => {}
+        }
     }
 
     if left {
-        let new_dir = DIRECTION_TRANSITION[current] as usize;
-        if new_dir < DIRECTION_TRANSITION.len() {
-            physics::change_state(actor, DIRECTION_TRANSITION[new_dir]);
+        let state = actor.state as usize;
+        if state < LEFT_TRANSITION.len() {
+            let next = LEFT_TRANSITION[state];
+            physics::change_state(actor, next);
+            if next == 7 {
+                actor.vx = (actor.vx - 8).max(-8);
+            }
         }
     }
+
     if right {
-        // Right turn: mirror of left
-        let mirrored = mirror_direction(actor.state);
-        physics::change_state(actor, mirrored);
-    }
-    if up {
-        // Slow down / stop
-        if actor.state == 3 || actor.state == 7 || actor.state == 0x0c {
-            physics::change_state(actor, 9);
-        } else if actor.state == 6 || actor.state == 8 {
-            physics::change_state(actor, 10);
-        }
-    }
-    if down {
-        // Speed up / tuck
-        if actor.state == 9 {
-            physics::change_state(actor, 3);
-        } else if actor.state == 10 {
-            physics::change_state(actor, 6);
+        let state = actor.state as usize;
+        if state < RIGHT_TRANSITION.len() {
+            let next = RIGHT_TRANSITION[state];
+            physics::change_state(actor, next);
+            if next == 8 {
+                actor.vx = (actor.vx + 8).min(8);
+            }
         }
     }
 }
@@ -108,19 +143,5 @@ fn decelerate(v: i16) -> i16 {
         v + 1
     } else {
         0
-    }
-}
-
-fn mirror_direction(state: u16) -> u16 {
-    match state {
-        1 => 4,
-        2 => 5,
-        3 => 6,
-        4 => 1,
-        5 => 2,
-        6 => 3,
-        7 => 8,
-        8 => 7,
-        _ => state,
     }
 }

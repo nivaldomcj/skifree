@@ -20,34 +20,53 @@ pub fn integrate(actor: &mut Actor, fast_forward: bool) {
     }
 }
 
-/// Apply steering physics (FUN_00403430)
-/// entry: physics parameters for the current state
+/// Apply steering physics (FUN_00403430, faithful port)
+///
+/// vy is the downhill speed: it accelerates toward `max_speed` and decays by 2
+/// when above it. vx is the lateral speed: it is derived from a friction term
+/// that couples it to vy, clamped into a window around the previous lateral
+/// magnitude, then re-applied along `direction`. All intermediate math is done
+/// in i32 and truncated to i16 on store, mirroring the original's int promotion
+/// and short stores.
 pub fn apply_steering(actor: &mut Actor, accel: i16, max_speed: i16, decel: i16, friction_div: i16, direction: i16) {
-    let mut vx = actor.vx;
-    let mut vy = actor.vy;
+    let vx = actor.vx as i32;
+    let vy = actor.vy as i32;
 
-    // Apply direction-based acceleration
-    if direction != 0 {
-        vx = vx.wrapping_add(direction * accel);
-    }
+    // Effective direction: table value, or the sign of current vx when the
+    // table direction is 0 (skiing straight keeps lateral drift direction).
+    let dir: i32 = if direction != 0 {
+        direction as i32
+    } else if vx < 0 {
+        -1
+    } else if vx > 0 {
+        1
+    } else {
+        0
+    };
 
-    // Clamp to max speed
-    if max_speed > 0 {
-        if vx > max_speed {
-            vx = max_speed;
-        } else if vx < -max_speed {
-            vx = -max_speed;
-        }
-    }
+    // Signed magnitude of lateral velocity along the direction of travel.
+    let s4 = dir * vx;
 
-    // Apply friction/deceleration
-    if decel > 0 && friction_div > 0 {
-        let friction = vy / friction_div;
-        vy = vy.wrapping_sub(friction);
-    }
+    // Friction term coupling lateral speed to downhill speed.
+    let vy_clamped = if vy < 1 { 0 } else { vy };
+    let friction = (friction_div as i32 * vy_clamped) / 2;
 
-    actor.vx = vx;
-    actor.vy = vy;
+    // Clamp the friction term into the window [s4 - 2, s4 + decel].
+    let s2 = if friction < s4 {
+        friction.max(s4 - 2)
+    } else {
+        friction.min(s4 + decel as i32)
+    };
+
+    // Downhill speed accelerates toward max_speed, decaying when above it.
+    let new_vy = if (max_speed as i32) < vy {
+        (vy - 2).max(max_speed as i32)
+    } else {
+        (accel as i32 + vy).min(max_speed as i32)
+    };
+
+    actor.vy = new_vy as i16;
+    actor.vx = (dir * s2) as i16;
 }
 
 /// Change actor state (FUN_00402120)
@@ -129,16 +148,46 @@ mod tests {
     }
 
     #[test]
-    fn steering_clamps_to_max_speed() {
-        let mut a = Actor { active: true, vx: 20, vy: 0, ..Default::default() };
-        apply_steering(&mut a, 1, 16, 0, 0, 1);
-        assert_eq!(a.vx, 16); // clamped
+    fn downhill_accelerates_toward_max_speed() {
+        // State 0 (straight down): accel=1, max_speed=16, no friction.
+        let mut a = Actor { active: true, vx: 0, vy: 0, ..Default::default() };
+        for expected_vy in 1..=16 {
+            apply_steering(&mut a, 1, 16, 0, 0, 0);
+            assert_eq!(a.vy, expected_vy, "after {} ticks", expected_vy);
+            assert_eq!(a.vx, 0);
+        }
+        // Capped at max_speed.
+        apply_steering(&mut a, 1, 16, 0, 0, 0);
+        assert_eq!(a.vy, 16);
     }
 
     #[test]
-    fn steering_applies_direction() {
-        let mut a = Actor { active: true, vx: 0, vy: 0, ..Default::default() };
-        apply_steering(&mut a, 2, 16, 0, 0, -1);
-        assert_eq!(a.vx, -2);
+    fn downhill_decays_by_two_when_above_max_speed() {
+        let mut a = Actor { active: true, vx: 0, vy: 20, ..Default::default() };
+        apply_steering(&mut a, 1, 16, 0, 0, 0);
+        assert_eq!(a.vy, 18);
+        apply_steering(&mut a, 1, 16, 0, 0, 0);
+        assert_eq!(a.vy, 16); // clamps to max_speed once vy-2 < max_speed
+    }
+
+    #[test]
+    fn full_turn_scrubs_downhill_speed_to_zero() {
+        // State 3 (hard left): max_speed=0, direction=-1, friction_div=8.
+        let mut a = Actor { active: true, vx: -10, vy: 8, ..Default::default() };
+        apply_steering(&mut a, 1, 0, 1, 8, -1);
+        assert_eq!(a.vy, 6); // vy - 2
+        // Keep scrubbing until vy reaches 0.
+        while a.vy > 0 {
+            apply_steering(&mut a, 1, 0, 1, 8, -1);
+        }
+        assert_eq!(a.vy, 0);
+    }
+
+    #[test]
+    fn lateral_velocity_keeps_direction_sign() {
+        // State 6 (hard right): direction=+1.
+        let mut a = Actor { active: true, vx: 10, vy: 8, ..Default::default() };
+        apply_steering(&mut a, 1, 0, 1, 8, 1);
+        assert!(a.vx >= 0, "right turn keeps vx non-negative, got {}", a.vx);
     }
 }
