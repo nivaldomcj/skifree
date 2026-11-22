@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Extract assets (sprites, icons, strings) from ski32.exe PE resources.
 
-Stdlib only. Usage: python3 tools/extract_assets.py [path-to-ski32.exe]
-Default input: originals/ski32.exe (not committed — supply your own copy).
+Stdlib only. Usage: python3 tools/extract_assets.py [path-to-exe]
+Default input: auto-discovers originals/*.exe (not committed — supply your own copy).
 Writes assets/{sprites,icons}/, assets/meta.json and assets/strings.json.
 Idempotent: same input produces identical output bytes.
 """
@@ -30,8 +30,19 @@ def parse_pe_resources(data):
     u16 = lambda o: struct.unpack_from("<H", data, o)[0]
     u32 = lambda o: struct.unpack_from("<I", data, o)[0]
 
+    if data[0:2] != b"MZ":
+        sys.exit("error: not an MZ executable (missing 'MZ' DOS header)")
     pe = u32(0x3C)
-    assert data[pe:pe + 4] == b"PE\0\0", "not a PE file"
+    sig = data[pe:pe + 2]
+    if sig == b"NE":
+        sys.exit(
+            "error: 16-bit NE executable (Windows 3.x) has no PE resources.\n"
+            "  This tool extracts from the 32-bit build — use originals/ski32.exe."
+        )
+    if sig == b"LE" or sig == b"LX":
+        sys.exit("error: LE/LX executable (OS/2 / VxD) is not supported; use ski32.exe.")
+    if data[pe:pe + 4] != b"PE\0\0":
+        sys.exit("error: not a PE file (unrecognized executable format); use ski32.exe.")
     n_sections = u16(pe + 6)
     opt_size = u16(pe + 20)
     opt = pe + 24
@@ -180,8 +191,37 @@ def sha256(b):
     return hashlib.sha256(b).hexdigest()
 
 
+def find_exe() -> Path:
+    """Resolve the input exe: explicit argv path, else auto-discover originals/*.exe."""
+    if len(sys.argv) > 1:
+        exe = Path(sys.argv[1])
+        if not exe.is_file():
+            sys.exit(f"error: no such file: {exe}")
+        return exe
+
+    originals = ROOT / "originals"
+    candidates = sorted(
+        p for p in originals.glob("*") if p.suffix.lower() == ".exe"
+    ) if originals.is_dir() else []
+
+    if not candidates:
+        sys.exit(
+            "error: no .exe found in originals/\n"
+            "  Put your own ski32.exe (or any SkiFree exe) in the originals/ folder,\n"
+            "  or pass a path: python3 tools/extract_assets.py /path/to/ski32.exe"
+        )
+    if len(candidates) == 1:
+        return candidates[0]
+    # Prefer ski32.exe when several exes are present.
+    for p in candidates:
+        if p.name.lower() == "ski32.exe":
+            return p
+    names = "\n".join(f"  {p.name}" for p in candidates)
+    sys.exit(f"error: multiple .exe files in originals/, pick one explicitly:\n{names}")
+
+
 def main():
-    exe = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "originals" / "ski32.exe"
+    exe = find_exe()
     data = exe.read_bytes()
     resources = parse_pe_resources(data)
     print(f"{exe.name}: {len(resources)} resources")
