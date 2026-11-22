@@ -30,6 +30,10 @@ pub struct GameState {
     pub course_clock_ms: u64,
     /// Set when a finish line is crossed; the platform layer saves scores.
     pub pending_score_save: bool,
+    /// Top-10 tables (FUN_00402ec0), persisted by the platform layer.
+    pub high_scores: crate::game::scoring::HighScores,
+    /// The most recent finish, for the high-score display.
+    pub last_finish: Option<FinishRecord>,
     pub elapsed_ms: u32,
     pub last_tick_ms: u32,
     pub screen_w: i16,
@@ -63,6 +67,8 @@ impl GameState {
             courses: [CourseRun::default(), CourseRun::default(), CourseRun::default()],
             course_clock_ms: 0,
             pending_score_save: false,
+            high_scores: crate::game::scoring::HighScores::default(),
+            last_finish: None,
             elapsed_ms: 0,
             last_tick_ms: 0,
             screen_w,
@@ -105,6 +111,7 @@ impl GameState {
         self.courses = [CourseRun::default(), CourseRun::default(), CourseRun::default()];
         self.course_clock_ms = 0;
         self.pending_score_save = false;
+        self.last_finish = None;
         self.camera = Camera::default();
 
         // Spawn skier at origin (FUN_00404a80: class 0, state 3, at 0,0,0)
@@ -432,7 +439,30 @@ impl GameState {
                 self.courses[ci].active = false;
                 self.courses[ci].finished = true;
                 self.courses[ci].finish_ms = self.course_clock_ms;
+                // High-score entry (FUN_00402ec0): time for slalom/giant
+                // slalom, style for freestyle.
+                let rank = if ci == 2 {
+                    self.high_scores.insert_style(self.scoring.score)
+                } else {
+                    self.high_scores.insert_time(ci, self.course_clock_ms)
+                };
+                self.last_finish = Some(FinishRecord {
+                    course: ci,
+                    ms: self.course_clock_ms,
+                    style: self.scoring.score,
+                    rank,
+                });
                 self.pending_score_save = true;
+                // The skier stands after finishing (FUN_00402e80), unless
+                // crashed or mid-crash-landing.
+                if let Some(pi) = self.player_idx {
+                    if let Some(p) = self.pool.get_mut(pi) {
+                        if p.state != 0x0b && p.state != 0x11 {
+                            let state = if p.z < 1 { 3 } else { 0x0e };
+                            physics::change_state(p, state);
+                        }
+                    }
+                }
             } else if py <= START_Y {
                 // Skied back above the start line: the run is abandoned.
                 self.courses[ci].active = false;
@@ -952,6 +982,31 @@ mod course_tests {
         assert!(!g.courses[0].active);
         assert!(g.courses[0].finished);
         assert!(g.pending_score_save);
+        // High-score entry (FUN_00402ec0): slalom time recorded at rank 0,
+        // and the skier stands (FUN_00402e80).
+        let f = g.last_finish.expect("finish recorded");
+        assert_eq!(f.course, 0);
+        assert_eq!(f.rank, Some(0));
+        assert_eq!(g.high_scores.slalom_ms.len(), 1);
+        assert_eq!(g.pool.get(g.player_idx.unwrap()).unwrap().state, 3);
+    }
+
+    #[test]
+    fn freestyle_finish_records_style_not_time() {
+        let mut g = game();
+        // Enter freestyle and earn style points.
+        place_player(&mut g, 0, 0x280, 4);
+        g.tick(40);
+        assert!(g.courses[2].active);
+        g.scoring.add(-22);
+        place_player(&mut g, 0, 0x4100 - 1, 4);
+        g.tick(40);
+        let f = g.last_finish.expect("finish recorded");
+        assert_eq!(f.course, 2);
+        assert_eq!(f.style, -22);
+        assert_eq!(g.high_scores.freestyle_style, vec![-22]);
+        assert!(g.high_scores.slalom_ms.is_empty());
+        assert!(g.high_scores.giant_slalom_ms.is_empty());
     }
 
     #[test]

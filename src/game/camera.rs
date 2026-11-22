@@ -7,10 +7,10 @@ pub const SCROLL_STEP: i16 = 0x3c; // 60 units = 3.75 m
 /// edge (FUN_00401e50's DAT_0040c5d8/DAT_0040c714 loops).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ScrollSteps {
-    pub left: u8,
-    pub right: u8,
-    pub up: u8,
-    pub down: u8,
+    pub left: u16,
+    pub right: u16,
+    pub up: u16,
+    pub down: u16,
 }
 
 impl Camera {

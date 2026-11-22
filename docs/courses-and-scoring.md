@@ -42,8 +42,14 @@ Each detector runs after the skier update with the pre-update position:
   has **no clock** — it is scored on style points only.
 - **Abandon**: moving back above y=0x280 deactivates the course.
 - **Finish**: crossing the finish y stops the clock, records the time
-  (slalom/tree slalom) or the style score (freestyle), and opens the
-  high-score entry (`FUN_00402e80` / `FUN_00402ec0`).
+  (slalom/tree slalom) or the style score (freestyle), and enters the
+  top-10 high-score table (`FUN_00402e80` / `FUN_00402ec0`): the skier
+  stands (state 3, unless crashing/airborne), and the result is inserted
+  into the course's sorted list — `entpack.ini` section `Ski`, keys
+  **SS** (slalom), **GS** (giant slalom), **FS** (freestyle style). The
+  display marks your entry with ` <-- that's you!`, or shows it below the
+  table with ` <-- try again!` when it doesn't place. The port persists
+  the same three lists in `~/.skifree/scores.json`.
 - **Gates**: each gate has a flag sprite — 0x17 means *pass on its right*,
   0x18 *pass on its left*. When the player crosses a gate's y, the flag
   turns sprite **0x19** (correct side) or **0x1a** (wrong side, plus a

@@ -160,6 +160,19 @@ pub enum CourseType {
     TreeSlalom,
 }
 
+/// A just-completed course run, for the high-score display (FUN_00402ec0).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FinishRecord {
+    /// 0 = slalom, 1 = giant slalom, 2 = freestyle.
+    pub course: usize,
+    /// Course time in ms (timed courses).
+    pub ms: u64,
+    /// Style score at the finish (freestyle).
+    pub style: i32,
+    /// Rank in the top 10, or None when it didn't place ("try again").
+    pub rank: Option<usize>,
+}
+
 /// One course's run state (the original's DAT_0040c95c / 0c958 / 0c954 and
 /// the gate cursor DAT_0040c6f8).
 #[derive(Debug, Clone, Default)]

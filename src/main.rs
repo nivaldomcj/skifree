@@ -33,9 +33,6 @@ async fn main() {
     let audio = Audio::new();
     audio.load_sounds();
 
-    let scores = persistence::load_scores();
-    persistence::save_scores(&scores);
-
     // SKIFREE_SEED=<u32> forces a deterministic world for side-by-side
     // testing against the original running a patched seed.
     let mut game = match std::env::var("SKIFREE_SEED").ok().and_then(|s| s.parse::<u32>().ok()) {
@@ -43,6 +40,7 @@ async fn main() {
         None => GameState::new(window::DEFAULT_WIDTH as i16, window::DEFAULT_HEIGHT as i16),
     };
     game.new_game();
+    game.high_scores = persistence::load_scores();
 
     // SKIFREE_SCRIPT=<json file> replays timed key events for side-by-side
     // comparison with the original (which is driven by the same schedule
@@ -172,6 +170,11 @@ async fn main() {
             game.tick(delta);
         }
 
+        if game.pending_score_save {
+            persistence::save_scores(&game.high_scores);
+            game.pending_score_save = false;
+        }
+
         // Render
         clear_background(WHITE);
 
@@ -215,6 +218,52 @@ async fn main() {
             draw_text(label, label_x, row_y, font_size as f32, DARKGRAY);
             draw_text(&value, value_x, row_y, font_size as f32, BLACK);
             row_y += 16.0;
+        }
+
+        // High-score table after a course finish (FUN_00402ec0 display),
+        // with " <-- that's you!" / " <-- try again!" markers.
+        if let Some(finish) = game.last_finish {
+            let title = match finish.course {
+                0 => "Slalom High Scores",
+                1 => "Giant Slalom High Scores",
+                _ => "Freestyle High Scores",
+            };
+            let entries: Vec<String> = if finish.course == 2 {
+                game.high_scores
+                    .freestyle_style
+                    .iter()
+                    .map(|s| format!("{:>9}", s))
+                    .collect()
+            } else {
+                let times = if finish.course == 0 {
+                    &game.high_scores.slalom_ms
+                } else {
+                    &game.high_scores.giant_slalom_ms
+                };
+                times.iter().map(|&ms| game.scoring.format_time(ms)).collect()
+            };
+            let mut y = row_y + 24.0;
+            draw_text(title, label_x, y, font_size as f32, DARKGRAY);
+            y += 16.0;
+            for (i, entry) in entries.iter().enumerate() {
+                let marker = if finish.rank == Some(i) {
+                    " <-- that's you!"
+                } else {
+                    ""
+                };
+                draw_text(&format!("{}{}", entry, marker), label_x, y, font_size as f32, BLACK);
+                y += 16.0;
+            }
+            if finish.rank.is_none() {
+                // Didn't place: show the own result below with try-again.
+                y += 16.0;
+                let own = if finish.course == 2 {
+                    format!("{:>9}", finish.style)
+                } else {
+                    game.scoring.format_time(finish.ms)
+                };
+                draw_text(&format!("{} <-- try again!", own), label_x, y, font_size as f32, BLACK);
+            }
         }
 
         next_frame().await;
