@@ -14,3 +14,6 @@ assets/strings.json
 assets/meta.json
 .DS_Store
 dist/
+
+# Personal progress notes — local only
+TODO.md
