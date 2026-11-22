@@ -69,7 +69,6 @@ gracefully** if it isn't present; everything else runs without it.
 | `docs/monster-mob-physics.md` | Yeti + mob physics (rubber-band chase, eating, drift) |
 | `docs/monster-ai.md` | Yeti overview (narrative) |
 | `docs/replay-harness.md` | The deterministic replay / golden-log testing harness |
-| `TODO.md` | Progress tracker |
 
 ## Legal note
 
@@ -78,3 +77,10 @@ and study. It is not affiliated with or endorsed by Chris Pirih or Microsoft.
 All game code, assets, and the SkiFree name remain the property of their
 respective owners. Do not redistribute the original binaries or extracted
 assets.
+
+## License
+
+The original code, tools, and documentation written for this project are
+released under the [MIT License](LICENSE). That license grants **no rights to
+SkiFree itself**: the original game, its binaries, assets, data, and name are
+© Chris Pirih / Microsoft and are not included or licensed here.
