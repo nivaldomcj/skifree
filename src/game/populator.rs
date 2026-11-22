@@ -44,7 +44,7 @@ pub enum Edge {
 /// is consumed exactly like the original: one rand() for the along-edge axis.
 pub fn edge_position(edge: Edge, camera: &Camera, screen_w: i16, screen_h: i16, rng: &mut Rng) -> (i16, i16) {
     let left = camera.cx - screen_w / 2;
-    let top = camera.cy - screen_h / 2;
+    let top = camera.cy - screen_h / 3; // player anchored at h/3 (FUN_00406060)
     match edge {
         Edge::Left => (left - 0x3c, top + rng.rand_range(screen_h as u16) as i16),
         Edge::Right => (left + screen_w + 0x3c, top + rng.rand_range(screen_h as u16) as i16),
@@ -208,9 +208,9 @@ mod tests {
         let (x, _) = populator_edge(Edge::Right, &mut rng);
         assert_eq!(x, 320 + 0x3c);
         let (_, y) = populator_edge(Edge::Top, &mut rng);
-        assert_eq!(y, -240 - 0x3c);
+        assert_eq!(y, -160 - 0x3c); // top = cy - h/3
         let (_, y) = populator_edge(Edge::Bottom, &mut rng);
-        assert_eq!(y, 240 + 0x3c);
+        assert_eq!(y, -160 + 480 + 0x3c);
     }
 
     fn populator_edge(e: Edge, rng: &mut Rng) -> (i16, i16) {

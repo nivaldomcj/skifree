@@ -128,8 +128,9 @@ pub fn handle_collision(
                     result.skier_state = Some(0x0d);
                 }
             }
-            ActorClass::Snowboarder => {
-                // Brush past: just slows the skier (no crash).
+            ActorClass::Snowboarder | ActorClass::Gate => {
+                // Brush past: just slows the skier (no crash). Gate posts
+                // share this path in the original (case 2/0xc/0x11).
                 skier.vy /= 2;
             }
             ActorClass::Effect => {

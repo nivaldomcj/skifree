@@ -23,10 +23,15 @@ top, right, left. Each call:
 
 | Zone | x range | y range | Picker | Content |
 |------|---------|---------|--------|---------|
-| A (freestyle strip) | [-0x240, -0x140] | [0x280, 0x21c0] | `FUN_00402770` | 100% snow bumps |
-| B (slalom strip) | [0x140, 0x200] | [0x280, 0x4100] | `FUN_004027a0` | 63/64 trees, 1/64 snowboarder |
-| C (tree-slalom strip) | [-0xa0, 0xa0] | [0x280, 0x4100] | `FUN_004027e0` | 18% tree, 30% large rock, 10% bump, 20% rock, 20% banner, 2% lift |
+| A (slalom strip) | [-0x240, -0x140] | [0x280, 0x21c0] | `FUN_00402770` | 100% snow bumps |
+| B (tree-slalom strip) | [0x140, 0x200] | [0x280, 0x4100] | `FUN_004027a0` | 63/64 trees, 1/64 snowboarder |
+| C (freestyle strip) | [-0xa0, 0xa0] | [0x280, 0x4100] | `FUN_004027e0` | 18% tree, 30% large rock, 10% bump, 20% rock, 20% banner, 2% lift |
 | default | everything else | | `FUN_004026f0` | 45% tree, 20% large rock, 5% bump, 20% rock, 2% banner, 5% lift, 2% dog, 1% snowboarder |
+
+(The course strips are named after the banner sprites at each course's
+entrance: 61 "Slalom ↙" left, 62 "Tree Slalom ↘" right, 63 "Free style ↓"
+center. Earlier docs had slalom and freestyle swapped — the sprite contents
+settle it. See `docs/courses-and-scoring.md`.)
 
 ## Density cap
 

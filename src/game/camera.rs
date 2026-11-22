@@ -42,10 +42,11 @@ impl Camera {
         steps
     }
 
-    /// Convert world coordinates to screen coordinates
+    /// Convert world coordinates to screen coordinates. The original anchors
+    /// the player at (w/2, h/3) via FUN_00406060, not at the viewport center.
     pub fn world_to_screen(&self, wx: i16, wy: i16, screen_w: i16, screen_h: i16) -> (i16, i16) {
         let sx = wx.wrapping_sub(self.cx).wrapping_add(screen_w / 2);
-        let sy = wy.wrapping_sub(self.cy).wrapping_add(screen_h / 2);
+        let sy = wy.wrapping_sub(self.cy).wrapping_add(screen_h / 3);
         (sx, sy)
     }
 

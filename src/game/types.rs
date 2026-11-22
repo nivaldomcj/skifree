@@ -15,7 +15,9 @@ pub enum ActorClass {
     Lift = 10,
     /// Class 0xb: snow bump (sprite 27) — launches the skier on straight hits.
     SnowBump = 11,
-    /// Class 0xc: never spawned by the original (picker hole), reserved.
+    /// Class 0xc: slalom gate post (sprites 0x17/0x18; turns 0x19 passed /
+    /// 0x1a missed). Inert scenery; brushing it slows the skier.
+    Gate = 12,
     /// Class 0xd: trees — small pine / dead tree / big pine (sprites 49-51).
     Tree = 13,
     /// Class 0xe: rocks (sprites 45/46); uphill hits flip 46 to the flat
@@ -46,6 +48,7 @@ impl ActorClass {
             9 => Some(Self::Eating),
             10 => Some(Self::Lift),
             11 => Some(Self::SnowBump),
+            12 => Some(Self::Gate),
             13 => Some(Self::Tree),
             14 => Some(Self::Rock),
             15 => Some(Self::RockLarge),
@@ -122,13 +125,18 @@ pub struct SpawnRequest {
     pub z: i16,
 }
 
-/// Spawn event — consumed as the player scrolls past its y coordinate
+/// Spawn event — consumed as the player scrolls past its y coordinate.
+/// Mirrors the original's 36-byte spawn record: when `sprite` is set the
+/// actor is created with a raw sprite id (FUN_004026a0, classes >= 0xb and
+/// all signage), otherwise with a state looked up in the state table
+/// (FUN_004020d0). `param` carries the initial vy for ambient mobs.
 #[derive(Debug, Clone)]
 pub struct SpawnEvent {
     pub actor_idx: Option<usize>,
     pub event_type: u16, // 0x11=marker, 0x0c=gate, 0x0d=obstacle, 0x04=mob, 5-8=monster
     pub state: u16,
     pub class: u16,
+    pub sprite: Option<u16>,
     pub x: i16,
     pub y: i16,
     pub z: i16,
@@ -150,4 +158,22 @@ pub enum CourseType {
     Freestyle,
     Slalom,
     TreeSlalom,
+}
+
+/// One course's run state (the original's DAT_0040c95c / 0c958 / 0c954 and
+/// the gate cursor DAT_0040c6f8).
+#[derive(Debug, Clone, Default)]
+pub struct CourseRun {
+    /// Player is between the start and finish lines of this course.
+    pub active: bool,
+    /// Player has crossed the finish line at least once.
+    pub finished: bool,
+    /// Tick timestamp (ms) when the start line was crossed. Signed because
+    /// the gate-miss penalty subtracts 5 s even when that goes negative
+    /// (the original's DAT_0040c948 is a plain int).
+    pub start_ms: i64,
+    /// Final course clock at the finish (freestyle/slalom only).
+    pub finish_ms: u64,
+    /// spawn_events index of the next unpassed gate (gated courses only).
+    pub next_gate: Option<usize>,
 }

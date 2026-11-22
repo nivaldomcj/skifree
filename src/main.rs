@@ -38,9 +38,10 @@ async fn main() {
         window::enforce_min_size();
 
         // Track the live window size (the original recomputes its client
-        // rect on every WM_SIZE). The game viewport excludes the HUD strip.
+        // rect on every WM_SIZE). The status display is a small overlay at
+        // the top-right, so the game viewport is the full window.
         let view_w = screen_width().max(window::MIN_WIDTH as f32) as i16;
-        let view_h = (screen_height() - window::HUD_HEIGHT).max(window::MIN_HEIGHT as f32) as i16;
+        let view_h = screen_height().max(window::MIN_HEIGHT as f32) as i16;
         game.screen_w = view_w;
         game.screen_h = view_h;
 
@@ -114,7 +115,7 @@ async fn main() {
                 }
                 GameAction::MouseSteer(mx, my) => {
                     let center_x = screen_width() / 2.0;
-                    let center_y = (screen_height() - window::HUD_HEIGHT) / 2.0;
+                    let center_y = screen_height() / 3.0;
                     game.steer_mouse(
                         (mx - center_x) as i16,
                         (my - center_y) as i16,
@@ -163,33 +164,21 @@ async fn main() {
             draw_text(text, x, y, 24.0, BLACK);
         }
 
-        // HUD
-        let hud_y = screen_height() - window::HUD_HEIGHT;
-        draw_line(0.0, hud_y, screen_width(), hud_y, 1.0, LIGHTGRAY);
-
-        let time_str = game.scoring.format_time(game.elapsed_ms);
-        let (_px, py, _) = game.player_pos().unwrap_or((0, 0, 0));
-        let (vx, _, _) = game.player_velocity().unwrap_or((0, 0, 0));
-        let dist_str = game.scoring.format_dist(py, 0x21c0, true);
-        let speed_str = game.scoring.format_speed(vx, game.last_tick_ms);
-        let style_str = game.scoring.format_style();
-
-        let labels = ["Time:", "Dist:", "Speed:", "Style:"];
-        let values = [&time_str, &dist_str, &speed_str, &style_str];
-        let spacing = screen_width() / 4.0;
-        let font_size = 14u16;
-
-        for (i, (label, value)) in labels.iter().zip(values.iter()).enumerate() {
-            let x = i as f32 * spacing + 4.0;
-            draw_text(label, x, hud_y + 14.0, font_size as f32, DARKGRAY);
-            let label_width = measure_text(label, None, font_size, 1.0).width;
-            draw_text(
-                value,
-                x + label_width + 2.0,
-                hud_y + 14.0,
-                font_size as f32,
-                BLACK,
-            );
+        // Status display (FUN_00401b80): stacked rows at the top-right.
+        let rows = [
+            ("Time:", game.scoring.format_time(game.hud_time_ms())),
+            ("Dist:", game.scoring.format_dist(game.hud_dist_m())),
+            ("Speed:", game.scoring.format_speed(game.hud_speed())),
+            ("Style:", game.scoring.format_style()),
+        ];
+        let font_size = 15u16;
+        let value_x = screen_width() - 62.0;
+        let label_x = value_x - 48.0;
+        let mut row_y = 16.0;
+        for (label, value) in rows {
+            draw_text(label, label_x, row_y, font_size as f32, DARKGRAY);
+            draw_text(&value, value_x, row_y, font_size as f32, BLACK);
+            row_y += 16.0;
         }
 
         next_frame().await;

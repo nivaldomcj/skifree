@@ -23,6 +23,13 @@ pub struct GameState {
     pub paused: bool,
     pub course_type: CourseType,
     pub spawn_events: Vec<SpawnEvent>,
+    /// Freestyle, slalom, tree slalom run states (all three courses exist in
+    /// the world at once, on their own x strips).
+    pub courses: [CourseRun; 3],
+    /// HUD clock (DAT_0040c944): runs only inside freestyle/slalom.
+    pub course_clock_ms: u64,
+    /// Set when a finish line is crossed; the platform layer saves scores.
+    pub pending_score_save: bool,
     pub elapsed_ms: u32,
     pub last_tick_ms: u32,
     pub screen_w: i16,
@@ -53,6 +60,9 @@ impl GameState {
             paused: false,
             course_type: CourseType::Freestyle,
             spawn_events: Vec::new(),
+            courses: [CourseRun::default(), CourseRun::default(), CourseRun::default()],
+            course_clock_ms: 0,
+            pending_score_save: false,
             elapsed_ms: 0,
             last_tick_ms: 0,
             screen_w,
@@ -92,8 +102,12 @@ impl GameState {
         self.fast_forward = false;
         self.paused = false;
         self.elapsed_ms = 0;
+        self.courses = [CourseRun::default(), CourseRun::default(), CourseRun::default()];
+        self.course_clock_ms = 0;
+        self.pending_score_save = false;
+        self.camera = Camera::default();
 
-        // Spawn skier at origin
+        // Spawn skier at origin (FUN_00404a80: class 0, state 3, at 0,0,0)
         let idx = self.pool.alloc(ActorClass::Skier, 3);
         if let Some(idx) = idx {
             if let Some(actor) = self.pool.get_mut(idx) {
@@ -104,17 +118,40 @@ impl GameState {
             self.player_idx = Some(idx);
         }
 
-        // Generate course
-        self.spawn_events = course::generate_course(
-            self.course_type,
-            self.screen_w,
-            self.screen_h,
-            0,
-            0,
-        );
+        // Title splash (FUN_004051e0): logo, divider, copyright and version
+        // as inert effect actors near the spawn point.
+        self.spawn_title_splash();
+
+        // Generate all three courses + poles + mobs + monsters (FUN_00404b50)
+        self.spawn_events = course::generate_course(self.screen_w, self.screen_h, &mut self.rng);
 
         // Spawn initial actors from events
         self.consume_spawn_events();
+    }
+
+    /// Title splash actors (FUN_004051e0). Positions are derived from the
+    /// sprite dimensions exactly like the original: logo top-left anchored,
+    /// copyright/version right of it.
+    fn spawn_title_splash(&mut self) {
+        let dim = |id: usize| self.sprite_dims.get(id).copied().unwrap_or((16, 16));
+        let (w53, h53) = dim(0x35);
+        let (w55, h55) = dim(0x37);
+        let (w56, h56) = dim(0x38);
+        let lx = -0x28 - w53 / 2;
+        let cx = w55.max(w56);
+        let splash = [
+            (0x35u16, lx, 0),
+            (0x36, lx, h53 + 4),
+            (0x37, cx, h55),
+            (0x38, cx, h55 + h56 + 4),
+        ];
+        for (sprite, x, y) in splash {
+            if let Some(idx) = self.pool.alloc_with_sprite(ActorClass::Effect, sprite) {
+                if let Some(a) = self.pool.get_mut(idx) {
+                    physics::set_position(a, x, y, 0);
+                }
+            }
+        }
     }
 
     /// Main game tick (FUN_00401e50 + FUN_00401000)
@@ -125,6 +162,12 @@ impl GameState {
 
         self.elapsed_ms += delta_ms;
         self.last_tick_ms = delta_ms;
+
+        // Player position before this tick's movement (course-line crossing
+        // detection compares against it, like FUN_004028e0's saved x/y).
+        let player_old_y = self.player_idx
+            .and_then(|i| self.pool.get(i))
+            .map(|a| a.y);
 
         // Consume spawn events as player scrolls
         self.consume_spawn_events();
@@ -197,6 +240,7 @@ impl GameState {
                 // (FUN_00401e50 only dispatches classes < 0xb): scenery and
                 // effects just hold their sprite until they scroll away.
                 ActorClass::SnowBump
+                | ActorClass::Gate
                 | ActorClass::Tree
                 | ActorClass::Rock
                 | ActorClass::RockLarge
@@ -253,6 +297,12 @@ impl GameState {
             }
         }
 
+        // Course start/finish/gate detection (FUN_00402c60 / FUN_00403250 /
+        // FUN_00403180, called from the skier update in the original).
+        if let Some(old_y) = player_old_y {
+            self.check_course_crossings(old_y);
+        }
+
         // Update camera to follow player; each 0x3c of travel spawns one
         // actor at the entering edge (FUN_004025c0), in the original's
         // order: bottom, top, right, left.
@@ -294,7 +344,7 @@ impl GameState {
         // model, which tracks the viewport center.
         if self.rng.rand_range(0x29a) == 0 {
             let x = self.camera.cx - self.screen_w / 2 + self.rng.rand_range(self.screen_w as u16) as i16;
-            let y = self.camera.cy - self.screen_h / 2 - 0x3c;
+            let y = self.camera.cy - self.screen_h / 3 - 0x3c;
             self.fulfill_spawn(SpawnRequest {
                 class: ActorClass::Obstacle,
                 state: Some(0x1f),
@@ -341,6 +391,138 @@ impl GameState {
         }
     }
 
+    /// Course start/finish/gate detection (FUN_00402c60 freestyle,
+    /// FUN_00403250 slalom, FUN_00403180 tree slalom). The original
+    /// interpolates the exact crossing point; the port uses the
+    /// post-tick position.
+    fn check_course_crossings(&mut self, old_y: i16) {
+        let Some(pi) = self.player_idx else { return };
+        let Some(player) = self.pool.get(pi) else { return };
+        let (px, py) = (player.x, player.y);
+
+        const START_Y: i16 = 0x280;
+        // courses[0] = slalom (left, timed, gated), courses[1] = tree slalom
+        // (right, timed, gated), courses[2] = freestyle (center, style only).
+        for ci in 0..3 {
+            let ((xmin, xmax), finish, has_clock) = match ci {
+                0 => (course::SLALOM_STRIP, course::SLALOM_FINISH_Y, true),
+                1 => (course::TREE_SLALOM_STRIP, course::LONG_FINISH_Y, true),
+                _ => (course::FREESTYLE_STRIP, course::LONG_FINISH_Y, false),
+            };
+            if !self.courses[ci].active {
+                // Cross the start line downward inside the strip.
+                if old_y <= START_Y && py > START_Y && px >= xmin && px <= xmax {
+                    self.courses[ci].active = true;
+                    self.courses[ci].start_ms = self.elapsed_ms as i64;
+                    if has_clock {
+                        self.course_clock_ms = 0;
+                    }
+                    if ci != 2 {
+                        self.courses[ci].next_gate = self.first_gate_index(xmin, xmax);
+                    }
+                }
+                continue;
+            }
+
+            if has_clock {
+                self.course_clock_ms =
+                    (self.elapsed_ms as i64 - self.courses[ci].start_ms).max(0) as u64;
+            }
+            if py > finish {
+                self.courses[ci].active = false;
+                self.courses[ci].finished = true;
+                self.courses[ci].finish_ms = self.course_clock_ms;
+                self.pending_score_save = true;
+            } else if py <= START_Y {
+                // Skied back above the start line: the run is abandoned.
+                self.courses[ci].active = false;
+            } else if ci != 2 {
+                self.check_gate_pass(ci, px, py);
+            }
+        }
+    }
+
+    /// First gate record index within a course strip (DAT_0040c94c/c950).
+    fn first_gate_index(&self, xmin: i16, xmax: i16) -> Option<usize> {
+        self.spawn_events
+            .iter()
+            .position(|e| e.class == 0x0c && e.x >= xmin && e.x <= xmax)
+    }
+
+    /// Gate passing (FUN_00402c60 tail + FUN_00403130): the gate's flag turns
+    /// sprite 0x19 (passed) or 0x1a (missed, with a 5 s clock penalty).
+    fn check_gate_pass(&mut self, ci: usize, px: i16, py: i16) {
+        let Some(gi) = self.courses[ci].next_gate else { return };
+        let Some(gate) = self.spawn_events.get(gi) else { return };
+        if gate.y >= py {
+            return;
+        }
+        let (gx, gsprite, actor_idx) = (gate.x, gate.sprite, gate.actor_idx);
+        let passed = match gsprite {
+            Some(0x17) => gx < px, // sprite 0x17: pass on its right
+            Some(0x18) => px < gx, // sprite 0x18: pass on its left
+            _ => true,
+        };
+        let new_sprite = if passed { 0x19 } else { 0x1a };
+        if !passed {
+            self.courses[ci].start_ms -= 5000;
+            self.course_clock_ms =
+                (self.elapsed_ms as i64 - self.courses[ci].start_ms).max(0) as u64;
+        }
+        if let Some(ev) = self.spawn_events.get_mut(gi) {
+            ev.sprite = Some(new_sprite);
+        }
+        if let Some(ai) = actor_idx {
+            if let Some(a) = self.pool.get_mut(ai) {
+                a.sprite_id = new_sprite;
+            }
+        }
+        let (xmin, xmax) = if ci == 0 {
+            course::SLALOM_STRIP
+        } else {
+            course::TREE_SLALOM_STRIP
+        };
+        self.courses[ci].next_gate = self
+            .spawn_events
+            .iter()
+            .enumerate()
+            .skip(gi + 1)
+            .find(|(_, e)| e.class == 0x0c && e.x >= xmin && e.x <= xmax)
+            .map(|(i, _)| i);
+    }
+
+    /// HUD Time value in ms (DAT_0040c944).
+    pub fn hud_time_ms(&self) -> u64 {
+        self.course_clock_ms
+    }
+
+    /// HUD Dist value in meters (FUN_00401b80): remaining inside a course,
+    /// distance traveled when free-skiing, 0 without a player.
+    pub fn hud_dist_m(&self) -> i32 {
+        let Some(pi) = self.player_idx else { return 0 };
+        let Some(p) = self.pool.get(pi) else { return 0 };
+        let y = p.y as i32;
+        let units = if self.courses[0].active {
+            0x21c0 - y
+        } else if self.courses[1].active || self.courses[2].active {
+            0x4100 - y
+        } else {
+            y
+        };
+        units / 16
+    }
+
+    /// HUD Speed value in m/s (FUN_00401b80): downhill velocity scaled by
+    /// the last frame delta (units are 1/16 m per tick).
+    pub fn hud_speed(&self) -> i32 {
+        let Some(pi) = self.player_idx else { return 0 };
+        let Some(p) = self.pool.get(pi) else { return 0 };
+        if self.last_tick_ms == 0 {
+            return 0;
+        }
+        (p.vy as i32 * 1000) / ((self.last_tick_ms as i32) << 4)
+    }
+
     /// Spawn a secondary actor from a behavior request (FUN_004020d0 via
     /// `state`, or FUN_004026a0 via `sprite`), placing it with FUN_00402390.
     fn fulfill_spawn(&mut self, req: SpawnRequest) {
@@ -378,7 +560,11 @@ impl GameState {
                     None => continue,
                 };
 
-                if let Some(idx) = self.pool.alloc(class, event.state) {
+                let idx = match event.sprite {
+                    Some(sprite) => self.pool.alloc_with_sprite(class, sprite),
+                    None => self.pool.alloc(class, event.state),
+                };
+                if let Some(idx) = idx {
                     if let Some(actor) = self.pool.get_mut(idx) {
                         actor.x = event.x;
                         actor.y = event.y;
@@ -648,6 +834,7 @@ mod tests {
             event_type: 0x04,
             state: 0x27,
             class: 4,
+            sprite: None,
             x: -112,
             y: 100,
             z: 0x20,
@@ -662,5 +849,116 @@ mod tests {
         assert_eq!(mob.z, 0x20);
         // It drifted up this tick (proxy integration, no gravity).
         assert_eq!(mob.y, 98);
+    }
+}
+
+#[cfg(test)]
+mod course_tests {
+    use super::*;
+
+    fn game() -> GameState {
+        let mut g = GameState::new_seeded(640, 480, 1);
+        g.new_game();
+        g
+    }
+
+    fn place_player(g: &mut GameState, x: i16, y: i16, vy: i16) {
+        let idx = g.player_idx.unwrap();
+        let a = g.pool.get_mut(idx).unwrap();
+        a.x = x;
+        a.y = y;
+        a.vy = vy;
+        a.state = 0;
+    }
+
+    #[test]
+    fn slalom_start_begins_clock() {
+        let mut g = game();
+        place_player(&mut g, -400, 0x280, 4);
+        assert_eq!(g.hud_time_ms(), 0);
+        g.tick(40);
+        assert!(g.courses[0].active, "slalom should activate crossing 0x280");
+        assert!(g.courses[1..].iter().all(|c| !c.active));
+        g.tick(40);
+        assert_eq!(g.hud_time_ms(), 40, "clock runs after the start line");
+    }
+
+    #[test]
+    fn freestyle_runs_without_clock() {
+        let mut g = game();
+        place_player(&mut g, 0, 0x280, 4);
+        g.tick(40);
+        assert!(g.courses[2].active, "freestyle activates in the center strip");
+        assert!(!g.courses[0].active && !g.courses[1].active);
+        g.tick(40);
+        assert_eq!(g.hud_time_ms(), 0, "freestyle has no clock (style-scored)");
+    }
+
+    #[test]
+    fn skiing_back_above_start_abandons_run() {
+        let mut g = game();
+        place_player(&mut g, -400, 0x280, 4);
+        g.tick(40);
+        assert!(g.courses[0].active);
+        place_player(&mut g, -400, 0x280, -2);
+        g.tick(40);
+        assert!(!g.courses[0].active, "run abandoned above the start line");
+    }
+
+    #[test]
+    fn gate_pass_and_miss() {
+        let mut g = game();
+        place_player(&mut g, -400, 0x280, 4);
+        g.tick(40);
+        assert!(g.courses[0].active);
+        let gi = g.courses[0].next_gate.expect("slalom has gates");
+        let (gy, gsprite) = {
+            let e = &g.spawn_events[gi];
+            (e.y, e.sprite)
+        };
+        assert_eq!(gsprite, Some(0x17));
+
+        // Pass on the correct side (sprite 0x17: gate.x < player.x).
+        place_player(&mut g, -400, gy - 1, 4);
+        g.tick(40);
+        assert_eq!(g.spawn_events[gi].sprite, Some(0x19), "passed gate turns sprite 0x19");
+
+        // Miss the next gate on the wrong side.
+        let gi2 = g.courses[0].next_gate.unwrap();
+        let gy2 = g.spawn_events[gi2].y;
+        let clock_before = g.hud_time_ms();
+        place_player(&mut g, -300, gy2 - 1, 4); // sprite 0x18: needs x < gate.x
+        g.tick(40);
+        assert_eq!(g.spawn_events[gi2].sprite, Some(0x1a), "missed gate turns sprite 0x1a");
+        assert_eq!(
+            g.hud_time_ms(),
+            clock_before + 40 + 5000,
+            "miss applies the 5s penalty on top of the tick"
+        );
+    }
+
+    #[test]
+    fn finish_records_time_and_flags_save() {
+        let mut g = game();
+        place_player(&mut g, -400, 0x280, 4);
+        g.tick(40);
+        assert!(g.courses[0].active);
+        place_player(&mut g, -400, 0x21bf, 4);
+        g.tick(40);
+        assert!(!g.courses[0].active);
+        assert!(g.courses[0].finished);
+        assert!(g.pending_score_save);
+    }
+
+    #[test]
+    fn dist_counts_down_in_course_and_up_outside() {
+        let mut g = game();
+        // Free-skiing above the start: distance traveled.
+        place_player(&mut g, 0x200, 0x100, 0);
+        assert_eq!(g.hud_dist_m(), 0x100 / 16);
+        // In freestyle: remaining.
+        place_player(&mut g, -400, 0x280, 4);
+        g.tick(40);
+        assert_eq!(g.hud_dist_m(), (0x21c0 - 0x284) / 16);
     }
 }
