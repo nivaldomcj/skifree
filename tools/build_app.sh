@@ -17,14 +17,11 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/SkiFree"
 cp -R assets "$APP/Contents/Resources/assets"
 
-# Icon: the original ships 32x32 only; let iconutil scale from that.
+# Icon: composed at build time from the extracted assets (Big Sur-style
+# white squircle + the original's colorful skier glyph). No derived icon
+# file is ever committed — see tools/make_icon.py.
 ICONSET="$(mktemp -d)/skifree.iconset"
-mkdir -p "$ICONSET"
-SRC="assets/icons/icon_1.png"
-for size in 16 32 128 256 512; do
-  sips -z "$size" "$size" "$SRC" --out "$ICONSET/icon_${size}x${size}.png" > /dev/null
-  sips -z "$((size * 2))" "$((size * 2))" "$SRC" --out "$ICONSET/icon_${size}x${size}@2x.png" > /dev/null
-done
+python3 tools/make_icon.py "$ICONSET" > /dev/null
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/SkiFree.icns"
 
 cat > "$APP/Contents/Info.plist" << 'EOF'
