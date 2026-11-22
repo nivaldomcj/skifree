@@ -13,6 +13,18 @@ pub enum ActorClass {
     MonsterBottom = 8,
     Eating = 9,
     Lift = 10,
+    /// Class 0xb: snow bump (sprite 27) — launches the skier on straight hits.
+    SnowBump = 11,
+    /// Class 0xc: never spawned by the original (picker hole), reserved.
+    /// Class 0xd: trees — small pine / dead tree / big pine (sprites 49-51).
+    Tree = 13,
+    /// Class 0xe: rocks (sprites 45/46); uphill hits flip 46 to the flat
+    /// collectible rock (sprite 86).
+    Rock = 14,
+    /// Class 0xf: large rocks (sprites 47/48) — auto-hop on contact.
+    RockLarge = 15,
+    /// Class 0x10: rainbow freestyle ramp (sprite 52) — launches the skier.
+    Banner = 16,
     /// Class 0x11: inert visual effect (e.g. the snowboarder jump puff).
     /// The original gives classes >= 0xb no behavior update; the actor just
     /// holds its raw sprite until it scrolls out and is culled.
@@ -33,6 +45,11 @@ impl ActorClass {
             8 => Some(Self::MonsterBottom),
             9 => Some(Self::Eating),
             10 => Some(Self::Lift),
+            11 => Some(Self::SnowBump),
+            13 => Some(Self::Tree),
+            14 => Some(Self::Rock),
+            15 => Some(Self::RockLarge),
+            16 => Some(Self::Banner),
             17 => Some(Self::Effect),
             _ => None,
         }

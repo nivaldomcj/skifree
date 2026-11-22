@@ -1,10 +1,12 @@
 use super::actor::ActorPool;
+use super::camera;
 use super::types::Camera;
 use super::collision;
 use super::course;
 use super::mob;
 use super::monster;
 use super::physics;
+use super::populator;
 use super::rng::Rng;
 use super::scoring::Scoring;
 use super::skier;
@@ -192,9 +194,14 @@ impl GameState {
                     }
                 }
                 // Classes >= 0xb get no behavior update in the original
-                // (FUN_00401e50 only dispatches classes < 0xb): the effect
-                // actor just holds its sprite until it scrolls away.
-                ActorClass::Effect => {}
+                // (FUN_00401e50 only dispatches classes < 0xb): scenery and
+                // effects just hold their sprite until they scroll away.
+                ActorClass::SnowBump
+                | ActorClass::Tree
+                | ActorClass::Rock
+                | ActorClass::RockLarge
+                | ActorClass::Banner
+                | ActorClass::Effect => {}
             }
         }
 
@@ -234,12 +241,48 @@ impl GameState {
                     }
                 }
             }
+            if let Some(state) = result.skier_state {
+                if let Some(player_idx) = self.player_idx {
+                    if let Some(actor) = self.pool.get_mut(player_idx) {
+                        physics::change_state(actor, state);
+                    }
+                }
+            }
+            if let Some(idx) = result.free_actor {
+                self.pool.free(idx);
+            }
         }
 
-        // Update camera to follow player
+        // Update camera to follow player; each 0x3c of travel spawns one
+        // actor at the entering edge (FUN_004025c0), in the original's
+        // order: bottom, top, right, left.
+        let mut steps = camera::ScrollSteps::default();
         if let Some(player_idx) = self.player_idx {
             if let Some(player) = self.pool.get(player_idx) {
-                self.camera.follow(player.x, player.y);
+                steps = self.camera.follow(player.x, player.y);
+            }
+        }
+        for (edge, count) in [
+            (populator::Edge::Bottom, steps.down),
+            (populator::Edge::Top, steps.up),
+            (populator::Edge::Right, steps.right),
+            (populator::Edge::Left, steps.left),
+        ] {
+            for _ in 0..count {
+                let weight = populator::sprite_weight(
+                    self.pool.active_indices().into_iter().filter_map(|i| self.pool.get(i)),
+                    &self.sprite_dims,
+                );
+                if let Some(req) = populator::pick_spawn(
+                    edge,
+                    &self.camera,
+                    self.screen_w,
+                    self.screen_h,
+                    weight,
+                    &mut self.rng,
+                ) {
+                    self.fulfill_spawn(req);
+                }
             }
         }
 
@@ -260,6 +303,41 @@ impl GameState {
                 y,
                 z: 0,
             });
+        }
+
+        // Cull actors far outside the padded viewport (client rect + 0x78 on
+        // every side, DAT_0040c680). The player and the proxy classes (4-8:
+        // ambient mobs, monsters) are exempt — in the original their proxies
+        // keep running off-screen. Culled course actors get their spawn-event
+        // link reset so they re-materialize when scrolled back into range.
+        let culled: Vec<usize> = self.pool.active_indices().into_iter().filter(|&idx| {
+            if Some(idx) == self.player_idx {
+                return false;
+            }
+            let a = match self.pool.get(idx) {
+                Some(a) => a,
+                None => return false,
+            };
+            match a.class {
+                ActorClass::AmbientMob
+                | ActorClass::MonsterLeft
+                | ActorClass::MonsterRight
+                | ActorClass::MonsterTop
+                | ActorClass::MonsterBottom => return false,
+                _ => {}
+            }
+            let (w, h) = self.sprite_dims.get(a.sprite_id as usize).copied().unwrap_or((16, 16));
+            let (l, t, r, b) =
+                collision::actor_bounds(a, w, h, &self.camera, self.screen_w, self.screen_h);
+            !collision::intersects(l, t, r, b, -0x78, -0x78, self.screen_w + 0x78, self.screen_h + 0x78)
+        }).collect();
+        for idx in culled {
+            if let Some(ev) = self.pool.get(idx).and_then(|a| a.event_idx) {
+                if let Some(event) = self.spawn_events.get_mut(ev) {
+                    event.actor_idx = None;
+                }
+            }
+            self.pool.free(idx);
         }
     }
 
@@ -285,14 +363,16 @@ impl GameState {
             .map(|a| a.y)
             .unwrap_or(0);
 
-        for event in &mut self.spawn_events {
+        for (event_pos, event) in self.spawn_events.iter_mut().enumerate() {
             if event.actor_idx.is_some() {
                 continue; // already spawned
             }
 
-            // Spawn when player is within screen height of the event
+            // Spawn when the event is within one screen of the player, either
+            // direction — culled actors (event link reset) re-materialize
+            // here when scrolled back into range.
             let spawn_threshold = player_y + self.screen_h;
-            if event.y <= spawn_threshold {
+            if event.y <= spawn_threshold && event.y >= player_y - self.screen_h {
                 let class = match ActorClass::from_u16(event.class) {
                     Some(c) => c,
                     None => continue,
@@ -307,7 +387,7 @@ impl GameState {
                             // param carries the proxy's initial vy (-2/+2)
                             actor.vy = event.param;
                         }
-                        actor.event_idx = Some(event.actor_idx.unwrap_or(0));
+                        actor.event_idx = Some(event_pos);
                     }
                     event.actor_idx = Some(idx);
                 }

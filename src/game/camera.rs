@@ -2,27 +2,44 @@ use super::types::*;
 
 pub const SCROLL_STEP: i16 = 0x3c; // 60 units = 3.75 m
 
+/// How many 0x3c scroll boundaries the camera crossed in each direction this
+/// tick. The obstacle populator spawns one actor per crossing at the entering
+/// edge (FUN_00401e50's DAT_0040c5d8/DAT_0040c714 loops).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct ScrollSteps {
+    pub left: u8,
+    pub right: u8,
+    pub up: u8,
+    pub down: u8,
+}
+
 impl Camera {
     /// Center camera on the skier, applying discrete scroll steps
     /// Mirrors the scroll logic in FUN_00401e50
-    pub fn follow(&mut self, target_x: i16, target_y: i16) {
+    pub fn follow(&mut self, target_x: i16, target_y: i16) -> ScrollSteps {
         self.scroll_x = self.scroll_x.wrapping_sub(target_x.wrapping_sub(self.cx));
         self.scroll_y = self.scroll_y.wrapping_sub(target_y.wrapping_sub(self.cy));
         self.cx = target_x;
         self.cy = target_y;
 
+        let mut steps = ScrollSteps::default();
         while self.scroll_y > SCROLL_STEP {
             self.scroll_y -= SCROLL_STEP;
+            steps.up += 1;
         }
         while self.scroll_y < -SCROLL_STEP {
             self.scroll_y += SCROLL_STEP;
+            steps.down += 1;
         }
         while self.scroll_x > SCROLL_STEP {
             self.scroll_x -= SCROLL_STEP;
+            steps.left += 1;
         }
         while self.scroll_x < -SCROLL_STEP {
             self.scroll_x += SCROLL_STEP;
+            steps.right += 1;
         }
+        steps
     }
 
     /// Convert world coordinates to screen coordinates

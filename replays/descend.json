@@ -4,6 +4,255 @@
   "ticks": 500,
   "delta_ms": 40,
   "inputs": [
-    { "tick": 0, "type": "steer", "down": true }
+    {
+      "tick": 0,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 10,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 20,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 30,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 40,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 50,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 60,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 70,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 80,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 90,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 100,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 110,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 120,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 130,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 140,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 150,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 160,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 170,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 180,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 190,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 200,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 210,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 220,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 230,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 240,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 250,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 260,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 270,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 280,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 290,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 300,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 310,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 320,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 330,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 340,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 350,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 360,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 370,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 380,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 390,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 400,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 410,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 420,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 430,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 440,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 450,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 460,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 470,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 480,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 490,
+      "type": "steer",
+      "down": true
+    }
   ]
 }

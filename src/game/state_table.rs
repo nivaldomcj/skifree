@@ -41,6 +41,23 @@ pub const SKIER_PHYSICS: [PhysicsEntry; 22] = [
     PhysicsEntry { accel: 1, max_speed: 22, decel: 0, friction_div: 0, direction: 0 },  // 0x15
 ];
 
+/// Per-class initial state for populator-spawned actors (DAT_0040a22c,
+/// classes 0..=10). Classes >= 0xb spawn with a raw sprite instead
+/// (FUN_00402850, see populator.rs).
+pub const CLASS_INITIAL_STATE: [u16; 11] = [
+    0x06, // 0 skier
+    0x16, // 1 dog
+    0x1b, // 2 snowboarder
+    0x1f, // 3 obstacle / crossing skier
+    0x27, // 4 ambient mob
+    0x2a, // 5-8 monsters
+    0x2a,
+    0x2a,
+    0x2a,
+    0x38, // 9 eating
+    0x3c, // 10 lift
+];
+
 /// Dog physics table (DAT_0040a490), states 0x16-0x1a
 pub const DOG_PHYSICS: [PhysicsEntry; 5] = [
     PhysicsEntry { accel: 1, max_speed: 1, decel: 0, friction_div: 0, direction: 0 },   // 0x16
@@ -201,6 +218,15 @@ mod tests {
             // Table is indexed by absolute state (0x0d..=0x15)
             let got = u32_at(&exe, 0xa434 + (0x0d + i) * 4) as u16;
             assert_eq!(got, want, "state {:#04x}", 0x0d + i);
+        }
+    }
+
+    #[test]
+    fn class_initial_state_matches_binary() {
+        let exe = exe_or_skip!();
+        for (class, &want) in CLASS_INITIAL_STATE.iter().enumerate() {
+            let got = u32_at(&exe, 0xa22c + class * 4) as u16;
+            assert_eq!(got, want, "class {class}");
         }
     }
 

@@ -108,6 +108,10 @@ may be gone after a reboot. To regenerate: configure Ghidra 12.x
   when they scroll back into view; the port keeps actors alive instead.
 - **Monster/mob proxy vs actor**: the port uses one actor instead of the
   proxy+actor pair; observable behavior is preserved, internal structure is not.
+- **Collision nuances**: the original's `bVar4` (moving-apart) gates a few
+  graze/bounce subtleties, and collisions run for both pair orders; the port
+  applies the dominant branch, player side only (see
+  `docs/course-populator.md`).
 - **Diagonal keys** map through the cardinal transitions rather than setting
   states entirely independently (Home/End/PgUp/PgDn now map to states 3/1/6/4).
 

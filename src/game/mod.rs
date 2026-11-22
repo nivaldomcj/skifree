@@ -14,6 +14,8 @@ pub mod monster;
 #[allow(dead_code)]
 pub mod physics;
 #[allow(dead_code)]
+pub mod populator;
+#[allow(dead_code)]
 pub mod rng;
 #[allow(dead_code)]
 pub mod scoring;
