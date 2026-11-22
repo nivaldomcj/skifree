@@ -34,7 +34,10 @@ impl GameState {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as u32;
+        Self::new_seeded(screen_w, screen_h, seed)
+    }
 
+    pub fn new_seeded(screen_w: i16, screen_h: i16, seed: u32) -> Self {
         // Load sprite dimensions from meta.json
         let sprite_dims = Self::load_sprite_dims();
 

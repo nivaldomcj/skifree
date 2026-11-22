@@ -2,8 +2,8 @@
 pub const STATE_TO_SPRITE: [u16; 64] = [
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, // 0x00-0x0f
     17, 18, 19, 20, 21, 22, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, // 0x10-0x1f
-    38, 39, 41, 42, 43, 44, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, // 0x20-0x2f
-    75, 76, 77, 78, 79, 80, 81, 83, 84, 85, 84, 49, 87, 88, 89, 89, // 0x30-0x3f
+    38, 39, 40, 41, 42, 43, 44, 65, 66, 67, 68, 69, 70, 71, 72, 73, // 0x20-0x2f
+    74, 75, 76, 77, 78, 79, 80, 81, 83, 84, 85, 84, 49, 87, 88, 89, // 0x30-0x3f
 ];
 
 /// Skier physics table (DAT_0040a308), 8 i16 per state
@@ -98,5 +98,103 @@ pub fn mouse_direction(dx: i16, dy: i16) -> u16 {
         6
     } else {
         3
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    /// The tables live in .rdata, which is identity-mapped in this binary
+    /// (vaddr 0xa000 == rawptr 0xa000), so RVA == file offset.
+    fn read_exe() -> Vec<u8> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("ski32.exe");
+        std::fs::read(path).expect("ski32.exe must be in the repo root")
+    }
+
+    fn u16_at(data: &[u8], off: usize) -> u16 {
+        u16::from_le_bytes([data[off], data[off + 1]])
+    }
+    fn i16_at(data: &[u8], off: usize) -> i16 {
+        i16::from_le_bytes([data[off], data[off + 1]])
+    }
+    fn u32_at(data: &[u8], off: usize) -> u32 {
+        u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
+    }
+
+    #[test]
+    fn state_to_sprite_matches_binary() {
+        let exe = read_exe();
+        for (state, &want) in STATE_TO_SPRITE.iter().enumerate() {
+            let got = u16_at(&exe, 0xa1ac + state * 2);
+            assert_eq!(got, want, "state 0x{state:02x}");
+        }
+    }
+
+    #[test]
+    fn direction_transition_matches_binary() {
+        let exe = read_exe();
+        for (i, &want) in DIRECTION_TRANSITION.iter().enumerate() {
+            let got = u32_at(&exe, 0xa258 + i * 4) as u16;
+            assert_eq!(got, want, "index {i}");
+        }
+    }
+
+    #[test]
+    fn skier_physics_matches_binary() {
+        let exe = read_exe();
+        for (state, entry) in SKIER_PHYSICS.iter().enumerate() {
+            let off = 0xa308 + state * 16;
+            assert_eq!(i16_at(&exe, off), entry.accel, "state {state:#04x} accel");
+            assert_eq!(i16_at(&exe, off + 2), entry.max_speed, "state {state:#04x} max_speed");
+            assert_eq!(i16_at(&exe, off + 4), entry.decel, "state {state:#04x} decel");
+            assert_eq!(i16_at(&exe, off + 6), entry.friction_div, "state {state:#04x} friction_div");
+            assert_eq!(i16_at(&exe, off + 8), entry.direction, "state {state:#04x} direction");
+        }
+    }
+
+    #[test]
+    fn crash_landing_matches_binary() {
+        let exe = read_exe();
+        for (i, &want) in CRASH_LANDING.iter().enumerate() {
+            // Table is indexed by absolute state (0x0d..=0x15)
+            let got = u32_at(&exe, 0xa434 + (0x0d + i) * 4) as u16;
+            assert_eq!(got, want, "state {:#04x}", 0x0d + i);
+        }
+    }
+
+    #[test]
+    fn dog_physics_matches_binary() {
+        let exe = read_exe();
+        for (i, entry) in DOG_PHYSICS.iter().enumerate() {
+            let off = 0xa490 + i * 16;
+            assert_eq!(i16_at(&exe, off), entry.accel, "dog state {i} accel");
+            assert_eq!(i16_at(&exe, off + 2), entry.max_speed, "dog state {i} max_speed");
+            assert_eq!(i16_at(&exe, off + 4), entry.decel, "dog state {i} decel");
+            assert_eq!(i16_at(&exe, off + 6), entry.friction_div, "dog state {i} friction_div");
+            assert_eq!(i16_at(&exe, off + 8), entry.direction, "dog state {i} direction");
+        }
+    }
+
+    #[test]
+    fn snowboarder_physics_matches_binary() {
+        let exe = read_exe();
+        for (i, entry) in SNOWBOARDER_PHYSICS.iter().enumerate() {
+            let off = 0xa4e0 + i * 16;
+            assert_eq!(i16_at(&exe, off), entry.accel, "sb state {i} accel");
+            assert_eq!(i16_at(&exe, off + 2), entry.max_speed, "sb state {i} max_speed");
+            assert_eq!(i16_at(&exe, off + 4), entry.decel, "sb state {i} decel");
+            assert_eq!(i16_at(&exe, off + 6), entry.friction_div, "sb state {i} friction_div");
+            assert_eq!(i16_at(&exe, off + 8), entry.direction, "sb state {i} direction");
+        }
+    }
+
+    #[test]
+    fn mouse_direction_cardinals() {
+        assert_eq!(mouse_direction(0, 10), 0); // straight down
+        assert_eq!(mouse_direction(1, 0), 6); // horizontal right (dy<=0)
+        assert_eq!(mouse_direction(-1, 0), 3); // horizontal left (dy<=0)
+        assert_eq!(mouse_direction(0, -1), 6); // dy<=0, dx>=0
     }
 }

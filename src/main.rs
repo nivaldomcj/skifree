@@ -1,7 +1,6 @@
-mod game;
 mod platform;
 
-use game::state::GameState;
+use skifree::game::state::GameState;
 use macroquad::prelude::*;
 use platform::audio::Audio;
 use platform::input::{GameAction, Input};

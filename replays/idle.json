@@ -1,0 +1,7 @@
+{
+  "seed": 1,
+  "course": "freestyle",
+  "ticks": 250,
+  "delta_ms": 40,
+  "inputs": []
+}
