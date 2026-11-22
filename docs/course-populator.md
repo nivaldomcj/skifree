@@ -62,7 +62,8 @@ they scroll out of the padded viewport.
 
 ## Scenery collisions (`FUN_00403a00` case 0)
 
-- **SnowBump**: skier in state 0 → `vz = 1`, state `0x0d`; `vy` halved if > 4.
+- **SnowBump**: skier in state 0 → `vz = 1`, state `0x0d`; `vy` halved if > 4
+  (re-fires on every overlapping tick, so a slow crossing halves repeatedly).
 - **Tree / Dog / Obstacle / Ambient / Lift / Eating**: z-overlap test —
   flying over (or under) → **+6 style**, no crash. Otherwise grounded → crash
   (`0x0b`), airborne → crash-landing (`0x11`), **−32 style**. Hitting the
@@ -76,14 +77,21 @@ they scroll out of the padded viewport.
   bounce.
 - **Banner (ramp)**: skier below half its height and moving down → launched
   at its own speed (`vz = vy`, +1, state `0x0d`).
-- **Snowboarder / Effect**: brush past — `vy` halved, no crash; skiing
-  through a jump puff (sprite 0x52) costs **−16 style**.
+- **Snowboarder / Gate / Effect (classes 2/0x0c/0x11)**: a graze halves `vy`
+  on **every overlapping tick**; brushing the snowboarder's **jump puff
+  (sprite 0x52)** also costs **−16 style**. Verified against the original's
+  inner switch (table `0x404000`, indexed by class−1): cases 2/12/17 jump to
+  one block that halves `vy` when its flag argument is nonzero (it always is
+  in practice — the callee reads a caller stack slot holding a stable
+  pointer) and then tests the sprite for `0x52`.
+- **Entrance banners (sprites 61/62/63) never collide**: they hang 0x42 (66)
+  units up on their poles (spawn-record field `+0x10`), so their AABB stays
+  above the skier's. The port spawns markers with `z = 0x42` and draws actors
+  at `sy − z`, which reproduces both the visual (sign aloft) and the
+  non-collision.
 
 ### Deliberate simplifications
 
-- The original's `bVar4` (actors moving apart) gates a few graze/bounce
-  nuances (tree graze halving `vy`, mid-air rock bounce, ramp trigger); the
-  port applies the dominant branch and drops the `bVar4` condition.
 - The original runs the collision switch for both pair orders (so the dog's
   own side — +20 and fleeing states — also fires); the port resolves only the
   player side.

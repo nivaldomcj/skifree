@@ -22,6 +22,10 @@ Course identity is settled by the entrance banner sprites: 61 "Slalom ↙"
 
 - **Entrance banner** (class 0x11, sprites 61/62/63) near the spawn area;
   its x comes from a camera formula clamped into the strip's direction.
+  Markers hang **0x42 (66) units up** (spawn-record field `+0x10`), so the
+  skier passes *under* them — visually and in the collision AABBs (verified
+  against the original's cached actor boxes). The port spawns markers with
+  `z = 0x42`.
 - **Start posts** (sprites 57/58, "Start" arrows) at the strip edges, y=0x280.
 - **Gate posts** (class 0x0c, sprites 0x17/0x18 alternating): slalom at
   x=-496/-400, y from 0x3c0 step 0x140; tree slalom at x=400/432, y from
