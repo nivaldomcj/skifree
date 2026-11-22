@@ -32,6 +32,13 @@ async fn main() {
     while running {
         window::enforce_min_size();
 
+        // Track the live window size (the original recomputes its client
+        // rect on every WM_SIZE). The game viewport excludes the HUD strip.
+        let view_w = screen_width().max(window::MIN_WIDTH as f32) as i16;
+        let view_h = (screen_height() - window::HUD_HEIGHT).max(window::MIN_HEIGHT as f32) as i16;
+        game.screen_w = view_w;
+        game.screen_h = view_h;
+
         let mut steer_left = false;
         let mut steer_right = false;
         let mut steer_up = false;
@@ -101,8 +108,8 @@ async fn main() {
                     }
                 }
                 GameAction::MouseSteer(mx, my) => {
-                    let center_x = window::DEFAULT_WIDTH as f32 / 2.0;
-                    let center_y = window::DEFAULT_HEIGHT as f32 / 2.0;
+                    let center_x = screen_width() / 2.0;
+                    let center_y = (screen_height() - window::HUD_HEIGHT) / 2.0;
                     game.steer_mouse(
                         (mx - center_x) as i16,
                         (my - center_y) as i16,
@@ -133,8 +140,8 @@ async fn main() {
                 let (sx, sy) = game.camera.world_to_screen(
                     actor.x,
                     actor.y,
-                    window::DEFAULT_WIDTH as i16,
-                    window::DEFAULT_HEIGHT as i16,
+                    view_w,
+                    view_h,
                 );
                 renderer.draw_sprite(actor.sprite_id as u32, sx as f32, sy as f32);
             }
