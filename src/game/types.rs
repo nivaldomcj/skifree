@@ -91,6 +91,11 @@ pub struct Actor {
     /// original the mob node keeps its actor link until the end of the tick,
     /// so the node still behaves as live during its next update.
     pub proxy_unlink: bool,
+    /// y at the start of the current tick (the original's previous-position
+    /// copy at `[actor+4]`, returned by FUN_00404070, which the collision
+    /// crossing test compares against). `None` for actors created during
+    /// the tick: the original then compares the actor with itself.
+    pub prev_y: Option<i16>,
 }
 
 impl Default for Actor {
@@ -111,6 +116,7 @@ impl Default for Actor {
             event_idx: None,
             next: None,
             proxy_unlink: false,
+            prev_y: None,
         }
     }
 }

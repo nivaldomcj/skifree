@@ -34,15 +34,15 @@ pub fn update_monster(
         return;
     }
 
-    // 3. Eating sequence (wall-clock state machine, works even while paused).
+    // 3. Eating sequence (wall-clock state machine, works even while paused;
+    //    FUN_00404350's switch at 0x4043be). Two chewing loops: 0x32 <-> 0x33
+    //    until 500 ms, and 0x36 <-> 0x37 until 3000 ms (verified via Frida).
     if (0x32..=0x37).contains(&actor.state) {
         let elapsed = elapsed_ms.wrapping_sub(actor.timestamp);
         match actor.state {
             0x32 => physics::change_state(actor, 0x33),
             0x33 => {
-                if elapsed > 499 {
-                    physics::change_state(actor, 0x34);
-                }
+                physics::change_state(actor, if elapsed >= 500 { 0x34 } else { 0x32 });
             }
             0x34 => {
                 if elapsed > 700 {
@@ -56,9 +56,7 @@ pub fn update_monster(
             }
             0x36 => physics::change_state(actor, 0x37),
             0x37 => {
-                if elapsed > 2999 {
-                    physics::change_state(actor, 0x2a);
-                }
+                physics::change_state(actor, if elapsed >= 3000 { 0x2a } else { 0x36 });
             }
             _ => {}
         }
@@ -251,9 +249,11 @@ mod tests {
         update_monster(&mut m, None, &mut rng, 1000, W, H); // 0x32 → 0x33 immediately
         assert_eq!(m.state, 0x33);
 
-        update_monster(&mut m, None, &mut rng, 1400, W, H); // 400ms elapsed: still 0x33
+        update_monster(&mut m, None, &mut rng, 1400, W, H); // 400ms: chew back to 0x32
+        assert_eq!(m.state, 0x32);
+        update_monster(&mut m, None, &mut rng, 1440, W, H); // 0x32 → 0x33
         assert_eq!(m.state, 0x33);
-        update_monster(&mut m, None, &mut rng, 1501, W, H); // 501ms: → 0x34
+        update_monster(&mut m, None, &mut rng, 1500, W, H); // 500ms: → 0x34
         assert_eq!(m.state, 0x34);
 
         update_monster(&mut m, None, &mut rng, 2201, W, H); // 701ms: → 0x35
@@ -263,7 +263,11 @@ mod tests {
 
         update_monster(&mut m, None, &mut rng, 3201, W, H); // → 0x37 immediately
         assert_eq!(m.state, 0x37);
-        update_monster(&mut m, None, &mut rng, 6000, W, H); // 3001ms: → 0x2a
+        update_monster(&mut m, None, &mut rng, 3999, W, H); // 2999ms: chew back to 0x36
+        assert_eq!(m.state, 0x36);
+        update_monster(&mut m, None, &mut rng, 3999, W, H); // 0x36 → 0x37
+        assert_eq!(m.state, 0x37);
+        update_monster(&mut m, None, &mut rng, 4000, W, H); // 3000ms: → 0x2a
         assert_eq!(m.state, 0x2a);
     }
 

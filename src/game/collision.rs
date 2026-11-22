@@ -35,24 +35,23 @@ pub fn in_event_window(y: i16, camera: &Camera, screen_w: i16, screen_h: i16) ->
     sy >= -VIEW_PAD - 0x3c && sy < screen_h + VIEW_PAD + 0x3c
 }
 
-/// FUN_00403a00's crossing flag (local_4, a.k.a. bVar4). Compares the
-/// skier's current/previous y against the other actor's y (FUN_00404070
-/// gives a static actor itself as its "previous" copy, so its y is used for
-/// both). Set when the skier's y reached or passed the other's y this tick,
-/// i.e. exactly one tick per crossing. Mirrors the original's branch order,
-/// including the equality edge cases.
-pub fn crossed(y: i16, pre_y: i16, other_y: i16) -> bool {
-    let (a, a0, b, b0) = (y, pre_y, other_y, other_y);
+/// FUN_00403a00's crossing flag (local_4, a.k.a. bVar4). Compares both
+/// actors' current y with their previous y (FUN_00404070: the previous-
+/// position copy at `[actor+4]`, i.e. the y at the start of the tick, or the
+/// actor itself when it has none). Set when their vertical order flipped or
+/// they met this tick — exactly one tick per crossing. Mirrors the original's
+/// branch order, including the equality edge cases.
+pub fn crossed(y: i16, pre_y: i16, other_y: i16, other_pre_y: i16) -> bool {
+    let (a, a0, b, b0) = (y, pre_y, other_y, other_pre_y);
     let flips = (a >= b && a0 <= b0) || (a <= b && a0 >= b0);
     flips && !(a == b && a0 == b0)
 }
 
-/// Collision dispatch (FUN_00403a00, player side).
-///
-/// The original runs the switch once per ordered pair; the port calls this
-/// once per unordered pair and resolves the player side internally. `a_dims`
-/// / `b_dims` are the actors' current sprite dimensions, needed for the
-/// z-overlap (flyover) tests.
+/// Collision handler for one *ordered* pair (FUN_00403a00): `a` is the first
+/// actor, whose class picks the outer switch case; `b` is the other one.
+/// `check_all_collisions` calls it for both orders, like the original.
+/// `a_dims` / `b_dims` are the actors' current sprite dimensions, needed for
+/// the z-overlap (flyover) tests.
 pub fn handle_collision(
     a: &mut Actor,
     b: &mut Actor,
@@ -64,19 +63,22 @@ pub fn handle_collision(
 ) -> CollisionResult {
     let mut result = CollisionResult::default();
 
-    // Only the player (class 0) triggers most collisions
-    if a.class == ActorClass::Skier || b.class == ActorClass::Skier {
+    // First actor classes >= 0xb (scenery, effects) have no handler.
+    if a.class != ActorClass::Skier {
+        return other_first(a, b, a_idx, b_dims);
+    }
+
+    // Skier first (outer case 0).
+    {
         if std::env::var_os("SKIFREE_LOG_COLLISIONS").is_some() {
-            let (s, o) = if a.class == ActorClass::Skier { (&*a, &*b) } else { (&*b, &*a) };
             eprintln!(
                 "collision skier=({},{}) vy={} other=({:?},spr{},({},{})",
-                s.x, s.y, s.vy, o.class, o.sprite_id, o.x, o.y
+                a.x, a.y, a.vy, b.class, b.sprite_id, b.x, b.y
             );
         }
-        let a_is_skier = a.class == ActorClass::Skier;
-        let (skier, other) = if a_is_skier { (&mut *a, &mut *b) } else { (&mut *b, &mut *a) };
-        let other_idx = if a_is_skier { b_idx } else { a_idx };
-        let (skier_dims, other_dims) = if a_is_skier { (a_dims, b_dims) } else { (b_dims, a_dims) };
+        let (skier, other) = (&mut *a, &mut *b);
+        let other_idx = b_idx;
+        let (skier_dims, other_dims) = (a_dims, b_dims);
 
         // z-overlap: the skier flies over (or under) the other actor.
         let other_bottom = other.z + other_dims.1;
@@ -84,12 +86,10 @@ pub fn handle_collision(
         let flyover = other_bottom < skier.z || skier_bottom < other.z;
 
         match other.class {
+            // Skier-first vs a monster does nothing (inner cases 5-8 fall
+            // to the default); the eating runs monster-first.
             ActorClass::MonsterLeft | ActorClass::MonsterRight |
-            ActorClass::MonsterTop | ActorClass::MonsterBottom => {
-                // Eaten by monster
-                result.skier_eaten = true;
-                result.eaten_by = Some(other_idx);
-            }
+            ActorClass::MonsterTop | ActorClass::MonsterBottom => {}
             ActorClass::SnowBump => {
                 // Snow bump: launches a straight-downhill skier (state 0).
                 if skier.state == 0 {
@@ -102,63 +102,23 @@ pub fn handle_collision(
             }
             ActorClass::Tree | ActorClass::Dog | ActorClass::Obstacle |
             ActorClass::AmbientMob | ActorClass::Lift | ActorClass::Eating => {
-                if flyover {
-                    // Flew over (or under) it: style bonus, no crash.
-                    if other.class == ActorClass::Eating {
-                        result.score_delta += 1000;
-                        other.class = ActorClass::Tree;
-                        other.sprite_id = 0x32;
-                    } else {
-                        result.score_delta += 6;
-                    }
-                } else if !crossed(skier.y, skier.y - skier.vy, other.y) {
-                    // FUN_00403a00: overlapping but not on the crossing tick
-                    // — nothing happens (the hit lands the tick the skier's
-                    // y reaches the obstacle's base).
-                } else if other.class == ActorClass::Tree
-                    && (skier.x as i32 - other.x as i32).abs()
-                        > (skier_dims.0.max(other_dims.0) as i32) / 2
-                {
-                    // Glancing a tree (class 0xd): off-centre by more than half
-                    // the wider sprite — just halves vy, no crash.
-                    skier.vy /= 2;
-                } else {
-                    if skier.z == 0 && skier.vz == 0 {
-                        result.skier_crash = true; // grounded -> state 0x0b
-                    } else {
-                        result.skier_state = Some(0x11); // crash-landing
-                        if other.sprite_id == 0x32 {
-                            // Breaking the dead tree: it becomes a breaking
-                            // animation (class 9, state 0x38), +16 style.
-                            other.class = ActorClass::Eating;
-                            super::physics::change_state(other, 0x38);
-                            result.score_delta += 0x10;
-                            return result;
-                        }
-                    }
-                    result.score_delta += -0x20;
-                }
+                solid_hit(skier, other, skier_dims, other_dims, flyover, &mut result);
             }
             ActorClass::Rock => {
-                if skier.z > 0 {
-                    if other_bottom < skier.z {
-                        // Flying above: a previously flipped rock (sprite 86)
-                        // is collected for +100; otherwise sail over.
-                        if other.sprite_id == 0x56 {
-                            result.free_actor = Some(other_idx);
-                            result.score_delta += 100;
-                        }
-                    } else {
-                        // Bounce off mid-air.
-                        skier.vz = skier.vy / 2;
-                        result.score_delta += 1;
+                // Case 0xe: grounded -> the shared solid-obstacle path.
+                // Airborne above the rock's top: a flipped rock (sprite 0x56)
+                // is collected for +100. Airborne below the top: bounce at
+                // vy / 2 (+1), on the crossing tick only.
+                if skier.z <= 0 {
+                    solid_hit(skier, other, skier_dims, other_dims, flyover, &mut result);
+                } else if skier.z > other.z + other_dims.1 {
+                    if other.sprite_id == 0x56 {
+                        result.free_actor = Some(other_idx);
+                        result.score_delta += 100;
                     }
-                } else if skier.vy < 0 && other.sprite_id == 0x2e {
-                    // Uphill hit flips the small rock flat (sprite 86).
-                    other.sprite_id = 0x56;
-                } else {
-                    result.skier_crash = true;
-                    result.score_delta += -0x20;
+                } else if crossed(skier.y, skier.prev_y.unwrap_or(skier.y), other.y, other.prev_y.unwrap_or(other.y)) {
+                    skier.vz = skier.vy / 2;
+                    result.score_delta += 1;
                 }
             }
             ActorClass::RockLarge => {
@@ -176,8 +136,12 @@ pub fn handle_collision(
                 }
             }
             ActorClass::Banner => {
-                // Rainbow freestyle ramp: launches the skier at its own speed.
-                if (skier.z as i32) < (other_dims.1 as i32) / 2 && skier.vy > 0 {
+                // Rainbow freestyle ramp (case 0x10): on the crossing tick, a
+                // skier below half the ramp's top launches at its own speed.
+                if crossed(skier.y, skier.prev_y.unwrap_or(skier.y), other.y, other.prev_y.unwrap_or(other.y))
+                    && (skier.z as i32) < (other.z as i32 + other_dims.1 as i32) / 2
+                    && skier.vy > 0
+                {
                     skier.vz = skier.vy;
                     result.score_delta += 1;
                     result.skier_state = Some(0x0d);
@@ -190,7 +154,7 @@ pub fn handle_collision(
                 // the skier's y crosses the other's y (pre-update y on one
                 // side, post-update y on the other). The collision runs
                 // after the integrator, so pre-update y = y - vy.
-                if crossed(skier.y, skier.y - skier.vy, other.y) {
+                if crossed(skier.y, skier.prev_y.unwrap_or(skier.y), other.y, other.prev_y.unwrap_or(other.y)) {
                     skier.vy /= 2;
                 }
                 if other.sprite_id == 0x52 {
@@ -206,20 +170,6 @@ pub fn handle_collision(
         }
     }
 
-    // Monster eating sequence trigger
-    if (a.class == ActorClass::MonsterLeft || a.class == ActorClass::MonsterRight ||
-        a.class == ActorClass::MonsterTop || a.class == ActorClass::MonsterBottom) &&
-       b.class == ActorClass::Skier {
-        result.skier_eaten = true;
-        result.eaten_by = Some(a_idx);
-    }
-    if (b.class == ActorClass::MonsterLeft || b.class == ActorClass::MonsterRight ||
-        b.class == ActorClass::MonsterTop || b.class == ActorClass::MonsterBottom) &&
-       a.class == ActorClass::Skier {
-        result.skier_eaten = true;
-        result.eaten_by = Some(b_idx);
-    }
-
     result
 }
 
@@ -233,7 +183,138 @@ pub struct CollisionResult {
     pub free_actor: Option<usize>,
 }
 
-/// Check collisions between all actor pairs (FUN_00401e50 inner loop)
+/// FUN_00403a00's shared solid-obstacle path (skier first; inner cases
+/// 1/3/4/9/10/13, and 14 for a grounded skier). In order: fly over/under
+/// (+6, or +1000 for hurdling the eating monster, which leaves a dead tree);
+/// nothing unless this is the crossing tick; a tree hit off-centre by more
+/// than half the wider sprite only halves vy; otherwise the skier goes down —
+/// state 0xb when grounded and still, else 0x11 (crash-landing; hitting the
+/// dead tree 0x32 then breaks it for +16 instead). An uphill hit (vy < 0) on
+/// the small rock (sprite 0x2e) flips it flat (0x56) with no penalty; any
+/// other hit costs 32 style.
+fn solid_hit(
+    skier: &mut Actor,
+    other: &mut Actor,
+    skier_dims: (i16, i16),
+    other_dims: (i16, i16),
+    flyover: bool,
+    result: &mut CollisionResult,
+) {
+    if flyover {
+        if other.class == ActorClass::Eating {
+            result.score_delta += 1000;
+            other.class = ActorClass::Tree;
+            other.sprite_id = 0x32;
+        } else {
+            result.score_delta += 6;
+        }
+        return;
+    }
+    if !crossed(skier.y, skier.prev_y.unwrap_or(skier.y), other.y, other.prev_y.unwrap_or(other.y)) {
+        return;
+    }
+    if other.class == ActorClass::Tree
+        && (skier.x as i32 - other.x as i32).abs() > (skier_dims.0.max(other_dims.0) as i32) / 2
+    {
+        skier.vy /= 2;
+        return;
+    }
+    if skier.z == 0 && skier.vz == 0 {
+        result.skier_crash = true; // state 0x0b
+    } else {
+        result.skier_state = Some(0x11);
+        if other.sprite_id == 0x32 {
+            // Breaking the dead tree: class 9 breaking animation, +16.
+            other.class = ActorClass::Eating;
+            super::physics::change_state(other, 0x38);
+            result.score_delta += 0x10;
+            return;
+        }
+    }
+    if skier.vy < 0 && other.sprite_id == 0x2e {
+        other.sprite_id = 0x56;
+    } else {
+        result.score_delta += -0x20;
+    }
+}
+
+/// Outer cases of FUN_00403a00 for a non-skier first actor `a` against `b`.
+/// `top` is the other actor's top (`b.z` + its sprite height); "below the
+/// top" compares the first actor's z against it. Style points go through
+/// `score_delta` (FUN_00403420); state changes apply immediately, as the
+/// original's FUN_00402120 calls do.
+fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -> CollisionResult {
+    let mut result = CollisionResult::default();
+    let top = b.z + b_dims.1;
+    match a.class {
+        // Case 1, dog: knocked into its yelp/flee states 0x19 (other on the
+        // ground) or 0x1a (other airborne); +20 style when it was the player.
+        ActorClass::Dog => {
+            if a.state < 0x19 {
+                if b.class == ActorClass::Skier {
+                    result.score_delta += 20;
+                }
+                super::physics::change_state(a, if b.z > 0 { 0x1a } else { 0x19 });
+            }
+        }
+        // Case 2, snowboarder: hit by anything moving -> falls (state 0x1d);
+        // +3 style when it was the player. Static obstacles don't count.
+        ActorClass::Snowboarder => {
+            if a.state < 0x1d && (b.vx != 0 || b.vy != 0) {
+                if b.class == ActorClass::Skier {
+                    result.score_delta += 3;
+                }
+                super::physics::change_state(a, 0x1d);
+            }
+        }
+        // Case 3, crossing skier: sub-case by the other's class (byte table
+        // at 0x404054).
+        ActorClass::Obstacle => match b.class {
+            ActorClass::Skier | ActorClass::Dog | ActorClass::Obstacle | ActorClass::Tree
+            | ActorClass::Rock => {
+                if b.class == ActorClass::Skier {
+                    result.score_delta += 20;
+                }
+                // Below the other's top -> falls (0x22), unless already down.
+                if a.z < top && a.state != 0x22 {
+                    super::physics::change_state(a, 0x22);
+                }
+            }
+            ActorClass::RockLarge | ActorClass::Banner => {
+                // Bump/ramp: launched at half its speed (state 0x21).
+                if a.z < top {
+                    a.vz = a.vy / 2;
+                    super::physics::change_state(a, 0x21);
+                }
+            }
+            _ => {}
+        },
+        // Cases 5-8, monster: eats the player.
+        ActorClass::MonsterLeft | ActorClass::MonsterRight | ActorClass::MonsterTop
+        | ActorClass::MonsterBottom => {
+            if b.class == ActorClass::Skier {
+                result.skier_eaten = true;
+                result.eaten_by = Some(a_idx);
+            }
+        }
+        // Case 10, lift chair: stops (vx = 0, state 0x3c).
+        ActorClass::Lift => {
+            a.vx = 0;
+            super::physics::change_state(a, 0x3c);
+        }
+        _ => {}
+    }
+    result
+}
+
+/// Collision pass (FUN_00401e50, after the mob nodes). Mirrors the original's
+/// pair walk: for each actor `j` in list order, against each actor `i`
+/// *before* it in the list (the inner loop stops at the outer actor, so every
+/// unordered pair is visited once), test the pair when at least one of them
+/// moved this tick (flag 0x20, set by FUN_00402390 on a position change) and
+/// their boxes intersect; then run the handler for (later, earlier) and, if
+/// neither got removed, for (earlier, later). `collidable` excludes actors the
+/// original wouldn't have in its list (mob nodes without a live actor).
 pub fn check_all_collisions(
     pool: &mut super::actor::ActorPool,
     player_idx: Option<usize>,
@@ -241,60 +322,65 @@ pub fn check_all_collisions(
     screen_w: i16,
     screen_h: i16,
     sprite_dims: &[(i16, i16)],
+    moved: &dyn Fn(usize, &Actor) -> bool,
+    collidable: &dyn Fn(&Actor) -> bool,
 ) -> Vec<CollisionResult> {
     let mut results = Vec::new();
     let indices = pool.active_indices();
+    let mut removed: Vec<usize> = Vec::new();
 
-    for i in 0..indices.len() {
-        for j in (i + 1)..indices.len() {
-            let idx_a = indices[i];
-            let idx_b = indices[j];
-
-            let (a, b) = match (pool.get(idx_a), pool.get(idx_b)) {
+    for j in 0..indices.len() {
+        for i in 0..j {
+            let (later, earlier) = (indices[j], indices[i]);
+            if removed.contains(&later) || removed.contains(&earlier) {
+                continue;
+            }
+            let (a, b) = match (pool.get(later), pool.get(earlier)) {
                 (Some(a), Some(b)) => (a.clone(), b.clone()),
                 _ => continue,
             };
-
-            // Skip dead/invisible actors
-            if a.flags.dead || b.flags.dead {
+            if a.flags.dead || b.flags.dead || !collidable(&a) || !collidable(&b) {
+                continue;
+            }
+            if !moved(later, &a) && !moved(earlier, &b) {
                 continue;
             }
 
-            // Get bounding boxes
             let (aw, ah) = sprite_dims.get(a.sprite_id as usize).copied().unwrap_or((16, 16));
             let (bw, bh) = sprite_dims.get(b.sprite_id as usize).copied().unwrap_or((16, 16));
-
             let (al, at, ar, ab) = actor_bounds(&a, aw, ah, camera, screen_w, screen_h);
             let (bl, bt, br, bb) = actor_bounds(&b, bw, bh, camera, screen_w, screen_h);
-
             if !intersects(al, at, ar, ab, bl, bt, br, bb) {
                 continue;
             }
 
-            // Handle collision — clone actors to avoid double borrow
-            let mut a_clone = a.clone();
-            let mut b_clone = b.clone();
-            let result = handle_collision(
-                &mut a_clone,
-                &mut b_clone,
-                player_idx,
-                idx_a,
-                idx_b,
-                (aw, ah),
-                (bw, bh),
-            );
-
-            // Write back changes
-            if let Some(a_mut) = pool.get_mut(idx_a) {
-                *a_mut = a_clone;
-            }
-            if let Some(b_mut) = pool.get_mut(idx_b) {
-                *b_mut = b_clone;
-            }
-
-            if result.score_delta != 0 || result.skier_crash || result.skier_eaten
-                || result.skier_state.is_some() || result.free_actor.is_some() {
-                results.push(result);
+            for (first, second, fd, sd) in [(later, earlier, (aw, ah), (bw, bh)), (earlier, later, (bw, bh), (aw, ah))] {
+                if removed.contains(&first) || removed.contains(&second) {
+                    break;
+                }
+                let (mut f, mut s) = match (pool.get(first), pool.get(second)) {
+                    (Some(f), Some(s)) => (f.clone(), s.clone()),
+                    _ => break,
+                };
+                let result = handle_collision(&mut f, &mut s, player_idx, first, second, fd, sd);
+                if let Some(m) = pool.get_mut(first) {
+                    *m = f;
+                }
+                if let Some(m) = pool.get_mut(second) {
+                    *m = s;
+                }
+                if let Some(idx) = result.free_actor {
+                    removed.push(idx);
+                }
+                if result.skier_eaten {
+                    if let Some(p) = player_idx {
+                        removed.push(p);
+                    }
+                }
+                if result.score_delta != 0 || result.skier_crash || result.skier_eaten
+                    || result.skier_state.is_some() || result.free_actor.is_some() {
+                    results.push(result);
+                }
             }
         }
     }
@@ -326,7 +412,13 @@ mod tests {
     }
 
     fn collide(s: &mut Actor, o: &mut Actor, sd: (i16, i16), od: (i16, i16)) -> CollisionResult {
-        handle_collision(s, o, Some(0), 0, 1, sd, od)
+        // Unless a test sets it, the skier moved at constant speed this tick.
+        if s.prev_y.is_none() {
+            s.prev_y = Some(s.y - s.vy);
+        }
+        let r = handle_collision(s, o, Some(0), 0, 1, sd, od);
+        s.prev_y = None;
+        r
     }
 
     #[test]
@@ -387,8 +479,10 @@ mod tests {
         s.vy = -2; // moving uphill
         let mut o = scenery(ActorClass::Rock, 46);
         let r = collide(&mut s, &mut o, (16, 30), (16, 11));
+        // FUN_00403a00 0x403dba..0x403dcd: the rock flips flat (0x56) and the
+        // grounded skier still goes down (state 0xb), but without the -32.
         assert_eq!(o.sprite_id, 0x56);
-        assert!(!r.skier_crash);
+        assert!(r.skier_crash);
         assert_eq!(r.score_delta, 0);
     }
 
@@ -456,16 +550,16 @@ mod tests {
     #[test]
     fn crossing_flag_fires_once_per_crossing() {
         // Approaching (both ticks above the obstacle): no.
-        assert!(!crossed(3387, 3371, 3406));
+        assert!(!crossed(3387, 3371, 3406, 3406));
         // Reached or passed this tick: yes.
-        assert!(crossed(3419, 3403, 3406));
-        assert!(crossed(3406, 3390, 3406));
+        assert!(crossed(3419, 3403, 3406, 3406));
+        assert!(crossed(3406, 3390, 3406, 3406));
         // Already past on the previous tick: no.
-        assert!(!crossed(3435, 3419, 3406));
+        assert!(!crossed(3435, 3419, 3406, 3406));
         // Moving uphill across it counts too.
-        assert!(crossed(3400, 3410, 3406));
+        assert!(crossed(3400, 3410, 3406, 3406));
         // Standing exactly on it with no movement: no.
-        assert!(!crossed(3406, 3406, 3406));
+        assert!(!crossed(3406, 3406, 3406, 3406));
     }
 
     #[test]
@@ -507,5 +601,20 @@ mod tests {
         s.z = 3;
         collide(&mut s, &mut o, (16, 32), (16, 4));
         assert_eq!(s.vz, 8, "below the top: bounce at vy / 2");
+    }
+
+    #[test]
+    fn getting_up_next_to_an_obstacle_is_not_a_crossing() {
+        // Crashed at 3942 just past a tree at 3941; getting up moves the
+        // skier 3942 -> 3943 while vy grows to 2. The previous y is the
+        // start-of-tick position (3942), not y - vy (3941): no new hit.
+        let mut s = skier();
+        s.y = 3943;
+        s.vy = 2;
+        s.prev_y = Some(3942);
+        let mut o = scenery(ActorClass::Tree, 51);
+        o.y = 3941;
+        let r = collide(&mut s, &mut o, (16, 32), (32, 64));
+        assert!(!r.skier_crash);
     }
 }

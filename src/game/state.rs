@@ -42,6 +42,11 @@ pub struct GameState {
     pub sprite_dims: Vec<(i16, i16)>,
     /// Debug: log spawn materializations (SKIFREE_LOG_SPAWNS).
     pub log_spawns: bool,
+    /// `SKIFREE_LOG_UPDATES`: print each actor-loop update (tick, class,
+    /// state, position) to stderr, to diff against tools/vm/trace_updates.js.
+    pub log_updates: bool,
+    /// Main-tick counter (port tick N = the original's FUN_00401e50 call N).
+    pub tick_count: u32,
 }
 
 impl GameState {
@@ -78,6 +83,8 @@ impl GameState {
             screen_h,
             sprite_dims,
             log_spawns: std::env::var_os("SKIFREE_LOG_SPAWNS").is_some(),
+            log_updates: std::env::var_os("SKIFREE_LOG_UPDATES").is_some(),
+            tick_count: 0,
         }
     }
 
@@ -118,6 +125,7 @@ impl GameState {
         self.fast_forward = false;
         self.paused = false;
         self.elapsed_ms = 0;
+        self.tick_count = 0;
         self.courses = [CourseRun::default(), CourseRun::default(), CourseRun::default()];
         self.course_clock_ms = 0;
         self.pending_score_save = false;
@@ -195,12 +203,31 @@ impl GameState {
         // they cannot re-materialize within the same tick.
         let mut spawn_requests: Vec<SpawnRequest> = Vec::new();
         let mut unlinked_events: Vec<usize> = Vec::new();
+        // Positions at the start of the tick, for the collision pass's
+        // "moved this tick" test (the original's flag 0x20, cleared in this
+        // loop and set by FUN_00402390 on any position change). Actors
+        // created during the tick count as moved.
+        let start_pos: Vec<Option<(i16, i16, i16, ActorClass)>> = (0..100)
+            .map(|i| self.pool.get(i).map(|a| (a.x, a.y, a.z, a.class)))
+            .collect();
+        // Previous-position copies for the collision crossing test.
+        for idx in self.pool.active_indices() {
+            if let Some(a) = self.pool.get_mut(idx) {
+                a.prev_y = Some(a.y);
+            }
+        }
         let indices = self.pool.active_indices();
         for idx in indices {
             let class = match self.pool.get(idx) {
                 Some(a) => a.class,
                 None => continue,
             };
+            if self.log_updates {
+                if let Some(a) = self.pool.get(idx) {
+                    eprintln!("upd tick={} cls={} st={} spr={} x={} y={} z={}",
+                        self.tick_count, a.class as u16, a.state, a.sprite_id, a.x, a.y, a.z);
+                }
+            }
 
             match class {
                 ActorClass::Skier => {
@@ -287,6 +314,8 @@ impl GameState {
             self.screen_w,
             self.screen_h,
             &self.sprite_dims,
+            &|idx, a| start_pos.get(idx).copied().flatten() != Some((a.x, a.y, a.z, a.class)),
+            &|a| !is_proxy_class(a.class) || a.flags.on_screen,
         );
 
         for result in results {
@@ -390,6 +419,7 @@ impl GameState {
                 event.actor_idx = None;
             }
         }
+        self.tick_count += 1;
     }
 
     /// Cull test for one actor right after its update (FUN_00401e50 first
@@ -600,16 +630,7 @@ impl GameState {
     /// Proxy classes (4-8): ambient mobs and monsters, which the original
     /// runs as mob nodes with an actor only while on screen.
     fn is_proxy(&self, idx: usize) -> bool {
-        self.pool.get(idx).is_some_and(|a| {
-            matches!(
-                a.class,
-                ActorClass::AmbientMob
-                    | ActorClass::MonsterLeft
-                    | ActorClass::MonsterRight
-                    | ActorClass::MonsterTop
-                    | ActorClass::MonsterBottom
-            )
-        })
+        self.pool.get(idx).is_some_and(|a| is_proxy_class(a.class))
     }
 
     /// Mob-node pass (FUN_004040a0). Each node is updated (FUN_004041c0:
@@ -811,6 +832,18 @@ impl GameState {
             .and_then(|idx| self.pool.get(idx))
             .map(|a| (a.vx, a.vy, a.vz))
     }
+}
+
+/// Mob-node classes (4-8): ambient mobs and the four monsters.
+fn is_proxy_class(class: ActorClass) -> bool {
+    matches!(
+        class,
+        ActorClass::AmbientMob
+            | ActorClass::MonsterLeft
+            | ActorClass::MonsterRight
+            | ActorClass::MonsterTop
+            | ActorClass::MonsterBottom
+    )
 }
 
 #[cfg(test)]

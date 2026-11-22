@@ -35,12 +35,13 @@ pub fn generate_course(screen_w: i16, screen_h: i16, rng: &mut super::rng::Rng) 
 }
 
 /// The "↓" banner y used by all three courses: one screen down minus 0x3c,
-/// clamped to 0x208 when that lands past 0x280. The original computes this
-/// from the raw window rect, which includes the 32px Win32 title bar
-/// (DAT_0040c6bc - DAT_0040c5fc): banner_y is 426 at a 704x681 client, not
-/// 394 — the frame constant is part of the world layout.
+/// clamped to 0x208 when that lands past 0x280 (FUN_00404b50:
+/// `client_bottom - DAT_0040c5fc + camera_y - 0x3c`, i.e. 2/3 of the client
+/// height at world-build time, minus 0x3c). An earlier "+32 title bar" term
+/// here only compensated for ground-truth runs whose world was built at a
+/// different client size than the one later played at.
 fn banner_y(top: i16, screen_h: i16) -> i16 {
-    let y = top + screen_h + 32 - 0x3c;
+    let y = top + screen_h - 0x3c;
     if y > 0x280 {
         0x208
     } else {
@@ -105,8 +106,8 @@ fn generate_slalom(events: &mut Vec<SpawnEvent>, left: i16, top: i16, screen_h: 
     marker(events, 0x3c, -320, SLALOM_FINISH_Y);
 }
 
-/// Tree slalom (right strip): long timed course, gates plus a random tree
-/// per gate row.
+/// Tree slalom (right strip): long timed course, gates only (see the loop
+/// comment — the original's per-row tree is never added).
 fn generate_tree_slalom(events: &mut Vec<SpawnEvent>, left: i16, top: i16, screen_w: i16, screen_h: i16, rng: &mut super::rng::Rng) {
     // "Tree Slalom ↘" banner: x = viewport_left + client_w - 0x3c, clamped to <= 0x140.
     let bx = (left + screen_w - 0x3c).min(0x140);
@@ -116,8 +117,14 @@ fn generate_tree_slalom(events: &mut Vec<SpawnEvent>, left: i16, top: i16, scree
     marker(events, 0x39, 0x140, COURSE_START_Y);
     marker(events, 0x3a, 0x200, COURSE_START_Y);
 
-    // Gate flags at x = 400 / 432, plus a random tree per row (and a
-    // discarded rand(400) per row — RNG consumption order is faithful).
+    // Gate flags at x = 400 / 432. Each row also *prepares* a tree record
+    // (class 0xd, sprite from FUN_00402850 -> rand(8), x = 400 + rand(32))
+    // and rolls a discarded rand(400) — but the original never adds that
+    // record: the loop head overwrites it with the next gate before calling
+    // FUN_00405120 (verified in FUN_00404b50 at 0x404df8..0x404e32 and with
+    // Frida: the original's event lists hold no class-0xd records here).
+    // The rolls are kept so world-build RNG consumption stays exact; the
+    // strip's trees come from the populator's zone B instead.
     let mut first = true;
     let mut y = 0x410i16;
     while y < 0x4100 {
@@ -125,24 +132,9 @@ fn generate_tree_slalom(events: &mut Vec<SpawnEvent>, left: i16, top: i16, scree
         gate(events, sprite, x, y);
         first = !first;
 
-        let tree_sprite = match rng.rand_range(8) {
-            0 => 0x32,
-            1 => 0x33,
-            _ => 0x31,
-        };
-        let tree_x = rng.rand_range(0x20) as i16 + 400;
-        rng.rand_range(400);
-        events.push(SpawnEvent {
-            actor_idx: None,
-            event_type: 0x0d,
-            state: 0,
-            class: 0x0d,
-            sprite: Some(tree_sprite),
-            x: tree_x,
-            y,
-            z: 0,
-            param: 0,
-        });
+        rng.rand_range(8); // tree sprite (FUN_00402850 case 0xd)
+        rng.rand_range(0x20); // tree x offset
+        rng.rand_range(400); // discarded
 
         y = y.wrapping_add(400);
     }
