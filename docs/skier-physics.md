@@ -67,6 +67,20 @@ Diagonal keys (numpad 1/3/7/9 and Home/End/PgUp/PgDn) set states 1/4/3/6
 directly. The port's input layer maps them onto the four cardinal actions, so
 they are reachable but routed through the cardinal transitions.
 
+## Jumping (`FUN_004066d0`, `state::click`)
+
+The two jump triggers differ, and both are ported:
+
+- **Mouse click** (`FUN_004066d0`): on the ground → `vz = 4`, state `0xd`. In
+  mid-air (and not in the flip state `0x11`) → cycles the trick poses
+  (`0xd→0x12→0x13→0xd`, `0xe→0x14`, `0xf→0x15`). Does nothing while crashed.
+- **Keyboard** (Insert/numpad0, in `FUN_00406170`): `vz = 2`, state `0xd`, and
+  scrubs downhill speed (`vy -= 4` when `vy > 4`). The port's input layer does
+  not currently map this key; jumping is via the mouse.
+
+So the mouse gives a higher hop that keeps your speed, the keyboard a smaller
+hop that also slows you down.
+
 ## Verification
 
 - `state_table` tests compare `SKIER_PHYSICS`, `LEFT_TRANSITION`,

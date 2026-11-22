@@ -279,13 +279,26 @@ impl GameState {
         }
     }
 
-    /// Handle click (jump)
+    /// Handle click (FUN_004066d0): jump on the ground, cycle tricks mid-air.
     pub fn click(&mut self) {
         if let Some(idx) = self.player_idx {
             if let Some(actor) = self.pool.get_mut(idx) {
-                if actor.z == 0 && actor.vz == 0 {
-                    actor.vz = 4; // jump
+                if actor.state == 0x0b {
+                    return; // crashed
+                }
+                if actor.z == 0 {
+                    actor.vz = 4; // jump (mouse uses vz=4, unlike keyboard's 2)
                     physics::change_state(actor, 0x0d);
+                } else if actor.state != 0x11 {
+                    let next = match actor.state {
+                        0x0d => 0x12,
+                        0x0e => 0x14,
+                        0x0f => 0x15,
+                        0x12 => 0x13,
+                        0x13 => 0x0d,
+                        _ => actor.state,
+                    };
+                    physics::change_state(actor, next);
                 }
             }
         }
@@ -303,5 +316,57 @@ impl GameState {
         self.player_idx
             .and_then(|idx| self.pool.get(idx))
             .map(|a| (a.vx, a.vy, a.vz))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn game_with_player() -> GameState {
+        let mut g = GameState::new_seeded(640, 480, 1);
+        g.new_game();
+        g
+    }
+
+    #[test]
+    fn click_on_ground_jumps_with_vz4() {
+        let mut g = game_with_player();
+        g.click();
+        let a = g.pool.get(g.player_idx.unwrap()).unwrap();
+        assert_eq!(a.vz, 4);
+        assert_eq!(a.state, 0x0d);
+    }
+
+    #[test]
+    fn click_mid_air_cycles_tricks() {
+        let mut g = game_with_player();
+        let idx = g.player_idx.unwrap();
+        // Force the skier airborne in the base jump pose.
+        {
+            let a = g.pool.get_mut(idx).unwrap();
+            a.z = 5;
+            physics::change_state(a, 0x0d);
+        }
+        g.click();
+        assert_eq!(g.pool.get(idx).unwrap().state, 0x12);
+        g.click();
+        assert_eq!(g.pool.get(idx).unwrap().state, 0x13);
+        g.click();
+        assert_eq!(g.pool.get(idx).unwrap().state, 0x0d);
+    }
+
+    #[test]
+    fn click_crashed_does_nothing() {
+        let mut g = game_with_player();
+        let idx = g.player_idx.unwrap();
+        {
+            let a = g.pool.get_mut(idx).unwrap();
+            physics::change_state(a, 0x0b);
+        }
+        g.click();
+        let a = g.pool.get(idx).unwrap();
+        assert_eq!(a.state, 0x0b);
+        assert_eq!(a.vz, 0);
     }
 }
