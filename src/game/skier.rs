@@ -8,17 +8,21 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool) {
     let state = actor.state;
 
     if state == 0x0b {
-        // Crashed — decelerate to stop
+        // Crashed (FUN_004028e0, state 0xb): the velocities step one unit
+        // toward zero each tick, but the integrator is NOT run — the skier
+        // stays put while "decelerating" — and once both are zero the state
+        // becomes 0xc (sitting in the snow). The original asserts z == 0 and
+        // vz == 0 here; integrate defensively if a crash ever starts airborne.
         if actor.z == 0 && actor.vz == 0 {
             if actor.vx == 0 && actor.vy == 0 {
                 physics::change_state(actor, 0x0c);
                 return;
             }
-            // Decelerate
             actor.vx = decelerate(actor.vx);
             actor.vy = decelerate(actor.vy);
+        } else {
+            physics::integrate(actor, fast_forward);
         }
-        physics::integrate(actor, fast_forward);
         return;
     }
 
@@ -168,5 +172,21 @@ fn decelerate(v: i16) -> i16 {
         v + 1
     } else {
         0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn crashed_skier_decelerates_in_place_then_sits() {
+        let mut a = Actor { active: true, state: 0x0b, x: 5, y: 100, vx: 1, vy: 2, ..Default::default() };
+        update_skier(&mut a, false);
+        assert_eq!((a.x, a.y, a.vx, a.vy, a.state), (5, 100, 0, 1, 0x0b));
+        update_skier(&mut a, false);
+        assert_eq!((a.x, a.y, a.vx, a.vy, a.state), (5, 100, 0, 0, 0x0b));
+        update_skier(&mut a, false);
+        assert_eq!((a.y, a.state), (100, 0x0c));
     }
 }

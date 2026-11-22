@@ -35,9 +35,12 @@ pub fn generate_course(screen_w: i16, screen_h: i16, rng: &mut super::rng::Rng) 
 }
 
 /// The "↓" banner y used by all three courses: one screen down minus 0x3c,
-/// clamped to 0x208 when that lands past 0x280.
+/// clamped to 0x208 when that lands past 0x280. The original computes this
+/// from the raw window rect, which includes the 32px Win32 title bar
+/// (DAT_0040c6bc - DAT_0040c5fc): banner_y is 426 at a 704x681 client, not
+/// 394 — the frame constant is part of the world layout.
 fn banner_y(top: i16, screen_h: i16) -> i16 {
-    let y = top + screen_h - 0x3c;
+    let y = top + screen_h + 32 - 0x3c;
     if y > 0x280 {
         0x208
     } else {
@@ -54,10 +57,10 @@ fn marker(events: &mut Vec<SpawnEvent>, sprite: u16, x: i16, y: i16) {
         sprite: Some(sprite),
         x,
         y,
-        // Course markers hang 0x42 (66) units up on their poles (spawn-record
-        // field at +0x10 in the original); the raised box keeps them out of
-        // the skier's collision path and the renderer draws them aloft.
-        z: 0x42,
+        // Course markers draw 16 (0x10) units up (the banner's sprite anchor
+        // offset; its collision box follows the draw box). The skier's box
+        // still grazes the banner's on the crossing tick.
+        z: 0x10,
         param: 0,
     });
 }

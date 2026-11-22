@@ -13,6 +13,40 @@ pub fn actor_bounds(actor: &Actor, sprite_w: i16, sprite_h: i16, camera: &Camera
     (left, top, left + sprite_w, top + sprite_h)
 }
 
+/// Padding around the client rect for the original's "live" viewport
+/// (DAT_0040c680 = client rect inflated by 0x78 on every side).
+pub const VIEW_PAD: i16 = 0x78;
+
+/// Whether a sprite at (x, y, z) is "on screen" in the original's sense: its
+/// FUN_004014b0 draw box strictly overlaps the padded viewport DAT_0040c680
+/// (FUN_00401290). Gates materialization (FUN_00404130), culling and the
+/// populator's density sum.
+pub fn in_padded_view(x: i16, y: i16, z: i16, sprite_w: i16, sprite_h: i16, camera: &Camera, screen_w: i16, screen_h: i16) -> bool {
+    let (sx, sy) = camera.world_to_screen(x, y, screen_w, screen_h);
+    let left = sx - sprite_w / 2;
+    let top = sy - z - sprite_h;
+    intersects(left, top, left + sprite_w, top + sprite_h, -VIEW_PAD, -VIEW_PAD, screen_w + VIEW_PAD, screen_h + VIEW_PAD)
+}
+
+/// The spawn-event y window scanned by FUN_004046e0 / FUN_004040a0: event y
+/// on screen within [pad_top - 0x3c, pad_bottom + 0x3c).
+pub fn in_event_window(y: i16, camera: &Camera, screen_w: i16, screen_h: i16) -> bool {
+    let (_, sy) = camera.world_to_screen(0, y, screen_w, screen_h);
+    sy >= -VIEW_PAD - 0x3c && sy < screen_h + VIEW_PAD + 0x3c
+}
+
+/// FUN_00403a00's crossing flag (local_4, a.k.a. bVar4). Compares the
+/// skier's current/previous y against the other actor's y (FUN_00404070
+/// gives a static actor itself as its "previous" copy, so its y is used for
+/// both). Set when the skier's y reached or passed the other's y this tick,
+/// i.e. exactly one tick per crossing. Mirrors the original's branch order,
+/// including the equality edge cases.
+pub fn crossed(y: i16, pre_y: i16, other_y: i16) -> bool {
+    let (a, a0, b, b0) = (y, pre_y, other_y, other_y);
+    let flips = (a >= b && a0 <= b0) || (a <= b && a0 >= b0);
+    flips && !(a == b && a0 == b0)
+}
+
 /// Collision dispatch (FUN_00403a00, player side).
 ///
 /// The original runs the switch once per ordered pair; the port calls this
@@ -32,6 +66,13 @@ pub fn handle_collision(
 
     // Only the player (class 0) triggers most collisions
     if a.class == ActorClass::Skier || b.class == ActorClass::Skier {
+        if std::env::var_os("SKIFREE_LOG_COLLISIONS").is_some() {
+            let (s, o) = if a.class == ActorClass::Skier { (&*a, &*b) } else { (&*b, &*a) };
+            eprintln!(
+                "collision skier=({},{}) vy={} other=({:?},spr{},({},{})",
+                s.x, s.y, s.vy, o.class, o.sprite_id, o.x, o.y
+            );
+        }
         let a_is_skier = a.class == ActorClass::Skier;
         let (skier, other) = if a_is_skier { (&mut *a, &mut *b) } else { (&mut *b, &mut *a) };
         let other_idx = if a_is_skier { b_idx } else { a_idx };
@@ -70,6 +111,17 @@ pub fn handle_collision(
                     } else {
                         result.score_delta += 6;
                     }
+                } else if !crossed(skier.y, skier.y - skier.vy, other.y) {
+                    // FUN_00403a00: overlapping but not on the crossing tick
+                    // — nothing happens (the hit lands the tick the skier's
+                    // y reaches the obstacle's base).
+                } else if other.class == ActorClass::Tree
+                    && (skier.x as i32 - other.x as i32).abs()
+                        > (skier_dims.0.max(other_dims.0) as i32) / 2
+                {
+                    // Glancing a tree (class 0xd): off-centre by more than half
+                    // the wider sprite — just halves vy, no crash.
+                    skier.vy /= 2;
                 } else {
                     if skier.z == 0 && skier.vz == 0 {
                         result.skier_crash = true; // grounded -> state 0x0b
@@ -115,7 +167,10 @@ pub fn handle_collision(
                     skier.vz = 4;
                     result.score_delta += 1;
                     result.skier_state = Some(0x0d);
-                } else {
+                } else if skier.z < other.z + other_dims.1 {
+                    // FUN_00403a00 case 0xf: airborne but still below the
+                    // rock's top (z + sprite height) — bounce off it. Above
+                    // the top the skier clears it untouched.
                     skier.vz = skier.vy / 2;
                     result.score_delta += 1;
                 }
@@ -129,17 +184,15 @@ pub fn handle_collision(
                 }
             }
             ActorClass::Snowboarder | ActorClass::Gate | ActorClass::Effect => {
-                // Entrance banners (sprites 61-63) hang 66px up on their
-                // poles; they spawn with z=0x42 so their box never reaches
-                // the skier (verified against the original's cached AABBs).
-                if other.class == ActorClass::Effect && (61..=63).contains(&other.sprite_id) {
-                    return result;
+                // FUN_00403a00 cases 2/0xc/0x11: a graze halves vy — but only
+                // when the original's "moving apart" flag (bVar4) is set,
+                // which happens on exactly one tick per crossing: the tick
+                // the skier's y crosses the other's y (pre-update y on one
+                // side, post-update y on the other). The collision runs
+                // after the integrator, so pre-update y = y - vy.
+                if crossed(skier.y, skier.y - skier.vy, other.y) {
+                    skier.vy /= 2;
                 }
-                // FUN_00403a00 cases 2/0xc/0x11: a graze halves vy on every
-                // overlapping tick (the original's bVar4 flag reads a stack
-                // slot that is always nonzero in practice); brushing the
-                // snowboarder's jump puff (sprite 0x52) also costs 16 style.
-                skier.vy /= 2;
                 if other.sprite_id == 0x52 {
                     result.score_delta += -0x10;
                 }
@@ -373,9 +426,86 @@ mod tests {
     fn snowboarder_brush_slows_without_crash() {
         let mut s = skier();
         let mut o = scenery(ActorClass::Snowboarder, 37);
+        // The graze fires on the crossing tick: the skier's y just crossed
+        // the other's y this update (pre-update y = y - vy = 0 <= 10 < 16).
+        o.y = 10;
+        s.y = 16;
         let r = collide(&mut s, &mut o, (16, 30), (26, 30));
         assert_eq!(s.vy, 8);
         assert!(!r.skier_crash);
         assert_eq!(r.score_delta, 0);
+    }
+
+    #[test]
+    fn graze_does_not_slow_before_the_crossing_tick() {
+        let mut s = skier();
+        let mut o = scenery(ActorClass::Snowboarder, 37);
+        // Still far ahead: no crossing this tick — no halving.
+        o.y = 100;
+        let r = collide(&mut s, &mut o, (16, 30), (26, 30));
+        assert_eq!(s.vy, 16);
+        assert!(!r.skier_crash);
+        // Already past (crossed on an earlier tick): no halving either.
+        let mut s2 = skier();
+        let mut o2 = scenery(ActorClass::Snowboarder, 37);
+        o2.y = -100;
+        collide(&mut s2, &mut o2, (16, 30), (26, 30));
+        assert_eq!(s2.vy, 16);
+    }
+
+    #[test]
+    fn crossing_flag_fires_once_per_crossing() {
+        // Approaching (both ticks above the obstacle): no.
+        assert!(!crossed(3387, 3371, 3406));
+        // Reached or passed this tick: yes.
+        assert!(crossed(3419, 3403, 3406));
+        assert!(crossed(3406, 3390, 3406));
+        // Already past on the previous tick: no.
+        assert!(!crossed(3435, 3419, 3406));
+        // Moving uphill across it counts too.
+        assert!(crossed(3400, 3410, 3406));
+        // Standing exactly on it with no movement: no.
+        assert!(!crossed(3406, 3406, 3406));
+    }
+
+    #[test]
+    fn tree_hit_lands_only_on_the_crossing_tick() {
+        let mut s = skier(); // vy = 16
+        let mut o = scenery(ActorClass::Tree, 49);
+        o.y = 3406;
+        s.y = 3403; // pre-update 3387: still above the trunk base
+        let r = collide(&mut s, &mut o, (16, 32), (28, 32));
+        assert!(!r.skier_crash);
+        assert_eq!(r.score_delta, 0);
+        s.y = 3419; // pre-update 3403: crossed this tick
+        let r = collide(&mut s, &mut o, (16, 32), (28, 32));
+        assert!(r.skier_crash);
+        assert_eq!(r.score_delta, -0x20);
+    }
+
+    #[test]
+    fn tree_glance_halves_speed_without_crash() {
+        let mut s = skier();
+        let mut o = scenery(ActorClass::Tree, 49);
+        o.y = 10;
+        s.y = 16;
+        o.x = 15; // |dx| 15 > max(16, 28) / 2 = 14
+        let r = collide(&mut s, &mut o, (16, 32), (28, 32));
+        assert!(!r.skier_crash);
+        assert_eq!(s.vy, 8);
+    }
+
+    #[test]
+    fn airborne_skier_above_large_rock_top_clears_it() {
+        let mut s = skier();
+        s.vy = 17;
+        s.z = 4;
+        s.vz = 3;
+        let mut o = scenery(ActorClass::RockLarge, 47); // 16x4: top at z 4
+        collide(&mut s, &mut o, (16, 32), (16, 4));
+        assert_eq!(s.vz, 3, "no bounce at or above the rock's top");
+        s.z = 3;
+        collide(&mut s, &mut o, (16, 32), (16, 4));
+        assert_eq!(s.vz, 8, "below the top: bounce at vy / 2");
     }
 }

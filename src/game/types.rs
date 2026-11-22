@@ -87,6 +87,10 @@ pub struct Actor {
     pub timestamp: u32,
     pub event_idx: Option<usize>,
     pub next: Option<usize>,
+    /// Proxy (classes 4-8) whose live actor was culled this tick: in the
+    /// original the mob node keeps its actor link until the end of the tick,
+    /// so the node still behaves as live during its next update.
+    pub proxy_unlink: bool,
 }
 
 impl Default for Actor {
@@ -106,6 +110,7 @@ impl Default for Actor {
             timestamp: 0,
             event_idx: None,
             next: None,
+            proxy_unlink: false,
         }
     }
 }

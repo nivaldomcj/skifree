@@ -1,4 +1,5 @@
 use super::actor::ActorPool;
+use super::state_table::STATE_TO_SPRITE;
 use super::camera;
 use super::types::Camera;
 use super::collision;
@@ -87,6 +88,12 @@ impl GameState {
             if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&data) {
                 if let Some(resources) = meta.get("resources").and_then(|r| r.as_array()) {
                     for r in resources {
+                        // Only bitmaps (RT_BITMAP = 2) are sprites: the icon
+                        // resources (RT_ICON = 3, ids 1-6, 32x32) share ids
+                        // with the skier sprites and must not overwrite them.
+                        if r.get("type").and_then(|v| v.as_u64()) != Some(2) {
+                            continue;
+                        }
                         if let (Some(id), Some(w), Some(h)) = (
                             r.get("id").and_then(|v| v.as_u64()),
                             r.get("width").and_then(|v| v.as_i64()),
@@ -179,19 +186,21 @@ impl GameState {
             .and_then(|i| self.pool.get(i))
             .map(|a| a.y);
 
-        // Consume spawn events as player scrolls
-        self.consume_spawn_events();
-
-        // Update all actors, collecting secondary-actor spawn requests
+        // Actor loop (FUN_00401e50's first loop): update each actor, then
+        // cull-test it against the padded viewport with the camera as it is
+        // at that moment — actors ahead of the player in the list see the
+        // pre-move view, since the camera follows the player only when the
+        // player itself updates. Culled course actors keep their spawn-event
+        // link until the end of the tick (the original frees them then), so
+        // they cannot re-materialize within the same tick.
         let mut spawn_requests: Vec<SpawnRequest> = Vec::new();
+        let mut unlinked_events: Vec<usize> = Vec::new();
         let indices = self.pool.active_indices();
         for idx in indices {
             let class = match self.pool.get(idx) {
                 Some(a) => a.class,
                 None => continue,
             };
-
-            let player = self.player_idx.and_then(|pi| self.pool.get(pi).cloned());
 
             match class {
                 ActorClass::Skier => {
@@ -216,26 +225,13 @@ impl GameState {
                         mob::update_obstacle(actor, &mut self.rng, self.fast_forward);
                     }
                 }
-                ActorClass::AmbientMob => {
-                    if let Some(actor) = self.pool.get_mut(idx) {
-                        if let Some(req) = mob::update_ambient(actor, &mut self.rng) {
-                            spawn_requests.push(req);
-                        }
-                    }
-                }
-                ActorClass::MonsterLeft | ActorClass::MonsterRight |
-                ActorClass::MonsterTop | ActorClass::MonsterBottom => {
-                    if let Some(actor) = self.pool.get_mut(idx) {
-                        monster::update_monster(
-                            actor,
-                            player.as_ref(),
-                            &mut self.rng,
-                            self.elapsed_ms,
-                            self.screen_w,
-                            self.screen_h,
-                        );
-                    }
-                }
+                // Proxies run in their own pass below (FUN_004040a0), in
+                // mob-node order, after the actor loop.
+                ActorClass::AmbientMob
+                | ActorClass::MonsterLeft
+                | ActorClass::MonsterRight
+                | ActorClass::MonsterTop
+                | ActorClass::MonsterBottom => {}
                 ActorClass::Eating => {
                     if let Some(actor) = self.pool.get_mut(idx) {
                         mob::update_eating(actor, self.fast_forward);
@@ -257,6 +253,17 @@ impl GameState {
                 | ActorClass::Banner
                 | ActorClass::Effect => {}
             }
+
+            if Some(idx) == self.player_idx {
+                // FUN_00402390 -> FUN_00402470: the camera follows the
+                // player the moment it moves; scroll steps drain at the end.
+                if let Some(player) = self.pool.get(idx) {
+                    let (x, y) = (player.x, player.y);
+                    self.camera.track(x, y);
+                }
+            } else {
+                self.cull_check(idx, &mut unlinked_events);
+            }
         }
 
         // Fulfill secondary-actor spawn requests (FUN_004020d0/0x26a0 + 0x2390).
@@ -264,6 +271,13 @@ impl GameState {
         for req in spawn_requests {
             self.fulfill_spawn(req);
         }
+
+        // Course spawn-event lists (FUN_004046e0 x4), with this tick's view.
+        self.consume_spawn_events();
+
+        // Mob-node pass (FUN_004040a0): update each proxy, then materialize it
+        // (FUN_00404130), in world-build node order.
+        self.update_proxies();
 
         // Check collisions
         let results = collision::check_all_collisions(
@@ -329,8 +343,12 @@ impl GameState {
             (populator::Edge::Left, steps.left),
         ] {
             for _ in 0..count {
+                // DAT_0040c6fc sums live actors only: off-screen proxies
+                // are bare mob nodes in the original and do not count.
                 let weight = populator::sprite_weight(
-                    self.pool.active_indices().into_iter().filter_map(|i| self.pool.get(i)),
+                    self.pool.active_indices().into_iter()
+                        .filter(|&i| !self.is_proxy(i) || self.pool.get(i).is_some_and(|a| a.flags.on_screen))
+                        .filter_map(|i| self.pool.get(i)),
                     &self.sprite_dims,
                 );
                 if let Some(req) = populator::pick_spawn(
@@ -365,40 +383,43 @@ impl GameState {
             });
         }
 
-        // Cull actors far outside the padded viewport (client rect + 0x78 on
-        // every side, DAT_0040c680). The player and the proxy classes (4-8:
-        // ambient mobs, monsters) are exempt — in the original their proxies
-        // keep running off-screen. Culled course actors get their spawn-event
-        // link reset so they re-materialize when scrolled back into range.
-        let culled: Vec<usize> = self.pool.active_indices().into_iter().filter(|&idx| {
-            if Some(idx) == self.player_idx {
-                return false;
+        // End of tick: culled course actors are gone; their spawn events
+        // may re-materialize from the next tick on.
+        for ev in unlinked_events {
+            if let Some(event) = self.spawn_events.get_mut(ev) {
+                event.actor_idx = None;
             }
-            let a = match self.pool.get(idx) {
-                Some(a) => a,
-                None => return false,
-            };
-            match a.class {
-                ActorClass::AmbientMob
-                | ActorClass::MonsterLeft
-                | ActorClass::MonsterRight
-                | ActorClass::MonsterTop
-                | ActorClass::MonsterBottom => return false,
-                _ => {}
-            }
-            let (w, h) = self.sprite_dims.get(a.sprite_id as usize).copied().unwrap_or((16, 16));
-            let (l, t, r, b) =
-                collision::actor_bounds(a, w, h, &self.camera, self.screen_w, self.screen_h);
-            !collision::intersects(l, t, r, b, -0x78, -0x78, self.screen_w + 0x78, self.screen_h + 0x78)
-        }).collect();
-        for idx in culled {
-            if let Some(ev) = self.pool.get(idx).and_then(|a| a.event_idx) {
-                if let Some(event) = self.spawn_events.get_mut(ev) {
-                    event.actor_idx = None;
-                }
-            }
-            self.pool.free(idx);
         }
+    }
+
+    /// Cull test for one actor right after its update (FUN_00401e50 first
+    /// loop: FUN_00401290 against the padded viewport DAT_0040c680). A
+    /// course/secondary actor outside it is freed (its spawn-event index is
+    /// queued for an end-of-tick link reset); a proxy keeps its node but its
+    /// live actor is dropped (see `proxy_unlink`).
+    fn cull_check(&mut self, idx: usize, unlinked_events: &mut Vec<usize>) {
+        let a = match self.pool.get(idx) {
+            Some(a) => a,
+            None => return,
+        };
+        let proxy = self.is_proxy(idx);
+        if proxy && !a.flags.on_screen {
+            return; // bare mob node, no actor to cull
+        }
+        let (w, h) = self.sprite_dims.get(a.sprite_id as usize).copied().unwrap_or((16, 16));
+        if collision::in_padded_view(a.x, a.y, a.z, w, h, &self.camera, self.screen_w, self.screen_h) {
+            return;
+        }
+        if proxy {
+            if let Some(a) = self.pool.get_mut(idx) {
+                a.proxy_unlink = true;
+            }
+            return;
+        }
+        if let Some(ev) = a.event_idx {
+            unlinked_events.push(ev);
+        }
+        self.pool.free(idx);
     }
 
     /// Course start/finish/gate detection (FUN_00402c60 freestyle,
@@ -576,22 +597,104 @@ impl GameState {
     }
 
     /// Consume spawn events that the player has scrolled past (FUN_004046e0)
-    fn consume_spawn_events(&mut self) {
-        let player_y = self.player_idx
-            .and_then(|idx| self.pool.get(idx))
-            .map(|a| a.y)
-            .unwrap_or(0);
+    /// Proxy classes (4-8): ambient mobs and monsters, which the original
+    /// runs as mob nodes with an actor only while on screen.
+    fn is_proxy(&self, idx: usize) -> bool {
+        self.pool.get(idx).is_some_and(|a| {
+            matches!(
+                a.class,
+                ActorClass::AmbientMob
+                    | ActorClass::MonsterLeft
+                    | ActorClass::MonsterRight
+                    | ActorClass::MonsterTop
+                    | ActorClass::MonsterBottom
+            )
+        })
+    }
 
+    /// Mob-node pass (FUN_004040a0). Each node is updated (FUN_004041c0:
+    /// class 4 via FUN_00404290, monsters via FUN_00404350) and then, if its
+    /// y is inside the scan window, offered to FUN_00404130, which gives it
+    /// a live actor when the node's point (x, y - z) lies strictly inside the
+    /// padded viewport (nodes carry the empty sprite-table entry 0, 0x0 —
+    /// verified via Frida). The live actor persists until the cull pass
+    /// drops it by its real sprite box. Nodes are visited in world-build
+    /// order: ambient mobs, then monsters.
+    fn update_proxies(&mut self) {
+        let nodes: Vec<usize> = self.spawn_events.iter()
+            .filter(|e| (4..=8).contains(&e.class))
+            .filter_map(|e| e.actor_idx)
+            .collect();
+        for idx in nodes {
+            let player = self.player_idx.and_then(|pi| self.pool.get(pi).cloned());
+            let mut request = None;
+            if let Some(actor) = self.pool.get_mut(idx) {
+                match actor.class {
+                    // The original rolls only while the node has a live actor
+                    // ([node+0] != 0 in FUN_00404290).
+                    ActorClass::AmbientMob => {
+                        let live = actor.flags.on_screen;
+                        request = mob::update_ambient(actor, &mut self.rng, live);
+                    }
+                    ActorClass::MonsterLeft | ActorClass::MonsterRight
+                    | ActorClass::MonsterTop | ActorClass::MonsterBottom => {
+                        monster::update_monster(
+                            actor,
+                            player.as_ref(),
+                            &mut self.rng,
+                            self.elapsed_ms,
+                            self.screen_w,
+                            self.screen_h,
+                        );
+                    }
+                    _ => continue,
+                }
+            }
+            if let Some(req) = request {
+                self.fulfill_spawn(req);
+            }
+            let (camera, sw, sh) = (self.camera.clone(), self.screen_w, self.screen_h);
+            if let Some(a) = self.pool.get_mut(idx) {
+                if a.proxy_unlink {
+                    // Culled last cull pass: the link drops only now, and the
+                    // node cannot re-materialize in the same pass.
+                    a.proxy_unlink = false;
+                    a.flags.on_screen = false;
+                } else if !a.flags.on_screen
+                    && collision::in_event_window(a.y, &camera, sw, sh)
+                    && collision::in_padded_view(a.x, a.y, a.z, 0, 0, &camera, sw, sh)
+                {
+                    a.flags.on_screen = true;
+                }
+            }
+        }
+    }
+
+    fn consume_spawn_events(&mut self) {
         for (event_pos, event) in self.spawn_events.iter_mut().enumerate() {
             if event.actor_idx.is_some() {
                 continue; // already spawned
             }
 
-            // Spawn when the event is within one screen of the player, either
-            // direction — culled actors (event link reset) re-materialize
-            // here when scrolled back into range.
-            let spawn_threshold = player_y + self.screen_h;
-            if event.y <= spawn_threshold && event.y >= player_y - self.screen_h {
+            // Proxy classes (4-8: ambient mobs, monsters) are allocated from
+            // world build: in the original their mob nodes update (drift,
+            // wrap, roll RNG) globally wherever the player is; whether they
+            // count as "on screen" is decided per tick by in_padded_view.
+            // Course events materialize like FUN_004046e0 + FUN_00404130:
+            // event y inside the scan window AND the sprite's draw box
+            // overlapping the padded viewport. Culled actors (event link
+            // reset) re-materialize here when scrolled back into range.
+            let in_window = (4..=8).contains(&event.class) || {
+                let sprite = event.sprite.unwrap_or_else(|| {
+                    STATE_TO_SPRITE.get(event.state as usize).copied().unwrap_or(0)
+                });
+                let (w, h) = self.sprite_dims.get(sprite as usize).copied().unwrap_or((16, 16));
+                collision::in_event_window(event.y, &self.camera, self.screen_w, self.screen_h)
+                    // Event nodes carry z = 0 (verified via Frida); the
+                    // actor's own z only applies once materialized.
+                    && collision::in_padded_view(event.x, event.y, 0, w, h, &self.camera, self.screen_w, self.screen_h)
+            };
+            if in_window {
                 let class = match ActorClass::from_u16(event.class) {
                     Some(c) => c,
                     None => continue,
@@ -718,6 +821,56 @@ mod tests {
         let mut g = GameState::new_seeded(640, 480, 1);
         g.new_game();
         g
+    }
+
+    #[test]
+    fn sprite_dims_ignore_icon_resources() {
+        // Icon resources 1-6 (32x32) share ids with the skier sprites; only
+        // bitmaps may feed sprite_dims. Skipped when assets aren't extracted.
+        if !super::super::assets::asset_root().join("meta.json").exists() {
+            return;
+        }
+        let g = game_with_player();
+        assert_eq!(g.sprite_dims[1], (16, 32));
+        assert_eq!(g.sprite_dims[3], (24, 28));
+    }
+
+    #[test]
+    fn course_events_materialize_only_inside_padded_view() {
+        // 704 wide: padded view spans screen x -120..824, i.e. world x
+        // -472..472 around the player. The slalom start marker at x = -576
+        // stays a bare event; the freestyle ones at +-160 materialize once
+        // the skier has descended far enough for y = 640 to enter the window.
+        let mut g = GameState::new_seeded(704, 681, 0);
+        g.new_game();
+        g.steer_keyboard(false, false, false, true);
+        for _ in 0..15 {
+            g.tick(40);
+        }
+        let xs: Vec<i16> = g.pool.active_indices().into_iter()
+            .filter_map(|i| g.pool.get(i))
+            .filter(|a| a.sprite_id == 0x39 || a.sprite_id == 0x3a)
+            .map(|a| a.x)
+            .collect();
+        assert!(xs.contains(&-160) && xs.contains(&160), "{xs:?}");
+        assert!(!xs.contains(&-576), "{xs:?}");
+    }
+
+    #[test]
+    fn offscreen_proxies_stay_unmaterialized() {
+        let mut g = GameState::new_seeded(704, 681, 0);
+        g.new_game();
+        for _ in 0..3 {
+            g.tick(40);
+        }
+        let monsters: Vec<bool> = g.pool.active_indices().into_iter()
+            .filter_map(|i| g.pool.get(i))
+            .filter(|a| matches!(a.class, ActorClass::MonsterLeft | ActorClass::MonsterRight
+                | ActorClass::MonsterTop | ActorClass::MonsterBottom))
+            .map(|a| a.flags.on_screen)
+            .collect();
+        assert_eq!(monsters.len(), 4, "monster nodes exist from world build");
+        assert!(monsters.iter().all(|&live| !live), "far-away monsters have no live actor");
     }
 
     #[test]

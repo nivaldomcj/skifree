@@ -89,9 +89,11 @@ pub fn update_snowboarder(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) 
 /// In state 0x27 there is a 1-in-1000 chance per tick to drop a crossing
 /// skier (class 3, state 0x21) at the mob's current position — including its
 /// z = 0x20, so the skier visibly drops in from above — and flip to state
-/// 0x28. The original gates this on the proxy having a live visible actor;
-/// the port's merged actor/proxy always satisfies that while active.
-pub fn update_ambient(actor: &mut Actor, rng: &mut Rng) -> Option<SpawnRequest> {
+/// 0x28. The original gates the roll on the mob node having a live visible
+/// actor ([node+0x00] != 0 in FUN_00404290); `materialized` carries that
+/// state from the caller (see `GameState::update_proxies`). The integration
+/// and wrap run regardless, like the original's mob nodes.
+pub fn update_ambient(actor: &mut Actor, rng: &mut Rng, materialized: bool) -> Option<SpawnRequest> {
     // Proxy integration (FUN_004041c0): pure velocity add, no gravity.
     actor.x = actor.x.wrapping_add(actor.vx);
     actor.y = actor.y.wrapping_add(actor.vy);
@@ -111,8 +113,9 @@ pub fn update_ambient(actor: &mut Actor, rng: &mut Rng) -> Option<SpawnRequest> 
         return None;
     }
 
-    // 1-in-1000 chance to drop a crossing skier at the mob's position.
-    if actor.state == 0x27 && rng.rand_range(1000) == 0 {
+    // 1-in-1000 chance to drop a crossing skier at the mob's position —
+    // rolled only while the mob is inside the viewport window.
+    if materialized && actor.state == 0x27 && rng.rand_range(1000) == 0 {
         let req = SpawnRequest {
             class: ActorClass::Obstacle,
             state: Some(0x21),
@@ -246,7 +249,7 @@ mod tests {
         // Proxy integration is pure: z = 0x20 floats forever, no fast-forward.
         let mut rng = Rng::new(7);
         let mut a = ambient(-112, 100, 0x20, 0x27, -2);
-        update_ambient(&mut a, &mut rng);
+        update_ambient(&mut a, &mut rng, true);
         assert_eq!((a.x, a.y, a.z), (-112, 98, 0x20));
         assert_eq!(a.vz, 0);
     }
@@ -257,12 +260,12 @@ mod tests {
         let mut a = ambient(-112, 23552, 0x20, 0x27, -2);
         // y + vy = 23550 is in range first; force the wrap directly.
         a.y = 23560;
-        update_ambient(&mut a, &mut rng);
+        update_ambient(&mut a, &mut rng, true);
         assert_eq!(a.state, 0x27);
         assert_eq!((a.x, a.vy), (-112, -2));
 
         let mut b = ambient(-144, -1030, 0x20, 0x29, 2);
-        update_ambient(&mut b, &mut rng);
+        update_ambient(&mut b, &mut rng, true);
         assert_eq!(b.state, 0x29);
         assert_eq!((b.x, b.vy), (-144, 2));
     }
@@ -272,7 +275,7 @@ mod tests {
         let seed = seed_with_first_roll_zero(1000);
         let mut rng = Rng::new(seed);
         let mut a = ambient(-112, 500, 0x20, 0x27, -2);
-        let req = update_ambient(&mut a, &mut rng).expect("should request a spawn");
+        let req = update_ambient(&mut a, &mut rng, true).expect("should request a spawn");
         // Mob integrated first (y 500 -> 498), then spawned at its position.
         assert_eq!(req.class, ActorClass::Obstacle);
         assert_eq!(req.state, Some(0x21));
@@ -286,8 +289,20 @@ mod tests {
         // Seed 1: first rand_range(1000) is 41 != 0.
         let mut rng = Rng::new(1);
         let mut a = ambient(-112, 500, 0x20, 0x27, -2);
-        assert_eq!(update_ambient(&mut a, &mut rng), None);
+        assert_eq!(update_ambient(&mut a, &mut rng, true), None);
         assert_eq!(a.state, 0x27);
+    }
+
+    #[test]
+    fn ambient_skips_roll_outside_viewport_window() {
+        // A winning seed, but not materialized: no roll, no spawn, and the
+        // RNG stream is untouched (calls stay at 0).
+        let seed = seed_with_first_roll_zero(1000);
+        let mut rng = Rng::new(seed);
+        let mut a = ambient(-112, 500, 0x20, 0x27, -2);
+        assert_eq!(update_ambient(&mut a, &mut rng, false), None);
+        assert_eq!(a.state, 0x27);
+        assert_eq!(rng.call_count(), 0);
     }
 
     fn snowboarder(x: i16, y: i16, z: i16, state: u16) -> Actor {

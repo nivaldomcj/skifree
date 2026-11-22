@@ -14,13 +14,22 @@ pub struct ScrollSteps {
 }
 
 impl Camera {
-    /// Center camera on the skier, applying discrete scroll steps
-    /// Mirrors the scroll logic in FUN_00401e50
-    pub fn follow(&mut self, target_x: i16, target_y: i16) -> ScrollSteps {
+    /// Move the camera center to the skier and accumulate the scroll delta,
+    /// without emitting scroll steps. The original updates its camera
+    /// (DAT_0040c640/DAT_0040c5f2) inside FUN_00402390 the moment the player
+    /// moves, so later phases of the tick (mob nodes) see the new view; the
+    /// scroll accumulators are only drained at the end of the tick.
+    pub fn track(&mut self, target_x: i16, target_y: i16) {
         self.scroll_x = self.scroll_x.wrapping_sub(target_x.wrapping_sub(self.cx));
         self.scroll_y = self.scroll_y.wrapping_sub(target_y.wrapping_sub(self.cy));
         self.cx = target_x;
         self.cy = target_y;
+    }
+
+    /// Center camera on the skier, applying discrete scroll steps
+    /// Mirrors the scroll logic in FUN_00401e50
+    pub fn follow(&mut self, target_x: i16, target_y: i16) -> ScrollSteps {
+        self.track(target_x, target_y);
 
         let mut steps = ScrollSteps::default();
         while self.scroll_y > SCROLL_STEP {
