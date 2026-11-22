@@ -164,9 +164,14 @@ state `0x29` at `x = -144, vy = +2` (drifting down), all floating at
   (class 3, state `0x21`) at the mob's position — z = `0x20` included, so the
   skier falls in from above — and set state `0x28`
 
-The original gates the spawn on the proxy having a live visible actor
-(`*proxy != 0`); the port's merged actor/proxy always satisfies that while
-active. The spawn itself is implemented (see "Secondary-actor spawns").
+The original gates the roll (and so the spawn) on the proxy having a live
+actor (`*proxy != 0`): the node got one when its point `(x, y − z)` entered
+the padded viewport, and keeps it until the tick after its sprite box is
+culled. The port models this with `flags.on_screen` + `proxy_unlink` on the
+merged actor (see `docs/vm-ground-truth.md` item 7); proxies are updated in
+their own pass, in node order, after the actor loop. Rows start at y = ±1024
++ 0x800·k (verified via Frida). The spawn itself is implemented (see
+"Secondary-actor spawns").
 
 ### Lift chair (`FUN_004037b0`, class 10) and Eating (`FUN_00403750`, class 9)
 

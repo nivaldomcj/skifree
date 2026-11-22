@@ -36,7 +36,8 @@ settle it. See `docs/courses-and-scoring.md`.)
 ## Density cap
 
 `DAT_0040c6fc` = sum of **sprite areas** (width × height, sprite-table entry
-`+0xe`) over all live actors. Compared against `DAT_0040c748` =
+`+0xe`) over all live actors — mob nodes without a live actor (off-screen
+ambient mobs and monsters) don't count. Compared against `DAT_0040c748` =
 `(client_w + 0xf0) × (client_h + 0xf0)` (the viewport padded by 0x78):
 
 - Zone A: cap `area / 64`
@@ -100,9 +101,18 @@ they scroll out of the padded viewport.
 
 ## Culling and re-materialization
 
-Every tick, actors fully outside the padded viewport (client rect + 0x78) are
-freed, except the player and the proxy classes (4–8: ambient mobs, monsters —
-their original proxies keep running off-screen). When a culled actor came
-from a spawn event, the event's link is reset so the actor re-materializes
-when scrolled back into range (the original does the same through the
-record's `+0x00` actor pointer and `FUN_00404130`).
+Culling happens inside the first loop of the tick, right after each actor's
+update: an actor whose sprite box no longer overlaps the padded viewport
+(client rect + 0x78) is removed, using the camera *as of that moment* (the
+camera only follows the player when the player itself updates, so actors
+ahead of it in the list see the pre-move view). The player is exempt. Mob
+nodes (classes 4–8) are never removed — only their live actor is dropped.
+
+Spawn events materialize after that loop (`FUN_004046e0`): the event's y must
+be inside `[pad_top − 0x3c, pad_bottom + 0x3c)` and its sprite box (event
+node z = 0) must overlap the padded viewport — so off-to-the-side events
+such as the slalom start markers stay bare until scrolled into view. When a
+culled actor came from a spawn event, the event's link is reset at the end
+of the tick, so it can re-materialize from the next tick on (the original
+does the same through the record's `+0x00` actor pointer and
+`FUN_00404130`).
