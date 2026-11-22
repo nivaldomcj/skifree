@@ -101,10 +101,14 @@ The port implements the original's full control set:
 | F, T, R, X, Y | fast-forward, step, repaint, teleport | same |
 | Esc | **minimize window** | mapped to **quit** (see note) |
 
-Note: the original maps Esc to `ShowWindow(hwnd, SW_MINIMIZE)` — a 90s Windows
-convention. The port maps Esc to quit instead, which is the expected behaviour
-for a modern game and avoids leaving a hidden process running. This is the only
-deliberate deviation from the original controls.
+Note: the original maps Esc to `ShowWindow(hwnd, SW_MINIMIZE)`. The port maps
+Esc to quit instead. This is a deliberate, considered deviation: macroquad /
+miniquad (the port's windowing layer) expose **no minimize API** — the
+`WindowMinimized` event is inbound-only and the native window handle is not
+public — so a literal minimize would require unsafe, platform-specific FFI or
+a windowing-library rewrite. Quit is the clean, portable choice across
+macOS / Windows / Linux and avoids leaving a hidden process running. This is
+the only deliberate deviation from the original controls.
 
 ## Verification
 
