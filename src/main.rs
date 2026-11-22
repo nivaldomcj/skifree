@@ -24,7 +24,12 @@ async fn main() {
     let scores = persistence::load_scores();
     persistence::save_scores(&scores);
 
-    let mut game = GameState::new(window::DEFAULT_WIDTH as i16, window::DEFAULT_HEIGHT as i16);
+    // SKIFREE_SEED=<u32> forces a deterministic world for side-by-side
+    // testing against the original running a patched seed.
+    let mut game = match std::env::var("SKIFREE_SEED").ok().and_then(|s| s.parse::<u32>().ok()) {
+        Some(seed) => GameState::new_seeded(window::DEFAULT_WIDTH as i16, window::DEFAULT_HEIGHT as i16, seed),
+        None => GameState::new(window::DEFAULT_WIDTH as i16, window::DEFAULT_HEIGHT as i16),
+    };
     game.new_game();
 
     let mut running = true;
