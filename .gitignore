@@ -4,7 +4,7 @@ __pycache__/
 
 # Original game binaries — private property (Microsoft / Chris Pirih).
 # Supply your own copies here; never committed. See README.md.
-originals/
+/originals
 
 # Assets extracted from ski32.exe — derived copyrighted content, regenerated
 # by tools/extract_assets.py. assets/README.md (instructions) stays tracked.
