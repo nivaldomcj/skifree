@@ -22,17 +22,13 @@ impl Renderer {
         Self { sprites }
     }
 
-    pub fn sprite(&self, id: u32) -> Option<&Texture2D> {
-        self.sprites.get(&id)
-    }
-
     pub fn draw_sprite(&self, id: u32, x: f32, y: f32) {
         if let Some(tex) = self.sprites.get(&id) {
             draw_texture(tex, x, y, WHITE);
         }
     }
 
-    #[allow(dead_code)] // Phase 3
+    #[allow(dead_code)]
     pub fn draw_sprite_scaled(&self, id: u32, x: f32, y: f32, scale: f32) {
         if let Some(tex) = self.sprites.get(&id) {
             draw_texture_ex(
@@ -48,7 +44,7 @@ impl Renderer {
         }
     }
 
-    #[allow(dead_code)] // Phase 3
+    #[allow(dead_code)]
     pub fn sprite_count(&self) -> usize {
         self.sprites.len()
     }
