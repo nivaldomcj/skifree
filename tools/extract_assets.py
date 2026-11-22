@@ -2,6 +2,7 @@
 """Extract assets (sprites, icons, strings) from ski32.exe PE resources.
 
 Stdlib only. Usage: python3 tools/extract_assets.py [path-to-ski32.exe]
+Default input: originals/ski32.exe (not committed — supply your own copy).
 Writes assets/{sprites,icons}/, assets/meta.json and assets/strings.json.
 Idempotent: same input produces identical output bytes.
 """
@@ -180,7 +181,7 @@ def sha256(b):
 
 
 def main():
-    exe = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "ski32.exe"
+    exe = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "originals" / "ski32.exe"
     data = exe.read_bytes()
     resources = parse_pe_resources(data)
     print(f"{exe.name}: {len(resources)} resources")

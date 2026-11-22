@@ -121,9 +121,26 @@ mod tests {
 
     /// The tables live in .rdata, which is identity-mapped in this binary
     /// (vaddr 0xa000 == rawptr 0xa000), so RVA == file offset.
-    fn read_exe() -> Vec<u8> {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("ski32.exe");
-        std::fs::read(path).expect("ski32.exe must be in the repo root")
+    ///
+    /// Returns None when the (gitignored, copyrighted) binary is absent so the
+    /// byte-comparison tests skip instead of failing for contributors.
+    fn read_exe() -> Option<Vec<u8>> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("originals")
+            .join("ski32.exe");
+        std::fs::read(path).ok()
+    }
+
+    macro_rules! exe_or_skip {
+        () => {
+            match read_exe() {
+                Some(e) => e,
+                None => {
+                    eprintln!("skip: originals/ski32.exe not present");
+                    return;
+                }
+            }
+        };
     }
 
     fn u16_at(data: &[u8], off: usize) -> u16 {
@@ -138,7 +155,7 @@ mod tests {
 
     #[test]
     fn state_to_sprite_matches_binary() {
-        let exe = read_exe();
+        let exe = exe_or_skip!();
         for (state, &want) in STATE_TO_SPRITE.iter().enumerate() {
             let got = u16_at(&exe, 0xa1ac + state * 2);
             assert_eq!(got, want, "state 0x{state:02x}");
@@ -147,7 +164,7 @@ mod tests {
 
     #[test]
     fn direction_transition_matches_binary() {
-        let exe = read_exe();
+        let exe = exe_or_skip!();
         for (i, &want) in DIRECTION_TRANSITION.iter().enumerate() {
             let got = u32_at(&exe, 0xa258 + i * 4) as u16;
             assert_eq!(got, want, "index {i}");
@@ -156,7 +173,7 @@ mod tests {
 
     #[test]
     fn left_right_transitions_match_binary() {
-        let exe = read_exe();
+        let exe = exe_or_skip!();
         for state in 0..22usize {
             let base = 0xa258 + state * 8;
             assert_eq!(u32_at(&exe, base) as u16, LEFT_TRANSITION[state], "state {state:#04x} left");
@@ -166,7 +183,7 @@ mod tests {
 
     #[test]
     fn skier_physics_matches_binary() {
-        let exe = read_exe();
+        let exe = exe_or_skip!();
         for (state, entry) in SKIER_PHYSICS.iter().enumerate() {
             let off = 0xa308 + state * 16;
             assert_eq!(i16_at(&exe, off), entry.accel, "state {state:#04x} accel");
@@ -179,7 +196,7 @@ mod tests {
 
     #[test]
     fn crash_landing_matches_binary() {
-        let exe = read_exe();
+        let exe = exe_or_skip!();
         for (i, &want) in CRASH_LANDING.iter().enumerate() {
             // Table is indexed by absolute state (0x0d..=0x15)
             let got = u32_at(&exe, 0xa434 + (0x0d + i) * 4) as u16;
@@ -189,7 +206,7 @@ mod tests {
 
     #[test]
     fn dog_physics_matches_binary() {
-        let exe = read_exe();
+        let exe = exe_or_skip!();
         for (i, entry) in DOG_PHYSICS.iter().enumerate() {
             let off = 0xa490 + i * 16;
             assert_eq!(i16_at(&exe, off), entry.accel, "dog state {i} accel");
@@ -202,7 +219,7 @@ mod tests {
 
     #[test]
     fn snowboarder_physics_matches_binary() {
-        let exe = read_exe();
+        let exe = exe_or_skip!();
         for (i, entry) in SNOWBOARDER_PHYSICS.iter().enumerate() {
             let off = 0xa4e0 + i * 16;
             assert_eq!(i16_at(&exe, off), entry.accel, "sb state {i} accel");
