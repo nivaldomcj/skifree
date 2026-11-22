@@ -188,7 +188,9 @@ async fn main() {
                     view_w,
                     view_h,
                 );
-                renderer.draw_sprite(actor.sprite_id as u32, sx as f32, sy as f32);
+                // The original draws actors at sy - z (FUN_004014b0): jumps
+                // and pole-mounted course markers appear aloft.
+                renderer.draw_sprite(actor.sprite_id as u32, sx as f32, (sy - actor.z) as f32);
             }
         }
 

@@ -54,7 +54,10 @@ fn marker(events: &mut Vec<SpawnEvent>, sprite: u16, x: i16, y: i16) {
         sprite: Some(sprite),
         x,
         y,
-        z: 0,
+        // Course markers hang 0x42 (66) units up on their poles (spawn-record
+        // field at +0x10 in the original); the raised box keeps them out of
+        // the skier's collision path and the renderer draws them aloft.
+        z: 0x42,
         param: 0,
     });
 }

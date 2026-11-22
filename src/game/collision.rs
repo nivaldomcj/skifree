@@ -128,13 +128,17 @@ pub fn handle_collision(
                     result.skier_state = Some(0x0d);
                 }
             }
-            ActorClass::Snowboarder | ActorClass::Gate => {
-                // Brush past: just slows the skier (no crash). Gate posts
-                // share this path in the original (case 2/0xc/0x11).
-                skier.vy /= 2;
-            }
-            ActorClass::Effect => {
-                // Skiing through a jump puff costs style and slows the skier.
+            ActorClass::Snowboarder | ActorClass::Gate | ActorClass::Effect => {
+                // Entrance banners (sprites 61-63) hang 66px up on their
+                // poles; they spawn with z=0x42 so their box never reaches
+                // the skier (verified against the original's cached AABBs).
+                if other.class == ActorClass::Effect && (61..=63).contains(&other.sprite_id) {
+                    return result;
+                }
+                // FUN_00403a00 cases 2/0xc/0x11: a graze halves vy on every
+                // overlapping tick (the original's bVar4 flag reads a stack
+                // slot that is always nonzero in practice); brushing the
+                // snowboarder's jump puff (sprite 0x52) also costs 16 style.
                 skier.vy /= 2;
                 if other.sprite_id == 0x52 {
                     result.score_delta += -0x10;
