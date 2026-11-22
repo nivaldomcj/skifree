@@ -39,6 +39,8 @@ pub struct GameState {
     pub screen_w: i16,
     pub screen_h: i16,
     pub sprite_dims: Vec<(i16, i16)>,
+    /// Debug: log spawn materializations (SKIFREE_LOG_SPAWNS).
+    pub log_spawns: bool,
 }
 
 impl GameState {
@@ -74,6 +76,7 @@ impl GameState {
             screen_w,
             screen_h,
             sprite_dims,
+            log_spawns: std::env::var_os("SKIFREE_LOG_SPAWNS").is_some(),
         }
     }
 
@@ -608,6 +611,17 @@ impl GameState {
                             actor.vy = event.param;
                         }
                         actor.event_idx = Some(event_pos);
+                    }
+                    if self.log_spawns {
+                        eprintln!(
+                            "spawn ms={} cls={} spr={:?} x={} y={} rng={}",
+                            self.elapsed_ms,
+                            event.class,
+                            event.sprite,
+                            event.x,
+                            event.y,
+                            self.rng.call_count()
+                        );
                     }
                     event.actor_idx = Some(idx);
                 }
