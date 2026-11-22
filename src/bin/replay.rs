@@ -40,6 +40,8 @@ fn main() -> ExitCode {
     };
 
     let records = run_scenario(&scenario);
+    #[cfg(feature = "rng_sites")]
+    skifree::game::rng::rng_sites::dump();
     let jsonl = records_to_jsonl(&records);
 
     if let Some(ref path) = update_golden {

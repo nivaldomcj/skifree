@@ -12,6 +12,10 @@ pub struct Scenario {
     #[serde(default = "default_delta_ms")]
     pub delta_ms: u32,
     #[serde(default)]
+    pub screen_w: Option<i16>,
+    #[serde(default)]
+    pub screen_h: Option<i16>,
+    #[serde(default)]
     pub inputs: Vec<InputEvent>,
 }
 
@@ -128,7 +132,11 @@ pub fn fnv1a_update(hash: u64, bytes: &[u8]) -> u64 {
 pub const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
 
 pub fn run_scenario(scenario: &Scenario) -> Vec<TickRecord> {
-    run_scenario_with_size(scenario, 640, 480)
+    run_scenario_with_size(
+        scenario,
+        scenario.screen_w.unwrap_or(640),
+        scenario.screen_h.unwrap_or(480),
+    )
 }
 
 pub fn run_scenario_with_size(
@@ -217,6 +225,8 @@ mod tests {
             course: CourseKind::Freestyle,
             ticks: 100,
             delta_ms: 40,
+            screen_w: None,
+            screen_h: None,
             inputs: vec![],
         }
     }

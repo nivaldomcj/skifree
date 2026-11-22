@@ -22,11 +22,42 @@ impl Rng {
     }
 
     /// Mirrors FUN_004020b0: rand() % n
+    #[track_caller]
     pub fn rand_range(&mut self, n: u16) -> u16 {
         if n == 0 {
             return 0;
         }
+        #[cfg(feature = "rng_sites")]
+        self::rng_sites::record(n, std::panic::Location::caller());
         self.rand() % n
+    }
+}
+
+/// Per-callsite RNG consumption accounting (build with `--features rng_sites`,
+/// dump with `rng_sites::dump()`).
+#[cfg(feature = "rng_sites")]
+pub mod rng_sites {
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+
+    static SITES: OnceLock<Mutex<HashMap<(u16, &'static str, u32), u64>>> = OnceLock::new();
+
+    pub fn record(n: u16, loc: &'static std::panic::Location<'static>) {
+        let map = SITES.get_or_init(|| Mutex::new(HashMap::new()));
+        *map.lock().unwrap().entry((n, loc.file(), loc.line())).or_insert(0) += 1;
+    }
+
+    pub fn dump() {
+        if let Some(map) = SITES.get() {
+            let map = map.lock().unwrap();
+            let mut rows: Vec<_> = map.iter().collect();
+            rows.sort_by_key(|(_, c)| std::cmp::Reverse(**c));
+            let total: u64 = map.values().sum();
+            eprintln!("rng calls by site (total {total}):");
+            for ((n, file, line), count) in rows {
+                eprintln!("  {file}:{line} rand_range({n}): {count}");
+            }
+        }
     }
 }
 
