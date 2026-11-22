@@ -46,6 +46,17 @@ async fn main() {
                 GameAction::Restart => {
                     game.new_game();
                 }
+                GameAction::RestartIfDead => {
+                    if !game.has_player() {
+                        game.new_game();
+                    }
+                }
+                GameAction::SteerAbsolute(state) => {
+                    game.steer_absolute(state);
+                }
+                GameAction::Jump => {
+                    game.jump_keyboard();
+                }
                 GameAction::SteerLeft => steer_left = true,
                 GameAction::SteerRight => steer_right = true,
                 GameAction::SteerUp => steer_up = true,

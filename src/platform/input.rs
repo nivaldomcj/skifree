@@ -6,7 +6,14 @@ pub enum GameAction {
     SteerRight,
     SteerUp,
     SteerDown,
+    /// Diagonal keys set a skiing state directly (1/4 = slight, 3/6 = hard).
+    SteerAbsolute(u16),
+    /// Keyboard jump (Insert / numpad0) — smaller hop that scrubs speed.
+    Jump,
+    /// F2: restart at any time.
     Restart,
+    /// Enter: restart only once the skier is gone (eaten / game over).
+    RestartIfDead,
     PauseToggle,
     Quit,
     FastForward,
@@ -49,26 +56,31 @@ impl Input {
             actions.push(GameAction::SteerDown);
         }
 
-        // Diagonals
-        if is_key_down(KeyCode::Kp7) {
-            actions.push(GameAction::SteerLeft);
-            actions.push(GameAction::SteerUp);
+        // Diagonals set a skiing state directly (numpad + nav cluster).
+        // Top row = hard turns (3 left / 6 right), bottom row = slight (1 / 4).
+        if is_key_down(KeyCode::Kp7) || is_key_down(KeyCode::Home) {
+            actions.push(GameAction::SteerAbsolute(3));
         }
-        if is_key_down(KeyCode::Kp9) {
-            actions.push(GameAction::SteerRight);
-            actions.push(GameAction::SteerUp);
+        if is_key_down(KeyCode::Kp9) || is_key_down(KeyCode::PageUp) {
+            actions.push(GameAction::SteerAbsolute(6));
         }
-        if is_key_down(KeyCode::Kp1) {
-            actions.push(GameAction::SteerLeft);
-            actions.push(GameAction::SteerDown);
+        if is_key_down(KeyCode::Kp1) || is_key_down(KeyCode::End) {
+            actions.push(GameAction::SteerAbsolute(1));
         }
-        if is_key_down(KeyCode::Kp3) {
-            actions.push(GameAction::SteerRight);
-            actions.push(GameAction::SteerDown);
+        if is_key_down(KeyCode::Kp3) || is_key_down(KeyCode::PageDown) {
+            actions.push(GameAction::SteerAbsolute(4));
+        }
+
+        // Keyboard jump (Insert / numpad0)
+        if is_key_pressed(KeyCode::Insert) || is_key_pressed(KeyCode::Kp0) {
+            actions.push(GameAction::Jump);
         }
 
         // System keys
-        if is_key_pressed(KeyCode::Enter) || is_key_pressed(KeyCode::F2) {
+        if is_key_pressed(KeyCode::Enter) {
+            actions.push(GameAction::RestartIfDead);
+        }
+        if is_key_pressed(KeyCode::F2) {
             actions.push(GameAction::Restart);
         }
         if is_key_pressed(KeyCode::F3) {

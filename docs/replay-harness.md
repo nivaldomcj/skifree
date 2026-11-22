@@ -32,7 +32,7 @@ Level 2 fidelity adds a deterministic replay harness to the SkiFree port. It let
 
 - `idle.json` — 250 ticks, no input. The skier stays at the start; baseline for monster approach and ambient spawns.
 - `descend.json` — 500 ticks, DOWN pressed once. The skier accelerates downhill and scrolls the course; the main descent baseline.
-- `steer_and_jump.json` — 500 ticks with a DOWN start, left/right steering through the direction fan, a jump, a brake, and fast-forward toggles. Exercises the full skier state machine.
+- `steer_and_jump.json` — 500 ticks with a DOWN start, left/right fan steering, direct diagonal states, a mouse jump, a keyboard jump, a brake, and fast-forward toggles. Exercises the full skier state machine and control set.
 
 ## Determinism
 

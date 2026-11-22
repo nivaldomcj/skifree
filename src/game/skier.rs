@@ -127,6 +127,31 @@ pub fn steer_keyboard(actor: &mut Actor, left: bool, right: bool, up: bool, down
     }
 }
 
+/// Keyboard jump (Insert / numpad0, FUN_00406170 case 0x2d/0x60).
+/// Smaller hop than the mouse (vz=2) that also scrubs downhill speed.
+pub fn jump_keyboard(actor: &mut Actor) {
+    if actor.state == 0x0b || actor.state == 0x11 {
+        return; // crashed or mid-flip
+    }
+    if actor.z == 0 {
+        actor.vz = 2;
+        physics::change_state(actor, 0x0d);
+        if actor.vy > 4 {
+            actor.vy -= 4;
+        }
+    }
+}
+
+/// Diagonal steering (FUN_00406170): set a skiing state directly on the ground.
+pub fn steer_absolute(actor: &mut Actor, target_state: u16) {
+    if actor.state == 0x0b || actor.state == 0x11 {
+        return;
+    }
+    if actor.z == 0 {
+        physics::change_state(actor, target_state);
+    }
+}
+
 /// Handle mouse steering input (FUN_00406550 + FUN_004065e0)
 pub fn steer_mouse(actor: &mut Actor, dx: i16, dy: i16) {
     if actor.state == 0x0b || actor.state == 0x11 {

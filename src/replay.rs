@@ -61,6 +61,10 @@ pub enum InputKind {
         #[serde(default)]
         down: bool,
     },
+    SteerAbsolute {
+        state: u16,
+    },
+    Jump,
     Click,
     FastForward,
 }
@@ -148,6 +152,8 @@ pub fn run_scenario_with_size(
                     up,
                     down,
                 } => game.steer_keyboard(*left, *right, *up, *down),
+                InputKind::SteerAbsolute { state } => game.steer_absolute(*state),
+                InputKind::Jump => game.jump_keyboard(),
                 InputKind::Click => game.click(),
                 InputKind::FastForward => game.fast_forward = !game.fast_forward,
             }

@@ -279,6 +279,29 @@ impl GameState {
         }
     }
 
+    /// Keyboard jump (Insert / numpad0): smaller hop that scrubs speed.
+    pub fn jump_keyboard(&mut self) {
+        if let Some(idx) = self.player_idx {
+            if let Some(actor) = self.pool.get_mut(idx) {
+                skier::jump_keyboard(actor);
+            }
+        }
+    }
+
+    /// Diagonal steering: set a skiing state directly (1/4 slight, 3/6 hard).
+    pub fn steer_absolute(&mut self, target_state: u16) {
+        if let Some(idx) = self.player_idx {
+            if let Some(actor) = self.pool.get_mut(idx) {
+                skier::steer_absolute(actor, target_state);
+            }
+        }
+    }
+
+    /// Whether the skier is still present (false once eaten).
+    pub fn has_player(&self) -> bool {
+        self.player_idx.is_some()
+    }
+
     /// Handle click (FUN_004066d0): jump on the ground, cycle tricks mid-air.
     pub fn click(&mut self) {
         if let Some(idx) = self.player_idx {
@@ -368,5 +391,52 @@ mod tests {
         let a = g.pool.get(idx).unwrap();
         assert_eq!(a.state, 0x0b);
         assert_eq!(a.vz, 0);
+    }
+
+    #[test]
+    fn keyboard_jump_on_ground_uses_vz2() {
+        let mut g = game_with_player();
+        g.jump_keyboard();
+        let a = g.pool.get(g.player_idx.unwrap()).unwrap();
+        assert_eq!(a.vz, 2);
+        assert_eq!(a.state, 0x0d);
+    }
+
+    #[test]
+    fn keyboard_jump_scrubs_downhill_speed() {
+        let mut g = game_with_player();
+        let idx = g.player_idx.unwrap();
+        g.pool.get_mut(idx).unwrap().vy = 10;
+        g.jump_keyboard();
+        assert_eq!(g.pool.get(idx).unwrap().vy, 6); // 10 - 4
+    }
+
+    #[test]
+    fn keyboard_jump_no_scrub_below_threshold() {
+        let mut g = game_with_player();
+        let idx = g.player_idx.unwrap();
+        g.pool.get_mut(idx).unwrap().vy = 4;
+        g.jump_keyboard();
+        assert_eq!(g.pool.get(idx).unwrap().vy, 4); // unchanged (not > 4)
+    }
+
+    #[test]
+    fn steer_absolute_sets_state_on_ground() {
+        let mut g = game_with_player();
+        g.steer_absolute(6);
+        assert_eq!(g.pool.get(g.player_idx.unwrap()).unwrap().state, 6);
+        g.steer_absolute(1);
+        assert_eq!(g.pool.get(g.player_idx.unwrap()).unwrap().state, 1);
+    }
+
+    #[test]
+    fn steer_absolute_ignored_in_air() {
+        let mut g = game_with_player();
+        let idx = g.player_idx.unwrap();
+        let a = g.pool.get_mut(idx).unwrap();
+        a.z = 5;
+        physics::change_state(a, 0);
+        g.steer_absolute(6);
+        assert_eq!(g.pool.get(idx).unwrap().state, 0); // unchanged
     }
 }
