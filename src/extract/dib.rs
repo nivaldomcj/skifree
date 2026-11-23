@@ -56,7 +56,11 @@ impl<'a> Dib<'a> {
 
     /// Stored row of logical row `y` (0 = top).
     fn row(&self, y: usize) -> usize {
-        if self.top_down { y } else { self.height - 1 - y }
+        if self.top_down {
+            y
+        } else {
+            self.height - 1 - y
+        }
     }
 
     fn index(&self, x: usize, y: usize) -> Result<usize> {

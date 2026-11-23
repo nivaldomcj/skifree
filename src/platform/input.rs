@@ -99,10 +99,7 @@ fn key_action(key: KeyCode) -> Option<GameAction> {
 
 impl Input {
     pub fn new() -> Self {
-        Self {
-            prev_mouse_pos: (0.0, 0.0),
-            subscriber: macroquad::input::utils::register_input_subscriber(),
-        }
+        Self { prev_mouse_pos: (0.0, 0.0), subscriber: macroquad::input::utils::register_input_subscriber() }
     }
 
     /// Poll all input and return actions for this frame.
@@ -190,11 +187,6 @@ impl Input {
 /// coordinates through unchanged. Cocoa positions are fractional: floor.
 pub fn client_mouse_position() -> (f32, f32) {
     let (x, y) = mouse_position();
-    let y = if cfg!(target_os = "macos") {
-        y + 1.0 / macroquad::miniquad::window::dpi_scale()
-    } else {
-        y
-    };
+    let y = if cfg!(target_os = "macos") { y + 1.0 / macroquad::miniquad::window::dpi_scale() } else { y };
     (x.floor(), y.floor())
 }
-

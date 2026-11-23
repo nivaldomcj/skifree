@@ -147,11 +147,8 @@ pub fn from_files(files: &[(String, Vec<u8>)]) -> Result<AssetSet, String> {
     // Sprites from ski32.exe when given (what tools/extract_assets.py
     // prefers), else from any exe that has all 89.
     let is_ski32 = |n: &str| n.rsplit('/').next().is_some_and(|b| b.eq_ignore_ascii_case("ski32.exe"));
-    let main = exes
-        .iter()
-        .filter(|(_, e)| e.has_all_sprites())
-        .min_by_key(|(n, _)| !is_ski32(n))
-        .map(|(n, _)| n.clone());
+    let main =
+        exes.iter().filter(|(_, e)| e.has_all_sprites()).min_by_key(|(n, _)| !is_ski32(n)).map(|(n, _)| n.clone());
     let Some(main) = main else {
         if let Some((n, _)) = exes.first() {
             problems.insert(0, format!("{n} is not SkiFree's ski32.exe (its pictures are missing)."));

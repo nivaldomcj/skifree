@@ -180,12 +180,7 @@ pub fn apply_inputs(game: &mut GameState, scenario: &Scenario, tick: u32) {
             continue;
         }
         match &input.kind {
-            InputKind::Steer {
-                left,
-                right,
-                up,
-                down,
-            } => game.steer_keyboard(*left, *right, *up, *down),
+            InputKind::Steer { left, right, up, down } => game.steer_keyboard(*left, *right, *up, *down),
             InputKind::SteerAbsolute { state } => game.steer_absolute(*state),
             InputKind::Jump => game.jump_keyboard(),
             InputKind::Click => game.click(),
@@ -200,18 +195,10 @@ pub fn apply_inputs(game: &mut GameState, scenario: &Scenario, tick: u32) {
 }
 
 pub fn run_scenario(scenario: &Scenario) -> Vec<TickRecord> {
-    run_scenario_with_size(
-        scenario,
-        scenario.screen_w.unwrap_or(640),
-        scenario.screen_h.unwrap_or(480),
-    )
+    run_scenario_with_size(scenario, scenario.screen_w.unwrap_or(640), scenario.screen_h.unwrap_or(480))
 }
 
-pub fn run_scenario_with_size(
-    scenario: &Scenario,
-    screen_w: i16,
-    screen_h: i16,
-) -> Vec<TickRecord> {
+pub fn run_scenario_with_size(scenario: &Scenario, screen_w: i16, screen_h: i16) -> Vec<TickRecord> {
     run_scenario_observed(scenario, screen_w, screen_h, |_, _| {})
 }
 
@@ -281,10 +268,7 @@ pub fn records_to_jsonl(records: &[TickRecord]) -> String {
 }
 
 pub fn parse_jsonl(text: &str) -> Result<Vec<TickRecord>, serde_json::Error> {
-    text.lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(serde_json::from_str)
-        .collect()
+    text.lines().filter(|line| !line.trim().is_empty()).map(serde_json::from_str).collect()
 }
 
 #[cfg(test)]

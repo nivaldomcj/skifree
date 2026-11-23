@@ -67,9 +67,7 @@ fn main() {
 }
 
 fn sound_count() -> usize {
-    (1..=9)
-        .filter(|i| Path::new(&format!("assets/sounds/sound_{i}.wav")).exists())
-        .count()
+    (1..=9).filter(|i| Path::new(&format!("assets/sounds/sound_{i}.wav")).exists()).count()
 }
 
 fn check_assets() {
@@ -103,9 +101,7 @@ fn check_assets() {
     // The extractor always produces the 89 bitmap sprites, the string
     // tables and the icons.
     let strings_ok = Path::new("assets/strings.json").exists();
-    let icons_ok = std::fs::read_dir("assets/icons")
-        .map(|mut d| d.next().is_some())
-        .unwrap_or(false);
+    let icons_ok = std::fs::read_dir("assets/icons").map(|mut d| d.next().is_some()).unwrap_or(false);
 
     if sprite_files < 89 || missing > 0 || !strings_ok || !icons_ok {
         panic!(

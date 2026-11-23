@@ -199,12 +199,33 @@ mod imp {
         display: *mut Display,
         window: Option<Window>,
         get_input_focus: unsafe extern "C" fn(*mut Display, *mut Window, *mut c_int) -> c_int,
-        query_tree: unsafe extern "C" fn(*mut Display, Window, *mut Window, *mut Window, *mut *mut Window, *mut c_uint) -> c_int,
+        query_tree: unsafe extern "C" fn(
+            *mut Display,
+            Window,
+            *mut Window,
+            *mut Window,
+            *mut *mut Window,
+            *mut c_uint,
+        ) -> c_int,
         get_class_hint: unsafe extern "C" fn(*mut Display, Window, *mut XClassHint) -> c_int,
         store_name: unsafe extern "C" fn(*mut Display, Window, *const c_char) -> c_int,
         intern_atom: unsafe extern "C" fn(*mut Display, *const c_char, c_int) -> Atom,
-        change_property: unsafe extern "C" fn(*mut Display, Window, Atom, Atom, c_int, c_int, *const c_uchar, c_int) -> c_int,
-        get_window_property: unsafe extern "C" fn(*mut Display, Window, Atom, c_long, c_long, c_int, Atom, *mut Atom, *mut c_int, *mut c_ulong, *mut c_ulong, *mut *mut c_uchar) -> c_int,
+        change_property:
+            unsafe extern "C" fn(*mut Display, Window, Atom, Atom, c_int, c_int, *const c_uchar, c_int) -> c_int,
+        get_window_property: unsafe extern "C" fn(
+            *mut Display,
+            Window,
+            Atom,
+            c_long,
+            c_long,
+            c_int,
+            Atom,
+            *mut Atom,
+            *mut c_int,
+            *mut c_ulong,
+            *mut c_ulong,
+            *mut *mut c_uchar,
+        ) -> c_int,
         free: unsafe extern "C" fn(*mut c_void) -> c_int,
         flush: unsafe extern "C" fn(*mut Display) -> c_int,
     }
@@ -328,7 +349,21 @@ mod imp {
                 let (state, fullscreen) = (x.atom(c"_NET_WM_STATE"), x.atom(c"_NET_WM_STATE_FULLSCREEN"));
                 let (mut ty, mut format, mut n, mut after, mut data) = (0, 0, 0, 0, std::ptr::null_mut());
                 const XA_ATOM: Atom = 4;
-                if (x.get_window_property)(x.display, w, state, 0, 64, 0, XA_ATOM, &mut ty, &mut format, &mut n, &mut after, &mut data) != 0 {
+                if (x.get_window_property)(
+                    x.display,
+                    w,
+                    state,
+                    0,
+                    64,
+                    0,
+                    XA_ATOM,
+                    &mut ty,
+                    &mut format,
+                    &mut n,
+                    &mut after,
+                    &mut data,
+                ) != 0
+                {
                     return true;
                 }
                 let mut is_fullscreen = false;

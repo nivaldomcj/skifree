@@ -1,8 +1,5 @@
 mod platform;
 
-use skifree::game::draw::{draw_list, DrawItem};
-use skifree::game::scoring::HIGH_SCORES_CAPTION;
-use skifree::game::state::GameState;
 use macroquad::prelude::*;
 use platform::audio::Audio;
 use platform::input::{GameAction, Input};
@@ -10,6 +7,9 @@ use platform::persistence;
 use platform::renderer::Renderer;
 use platform::timer::GameTimer;
 use platform::window;
+use skifree::game::draw::{draw_list, DrawItem};
+use skifree::game::scoring::HIGH_SCORES_CAPTION;
+use skifree::game::state::GameState;
 
 fn window_conf() -> Conf {
     window::conf()
@@ -107,7 +107,6 @@ fn draw_frame(game: &GameState, renderer: &Renderer, items: &[DrawItem], pause_i
     // the values as last painted, in the OEM fixed font, see
     // renderer::draw_status.
     renderer.draw_status(&game.status_values, sw);
-
 }
 
 /// `ski32.exe nosound` (the whole command line, any case) disables the
@@ -218,17 +217,15 @@ async fn main() {
             game.resize(view_w, view_h);
         }
 
-
         let live_input = if capture.is_some() { Vec::new() } else { input.poll() };
         if let Some((_, (bx, by, bw, bh))) = &dialog_in_window {
             // The drawn box is modal: only OK (Enter, Space, Esc, or a click
             // on the button) closes it; everything else is dropped.
             let (mx, my) = platform::input::client_mouse_position();
-            let clicked = is_mouse_button_pressed(MouseButton::Left)
-                && mx >= *bx && mx < bx + bw && my >= *by && my < by + bh;
-            let keyed = [KeyCode::Enter, KeyCode::KpEnter, KeyCode::Space, KeyCode::Escape]
-                .iter()
-                .any(|&k| is_key_pressed(k));
+            let clicked =
+                is_mouse_button_pressed(MouseButton::Left) && mx >= *bx && mx < bx + bw && my >= *by && my < by + bh;
+            let keyed =
+                [KeyCode::Enter, KeyCode::KpEnter, KeyCode::Space, KeyCode::Escape].iter().any(|&k| is_key_pressed(k));
             if live_input.iter().any(|a| matches!(a, GameAction::Quit)) && !keyed {
                 running = false;
             }
@@ -339,7 +336,6 @@ async fn main() {
             }
         }
 
-
         // Ticks keep arriving while paused: the game state stays frozen but
         // the wall clock advances (see GameState::wall_ms).
         // F3 / focus loss kill the original's timer and resuming calls
@@ -404,9 +400,8 @@ async fn main() {
                 // size (the window itself may be clamped by the screen).
                 let target = render_target(game.screen_w as u32, game.screen_h as u32);
                 target.texture.set_filter(FilterMode::Nearest);
-                let mut cam = Camera2D::from_display_rect(Rect::new(
-                    0.0, 0.0, game.screen_w as f32, game.screen_h as f32,
-                ));
+                let mut cam =
+                    Camera2D::from_display_rect(Rect::new(0.0, 0.0, game.screen_w as f32, game.screen_h as f32));
                 cam.render_target = Some(target.clone());
                 set_camera(&cam);
                 draw_frame(&game, &renderer, &shown_items, pause_in_window);

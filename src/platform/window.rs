@@ -95,11 +95,8 @@ fn window_icon() -> Option<miniquad::conf::Icon> {
         return None;
     }
     let px = |x: usize, y: usize| &img.bytes[(y * 32 + x) * 4..(y * 32 + x) * 4 + 4];
-    let mut icon = miniquad::conf::Icon {
-        small: icon_small(&img.bytes),
-        medium: [0; 32 * 32 * 4],
-        big: [0; 64 * 64 * 4],
-    };
+    let mut icon =
+        miniquad::conf::Icon { small: icon_small(&img.bytes), medium: [0; 32 * 32 * 4], big: [0; 64 * 64 * 4] };
     icon.medium.copy_from_slice(&img.bytes);
     for y in 0..64 {
         for x in 0..64 {
@@ -138,7 +135,5 @@ pub fn set_favicon(assets: &skifree::extract::AssetSet) {
 }
 
 fn in_app_bundle() -> bool {
-    std::env::current_exe()
-        .map(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
-        .unwrap_or(false)
+    std::env::current_exe().map(|p| p.to_string_lossy().contains(".app/Contents/MacOS/")).unwrap_or(false)
 }

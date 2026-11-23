@@ -52,11 +52,7 @@ pub fn apply_steering(actor: &mut Actor, accel: i16, max_speed: i16, decel: i16,
     let friction = (friction_div as i32 * vy_clamped) / 2;
 
     // Clamp the friction term into the window [s4 - 2, s4 + decel].
-    let s2 = if friction < s4 {
-        friction.max(s4 - 2)
-    } else {
-        friction.min(s4 + decel as i32)
-    };
+    let s2 = if friction < s4 { friction.max(s4 - 2) } else { friction.min(s4 + decel as i32) };
 
     // Downhill speed accelerates toward max_speed, decaying when above it.
     let new_vy = if (max_speed as i32) < vy {
@@ -94,10 +90,7 @@ mod tests {
     use super::*;
 
     fn test_actor() -> Actor {
-        Actor {
-            active: true,
-            ..Default::default()
-        }
+        Actor { active: true, ..Default::default() }
     }
 
     #[test]
@@ -176,6 +169,7 @@ mod tests {
         let mut a = Actor { active: true, vx: -10, vy: 8, ..Default::default() };
         apply_steering(&mut a, 1, 0, 1, 8, -1);
         assert_eq!(a.vy, 6); // vy - 2
+
         // Keep scrubbing until vy reaches 0.
         while a.vy > 0 {
             apply_steering(&mut a, 1, 0, 1, 8, -1);

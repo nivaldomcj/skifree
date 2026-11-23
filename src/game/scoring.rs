@@ -68,21 +68,13 @@ impl HighScores {
     /// Record a course time; returns the 0-based rank, or None when the time
     /// doesn't make the top 10 ("try again").
     pub fn insert_time(&mut self, course: usize, ms: u64) -> Option<usize> {
-        let list = if course == 0 {
-            &mut self.slalom_ms
-        } else {
-            &mut self.giant_slalom_ms
-        };
+        let list = if course == 0 { &mut self.slalom_ms } else { &mut self.giant_slalom_ms };
         Self::insert_time_into(list, ms)
     }
 
     /// Record a freestyle style score; returns the 0-based rank, or None.
     pub fn insert_style(&mut self, score: i32) -> Option<usize> {
-        let rank = self
-            .freestyle_style
-            .iter()
-            .position(|&s| s < score)
-            .unwrap_or(self.freestyle_style.len());
+        let rank = self.freestyle_style.iter().position(|&s| s < score).unwrap_or(self.freestyle_style.len());
         if rank >= HIGH_SCORE_LEN {
             return None;
         }
@@ -100,10 +92,7 @@ pub struct Scoring {
 
 impl Scoring {
     pub fn new() -> Self {
-        Self {
-            score: 0,
-            enabled: false,
-        }
+        Self { score: 0, enabled: false }
     }
 
     pub fn add(&mut self, points: i32) {

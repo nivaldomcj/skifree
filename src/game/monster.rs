@@ -172,24 +172,11 @@ mod tests {
     const H: i16 = 480;
 
     fn monster_at(class: ActorClass, x: i16, y: i16) -> Actor {
-        Actor {
-            active: true,
-            class,
-            x,
-            y,
-            state: 0x2a,
-            ..Default::default()
-        }
+        Actor { active: true, class, x, y, state: 0x2a, ..Default::default() }
     }
 
     fn player_at(x: i16, y: i16) -> Actor {
-        Actor {
-            active: true,
-            class: ActorClass::Skier,
-            x,
-            y,
-            ..Default::default()
-        }
+        Actor { active: true, class: ActorClass::Skier, x, y, ..Default::default() }
     }
 
     #[test]

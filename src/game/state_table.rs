@@ -16,6 +16,7 @@ pub struct PhysicsEntry {
     pub direction: i16,
 }
 
+#[rustfmt::skip]
 pub const SKIER_PHYSICS: [PhysicsEntry; 22] = [
     PhysicsEntry { accel: 1, max_speed: 16, decel: 0, friction_div: 0, direction: 0 },  // 0x00
     PhysicsEntry { accel: 1, max_speed: 12, decel: 1, friction_div: 1, direction: -1 }, // 0x01
@@ -44,6 +45,7 @@ pub const SKIER_PHYSICS: [PhysicsEntry; 22] = [
 /// Per-class initial state for populator-spawned actors (DAT_0040a22c,
 /// classes 0..=10). Classes >= 0xb spawn with a raw sprite instead
 /// (FUN_00402850, see populator.rs).
+#[rustfmt::skip]
 pub const CLASS_INITIAL_STATE: [u16; 11] = [
     0x06, // 0 skier
     0x16, // 1 dog
@@ -59,6 +61,7 @@ pub const CLASS_INITIAL_STATE: [u16; 11] = [
 ];
 
 /// Dog physics table (DAT_0040a490), states 0x16-0x1a
+#[rustfmt::skip]
 pub const DOG_PHYSICS: [PhysicsEntry; 5] = [
     PhysicsEntry { accel: 1, max_speed: 1, decel: 0, friction_div: 0, direction: 0 },   // 0x16
     PhysicsEntry { accel: 1, max_speed: 1, decel: 1, friction_div: 4, direction: -1 },  // 0x17
@@ -89,15 +92,13 @@ pub const DIRECTION_TRANSITION: [u16; 22] = [1, 4, 2, 0, 3, 1, 7, 2, 0, 5, 4, 6,
 
 /// LEFT-key transition table, one u32 per state (DAT_0040a258 + state*8).
 /// Cycles 0→1→2→3→7 (state 7 = hard carve, also kicks vx).
-pub const LEFT_TRANSITION: [u16; 22] = [
-    1, 2, 3, 7, 0, 4, 5, 3, 5, 9, 5, 3, 3, 0xe, 0x10, 0xd, 0xf, 0xe, 0x14, 0x14, 0x10, 0xd,
-];
+pub const LEFT_TRANSITION: [u16; 22] =
+    [1, 2, 3, 7, 0, 4, 5, 3, 5, 9, 5, 3, 3, 0xe, 0x10, 0xd, 0xf, 0xe, 0x14, 0x14, 0x10, 0xd];
 
 /// RIGHT-key transition table, one u32 per state (DAT_0040a258 + state*8 + 4).
 /// Cycles 0→4→5→6→8 (state 8 = hard carve, also kicks vx).
-pub const RIGHT_TRANSITION: [u16; 22] = [
-    4, 0, 1, 2, 5, 6, 8, 2, 6, 2, 0xa, 6, 6, 0xf, 0xd, 0x10, 0xe, 0xf, 0x15, 0x15, 0xd, 0x10,
-];
+pub const RIGHT_TRANSITION: [u16; 22] =
+    [4, 0, 1, 2, 5, 6, 8, 2, 6, 2, 0xa, 6, 6, 0xf, 0xd, 0x10, 0xe, 0xf, 0x15, 0x15, 0xd, 0x10];
 
 /// Mouse steering direction table (FUN_004065e0)
 /// Returns direction 0-6 based on slope ratio dy/dx
@@ -140,14 +141,22 @@ pub fn mouse_direction(dx: i16, dy: i16) -> u16 {
 pub fn mouse_air_direction(dx: i16, dy: i16) -> u16 {
     if dx < 0 {
         if dy < 0 {
-            if dy >= dx { 0x0e } else { 0x10 }
+            if dy >= dx {
+                0x0e
+            } else {
+                0x10
+            }
         } else if -dy >= dx {
             0x0e
         } else {
             0x0d
         }
     } else if dy < 0 {
-        if -dy > dx { 0x10 } else { 0x0f }
+        if -dy > dx {
+            0x10
+        } else {
+            0x0f
+        }
     } else if dy <= dx {
         0x0e
     } else {
@@ -166,9 +175,7 @@ mod tests {
     /// Returns None when the (gitignored, copyrighted) binary is absent so the
     /// byte-comparison tests skip instead of failing for contributors.
     fn read_exe() -> Option<Vec<u8>> {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("originals")
-            .join("ski32.exe");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("originals").join("ski32.exe");
         std::fs::read(path).ok()
     }
 

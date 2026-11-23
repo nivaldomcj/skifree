@@ -12,28 +12,13 @@ impl ActorPool {
     pub fn new() -> Self {
         let actors = vec![Actor::default(); 100];
         let free = (0..100).rev().collect();
-        Self {
-            actors,
-            free,
-            head: None,
-        }
+        Self { actors, free, head: None }
     }
 
     pub fn alloc(&mut self, class: ActorClass, state: u16) -> Option<usize> {
         let idx = self.free.pop()?;
-        let sprite_id = if (state as usize) < STATE_TO_SPRITE.len() {
-            STATE_TO_SPRITE[state as usize]
-        } else {
-            0
-        };
-        self.actors[idx] = Actor {
-            active: true,
-            class,
-            state,
-            sprite_id,
-            next: self.head,
-            ..Default::default()
-        };
+        let sprite_id = if (state as usize) < STATE_TO_SPRITE.len() { STATE_TO_SPRITE[state as usize] } else { 0 };
+        self.actors[idx] = Actor { active: true, class, state, sprite_id, next: self.head, ..Default::default() };
         self.head = Some(idx);
         Some(idx)
     }
@@ -43,14 +28,7 @@ impl ActorPool {
     /// "state" field is really a sprite id (e.g. the snowboarder jump puff).
     pub fn alloc_with_sprite(&mut self, class: ActorClass, sprite_id: u16) -> Option<usize> {
         let idx = self.free.pop()?;
-        self.actors[idx] = Actor {
-            active: true,
-            class,
-            state: 0,
-            sprite_id,
-            next: self.head,
-            ..Default::default()
-        };
+        self.actors[idx] = Actor { active: true, class, state: 0, sprite_id, next: self.head, ..Default::default() };
         self.head = Some(idx);
         Some(idx)
     }

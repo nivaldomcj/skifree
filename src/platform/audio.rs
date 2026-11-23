@@ -139,9 +139,9 @@ mod imp {
 
 #[cfg(all(skifree_sound, target_os = "macos"))]
 mod imp {
-    use skifree::game::sound::Sound;
     use super::WAVS;
     use macroquad::miniquad::native::apple::frameworks::{class, msg_send, sel, sel_impl, ObjcId, NO};
+    use skifree::game::sound::Sound;
 
     pub struct Player {
         sounds: Vec<ObjcId>,
@@ -384,7 +384,10 @@ mod imp {
     }
 }
 
-#[cfg(all(skifree_sound, not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_arch = "wasm32"))))]
+#[cfg(all(
+    skifree_sound,
+    not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_arch = "wasm32"))
+))]
 mod imp {
     use skifree::game::sound::Sound;
 

@@ -105,7 +105,14 @@ fn generate_slalom(events: &mut Vec<SpawnEvent>, left: i16, top: i16, screen_h: 
 
 /// Tree slalom (right strip): long timed course, gates only (see the loop
 /// comment — the original's per-row tree is never added).
-fn generate_tree_slalom(events: &mut Vec<SpawnEvent>, left: i16, top: i16, screen_w: i16, screen_h: i16, rng: &mut super::rng::Rng) {
+fn generate_tree_slalom(
+    events: &mut Vec<SpawnEvent>,
+    left: i16,
+    top: i16,
+    screen_w: i16,
+    screen_h: i16,
+    rng: &mut super::rng::Rng,
+) {
     // "Tree Slalom ↘" banner: x = viewport_left + client_w - 0x3c, clamped to <= 0x140.
     let bx = (left + screen_w - 0x3c).min(0x140);
     marker(events, 0x3e, bx, banner_y(top, screen_h));
@@ -215,23 +222,51 @@ fn generate_mob_spawns(events: &mut Vec<SpawnEvent>) {
 fn generate_monster_spawns(events: &mut Vec<SpawnEvent>) {
     // Monster from top (type 7)
     events.push(SpawnEvent {
-        actor_idx: None, event_type: 0x07, state: 0x2a, class: 7, sprite: None,
-        x: -16060, y: 0, z: 0, param: 0,
+        actor_idx: None,
+        event_type: 0x07,
+        state: 0x2a,
+        class: 7,
+        sprite: None,
+        x: -16060,
+        y: 0,
+        z: 0,
+        param: 0,
     });
     // Monster from bottom (type 8)
     events.push(SpawnEvent {
-        actor_idx: None, event_type: 0x08, state: 0x2a, class: 8, sprite: None,
-        x: 16060, y: 0, z: 0, param: 0,
+        actor_idx: None,
+        event_type: 0x08,
+        state: 0x2a,
+        class: 8,
+        sprite: None,
+        x: 16060,
+        y: 0,
+        z: 0,
+        param: 0,
     });
     // Monster from left (type 5)
     events.push(SpawnEvent {
-        actor_idx: None, event_type: 0x05, state: 0x2a, class: 5, sprite: None,
-        x: 0, y: -2060, z: 0, param: 0,
+        actor_idx: None,
+        event_type: 0x05,
+        state: 0x2a,
+        class: 5,
+        sprite: None,
+        x: 0,
+        y: -2060,
+        z: 0,
+        param: 0,
     });
     // Monster from right (type 6)
     events.push(SpawnEvent {
-        actor_idx: None, event_type: 0x06, state: 0x2a, class: 6, sprite: None,
-        x: 0, y: 32060, z: 0, param: 0,
+        actor_idx: None,
+        event_type: 0x06,
+        state: 0x2a,
+        class: 6,
+        sprite: None,
+        x: 0,
+        y: 32060,
+        z: 0,
+        param: 0,
     });
 }
 

@@ -7,7 +7,14 @@ pub fn intersects(l1: i16, t1: i16, r1: i16, b1: i16, l2: i16, t2: i16, r2: i16,
 }
 
 /// Actor bounding box from sprite dimensions and position (FUN_004014b0)
-pub fn actor_bounds(actor: &Actor, sprite_w: i16, sprite_h: i16, camera: &Camera, screen_w: i16, screen_h: i16) -> (i16, i16, i16, i16) {
+pub fn actor_bounds(
+    actor: &Actor,
+    sprite_w: i16,
+    sprite_h: i16,
+    camera: &Camera,
+    screen_w: i16,
+    screen_h: i16,
+) -> (i16, i16, i16, i16) {
     let (sx, sy) = camera.world_to_screen(actor.x, actor.y, screen_w, screen_h);
     let left = sx - sprite_w / 2;
     let top = sy - actor.z - sprite_h;
@@ -22,11 +29,29 @@ pub const VIEW_PAD: i16 = 0x78;
 /// FUN_004014b0 draw box strictly overlaps the padded viewport DAT_0040c680
 /// (FUN_00401290). Gates materialization (FUN_00404130), culling and the
 /// populator's density sum.
-pub fn in_padded_view(x: i16, y: i16, z: i16, sprite_w: i16, sprite_h: i16, camera: &Camera, screen_w: i16, screen_h: i16) -> bool {
+pub fn in_padded_view(
+    x: i16,
+    y: i16,
+    z: i16,
+    sprite_w: i16,
+    sprite_h: i16,
+    camera: &Camera,
+    screen_w: i16,
+    screen_h: i16,
+) -> bool {
     let (sx, sy) = camera.world_to_screen(x, y, screen_w, screen_h);
     let left = sx - sprite_w / 2;
     let top = sy - z - sprite_h;
-    intersects(left, top, left + sprite_w, top + sprite_h, -VIEW_PAD, -VIEW_PAD, screen_w + VIEW_PAD, screen_h + VIEW_PAD)
+    intersects(
+        left,
+        top,
+        left + sprite_w,
+        top + sprite_h,
+        -VIEW_PAD,
+        -VIEW_PAD,
+        screen_w + VIEW_PAD,
+        screen_h + VIEW_PAD,
+    )
 }
 
 /// The spawn-event y window scanned by FUN_004046e0 / FUN_004040a0: event y
@@ -89,8 +114,8 @@ pub fn handle_collision(
         match other.class {
             // Skier-first vs a monster does nothing (inner cases 5-8 fall
             // to the default); the eating runs monster-first.
-            ActorClass::MonsterLeft | ActorClass::MonsterRight |
-            ActorClass::MonsterTop | ActorClass::MonsterBottom => {}
+            ActorClass::MonsterLeft | ActorClass::MonsterRight | ActorClass::MonsterTop | ActorClass::MonsterBottom => {
+            }
             ActorClass::SnowBump => {
                 // Snow bump: launches a straight-downhill skier (state 0).
                 if skier.state == 0 {
@@ -101,8 +126,12 @@ pub fn handle_collision(
                     result.skier_state = Some(0x0d);
                 }
             }
-            ActorClass::Tree | ActorClass::Dog | ActorClass::Obstacle |
-            ActorClass::AmbientMob | ActorClass::Lift | ActorClass::Eating => {
+            ActorClass::Tree
+            | ActorClass::Dog
+            | ActorClass::Obstacle
+            | ActorClass::AmbientMob
+            | ActorClass::Lift
+            | ActorClass::Eating => {
                 solid_hit(skier, other, skier_dims, other_dims, flyover, &mut result);
             }
             ActorClass::Rock => {
@@ -274,8 +303,11 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
             // to its actor, so a drifting chair or a monster reads as still.
             let node_actor = matches!(
                 b.class,
-                ActorClass::AmbientMob | ActorClass::MonsterLeft | ActorClass::MonsterRight
-                    | ActorClass::MonsterTop | ActorClass::MonsterBottom
+                ActorClass::AmbientMob
+                    | ActorClass::MonsterLeft
+                    | ActorClass::MonsterRight
+                    | ActorClass::MonsterTop
+                    | ActorClass::MonsterBottom
             );
             let moving = !node_actor && (b.vx != 0 || b.vy != 0);
             if a.state < 0x1d && moving {
@@ -289,8 +321,7 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
         // Case 3, crossing skier: sub-case by the other's class (byte table
         // at 0x404054).
         ActorClass::Obstacle => match b.class {
-            ActorClass::Skier | ActorClass::Dog | ActorClass::Obstacle | ActorClass::Tree
-            | ActorClass::Rock => {
+            ActorClass::Skier | ActorClass::Dog | ActorClass::Obstacle | ActorClass::Tree | ActorClass::Rock => {
                 if b.class == ActorClass::Skier {
                     result.score_delta += 20;
                 }
@@ -310,8 +341,7 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
             _ => {}
         },
         // Cases 5-8, monster: eats the player.
-        ActorClass::MonsterLeft | ActorClass::MonsterRight | ActorClass::MonsterTop
-        | ActorClass::MonsterBottom => {
+        ActorClass::MonsterLeft | ActorClass::MonsterRight | ActorClass::MonsterTop | ActorClass::MonsterBottom => {
             if b.class == ActorClass::Skier {
                 result.skier_eaten = true;
                 result.eaten_by = Some(a_idx);
@@ -382,7 +412,8 @@ pub fn check_all_collisions(
                 continue;
             }
 
-            for (first, second, fd, sd) in [(later, earlier, (aw, ah), (bw, bh)), (earlier, later, (bw, bh), (aw, ah))] {
+            for (first, second, fd, sd) in [(later, earlier, (aw, ah), (bw, bh)), (earlier, later, (bw, bh), (aw, ah))]
+            {
                 if removed.contains(&first) || removed.contains(&second) {
                     break;
                 }
@@ -393,8 +424,7 @@ pub fn check_all_collisions(
                 if log_pairs() {
                     eprintln!(
                         "pair a=({:?},spr{},st{},({},{},{})) b=({:?},spr{},st{},({},{},{}))",
-                        f.class, f.sprite_id, f.state, f.x, f.y, f.z,
-                        s.class, s.sprite_id, s.state, s.x, s.y, s.z
+                        f.class, f.sprite_id, f.state, f.x, f.y, f.z, s.class, s.sprite_id, s.state, s.x, s.y, s.z
                     );
                 }
                 let result = handle_collision(&mut f, &mut s, player_idx, first, second, fd, sd);
@@ -412,9 +442,13 @@ pub fn check_all_collisions(
                         removed.push(p);
                     }
                 }
-                if result.score_delta != 0 || result.skier_crash || result.skier_eaten
-                    || result.skier_state.is_some() || result.free_actor.is_some()
-                    || result.sound.is_some() {
+                if result.score_delta != 0
+                    || result.skier_crash
+                    || result.skier_eaten
+                    || result.skier_state.is_some()
+                    || result.free_actor.is_some()
+                    || result.sound.is_some()
+                {
                     results.push(result);
                 }
             }
@@ -429,22 +463,11 @@ mod tests {
     use super::*;
 
     fn skier() -> Actor {
-        Actor {
-            active: true,
-            class: ActorClass::Skier,
-            state: 0,
-            vy: 16,
-            ..Default::default()
-        }
+        Actor { active: true, class: ActorClass::Skier, state: 0, vy: 16, ..Default::default() }
     }
 
     fn scenery(class: ActorClass, sprite: u16) -> Actor {
-        Actor {
-            active: true,
-            class,
-            sprite_id: sprite,
-            ..Default::default()
-        }
+        Actor { active: true, class, sprite_id: sprite, ..Default::default() }
     }
 
     fn collide(s: &mut Actor, o: &mut Actor, sd: (i16, i16), od: (i16, i16)) -> CollisionResult {

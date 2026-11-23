@@ -3,11 +3,7 @@ use std::path::Path;
 use skifree::replay::{parse_jsonl, records_to_jsonl, run_scenario, Scenario};
 
 fn scenario_path(name: &str) -> String {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("replays")
-        .join(format!("{}.json", name))
-        .to_string_lossy()
-        .into_owned()
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("replays").join(format!("{}.json", name)).to_string_lossy().into_owned()
 }
 
 fn golden_path(name: &str) -> String {
@@ -20,14 +16,14 @@ fn golden_path(name: &str) -> String {
 }
 
 fn load_scenario(name: &str) -> Scenario {
-    let text = std::fs::read_to_string(scenario_path(name))
-        .unwrap_or_else(|e| panic!("cannot read {} scenario: {}", name, e));
+    let text =
+        std::fs::read_to_string(scenario_path(name)).unwrap_or_else(|e| panic!("cannot read {} scenario: {}", name, e));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("bad {} scenario: {}", name, e))
 }
 
 fn load_golden(name: &str) -> Vec<skifree::replay::TickRecord> {
-    let text = std::fs::read_to_string(golden_path(name))
-        .unwrap_or_else(|e| panic!("cannot read {} golden: {}", name, e));
+    let text =
+        std::fs::read_to_string(golden_path(name)).unwrap_or_else(|e| panic!("cannot read {} golden: {}", name, e));
     parse_jsonl(&text).unwrap_or_else(|e| panic!("bad {} golden: {}", name, e))
 }
 

@@ -1,7 +1,5 @@
 use super::actor::ActorPool;
-use super::state_table::STATE_TO_SPRITE;
 use super::camera;
-use super::types::Camera;
 use super::collision;
 use super::course;
 use super::mob;
@@ -10,8 +8,10 @@ use super::physics;
 use super::populator;
 use super::rng::Rng;
 use super::scoring::Scoring;
-use super::sound::Sound;
 use super::skier;
+use super::sound::Sound;
+use super::state_table::STATE_TO_SPRITE;
+use super::types::Camera;
 use super::types::*;
 
 /// Central game state — replaces all the original's global variables
@@ -278,12 +278,7 @@ impl GameState {
         let (w56, h56) = dim(0x38);
         let lx = -0x28 - w53 / 2;
         let cx = w55.max(w56);
-        let splash = [
-            (0x35u16, lx, 0),
-            (0x36, lx, h54 + 4),
-            (0x37, cx, h55),
-            (0x38, cx, h55 + h56 + 4),
-        ];
+        let splash = [(0x35u16, lx, 0), (0x36, lx, h54 + 4), (0x37, cx, h55), (0x38, cx, h55 + h56 + 4)];
         for (sprite, x, y) in splash {
             if let Some(idx) = self.pool.alloc_with_sprite(ActorClass::Effect, sprite) {
                 if let Some(a) = self.pool.get_mut(idx) {
@@ -308,9 +303,7 @@ impl GameState {
 
         // Player position before this tick's movement (course-line crossing
         // detection compares against it, like FUN_004028e0's saved x/y).
-        let player_old = self.player_idx
-            .and_then(|i| self.pool.get(i))
-            .map(|a| (a.x, a.y));
+        let player_old = self.player_idx.and_then(|i| self.pool.get(i)).map(|a| (a.x, a.y));
 
         // Actor loop (FUN_00401e50's first loop): update each actor, then
         // cull-test it against the padded viewport with the camera as it is
@@ -325,9 +318,8 @@ impl GameState {
         // "moved this tick" test (the original's flag 0x20, cleared in this
         // loop and set by FUN_00402390 on any position change). Actors
         // created during the tick count as moved.
-        let start_pos: Vec<Option<(i16, i16, i16, ActorClass)>> = (0..100)
-            .map(|i| self.pool.get(i).map(|a| (a.x, a.y, a.z, a.class)))
-            .collect();
+        let start_pos: Vec<Option<(i16, i16, i16, ActorClass)>> =
+            (0..100).map(|i| self.pool.get(i).map(|a| (a.x, a.y, a.z, a.class))).collect();
         // Previous-position copies for the collision crossing test.
         for idx in self.pool.active_indices() {
             if let Some(a) = self.pool.get_mut(idx) {
@@ -342,8 +334,10 @@ impl GameState {
             };
             if self.log_updates {
                 if let Some(a) = self.pool.get(idx) {
-                    eprintln!("upd tick={} cls={} st={} spr={} x={} y={} z={}",
-                        self.tick_count, a.class as u16, a.state, a.sprite_id, a.x, a.y, a.z);
+                    eprintln!(
+                        "upd tick={} cls={} st={} spr={} x={} y={} z={}",
+                        self.tick_count, a.class as u16, a.state, a.sprite_id, a.x, a.y, a.z
+                    );
                 }
             }
 
@@ -372,7 +366,9 @@ impl GameState {
                 }
                 ActorClass::Snowboarder => {
                     if let Some(actor) = self.pool.get_mut(idx) {
-                        if let Some(req) = mob::update_snowboarder(actor, &mut self.rng, self.fast_forward, &mut self.sounds) {
+                        if let Some(req) =
+                            mob::update_snowboarder(actor, &mut self.rng, self.fast_forward, &mut self.sounds)
+                        {
                             spawn_requests.push(req);
                         }
                     }
@@ -486,7 +482,6 @@ impl GameState {
             }
         }
 
-
         // Update camera to follow player; each 0x3c of travel spawns one
         // actor at the entering edge (FUN_004025c0), in the original's
         // order: bottom, top, right, left.
@@ -506,19 +501,16 @@ impl GameState {
                 // DAT_0040c6fc sums live actors only: off-screen proxies
                 // are bare mob nodes in the original and do not count.
                 let weight = populator::sprite_weight(
-                    self.pool.active_indices().into_iter()
+                    self.pool
+                        .active_indices()
+                        .into_iter()
                         .filter(|&i| !self.is_proxy(i) || self.pool.get(i).is_some_and(|a| a.flags.on_screen))
                         .filter_map(|i| self.pool.get(i)),
                     &self.sprite_dims,
                 );
-                if let Some(req) = populator::pick_spawn(
-                    edge,
-                    &self.camera,
-                    self.screen_w,
-                    self.screen_h,
-                    weight,
-                    &mut self.rng,
-                ) {
+                if let Some(req) =
+                    populator::pick_spawn(edge, &self.camera, self.screen_w, self.screen_h, weight, &mut self.rng)
+                {
                     self.fulfill_spawn(req);
                 }
             }
@@ -651,12 +643,7 @@ impl GameState {
                 } else {
                     self.high_scores.insert_time(ci, clock)
                 };
-                self.last_finish = Some(FinishRecord {
-                    course: ci,
-                    ms: clock,
-                    style: self.scoring.score,
-                    rank,
-                });
+                self.last_finish = Some(FinishRecord { course: ci, ms: clock, style: self.scoring.score, rank });
                 self.pending_score_save = true;
                 self.show_high_scores = true;
                 // The skier stands after finishing (FUN_00402e80), unless
@@ -686,9 +673,7 @@ impl GameState {
 
     /// First gate record index within a course strip (DAT_0040c94c/c950).
     fn first_gate_index(&self, xmin: i16, xmax: i16) -> Option<usize> {
-        self.spawn_events
-            .iter()
-            .position(|e| e.class == 0x0c && e.x >= xmin && e.x <= xmax)
+        self.spawn_events.iter().position(|e| e.class == 0x0c && e.x >= xmin && e.x <= xmax)
     }
 
     /// Gate passing (FUN_00402c60 / FUN_00403250 tail + FUN_00403130): once
@@ -722,11 +707,7 @@ impl GameState {
                 a.sprite_id = new_sprite;
             }
         }
-        let (xmin, xmax) = if ci == 0 {
-            course::SLALOM_STRIP
-        } else {
-            course::TREE_SLALOM_STRIP
-        };
+        let (xmin, xmax) = if ci == 0 { course::SLALOM_STRIP } else { course::TREE_SLALOM_STRIP };
         self.courses[ci].next_gate = self
             .spawn_events
             .iter()
@@ -846,10 +827,8 @@ impl GameState {
     /// drops it by its real sprite box. Nodes are visited in world-build
     /// order: ambient mobs, then monsters.
     fn update_proxies(&mut self) {
-        let nodes: Vec<usize> = self.spawn_events.iter()
-            .filter(|e| (4..=8).contains(&e.class))
-            .filter_map(|e| e.actor_idx)
-            .collect();
+        let nodes: Vec<usize> =
+            self.spawn_events.iter().filter(|e| (4..=8).contains(&e.class)).filter_map(|e| e.actor_idx).collect();
         for idx in nodes {
             let player = self.player_idx.and_then(|pi| self.pool.get(pi).cloned());
             let mut request = None;
@@ -861,8 +840,10 @@ impl GameState {
                         let live = actor.flags.on_screen;
                         request = mob::update_ambient(actor, &mut self.rng, live);
                     }
-                    ActorClass::MonsterLeft | ActorClass::MonsterRight
-                    | ActorClass::MonsterTop | ActorClass::MonsterBottom => {
+                    ActorClass::MonsterLeft
+                    | ActorClass::MonsterRight
+                    | ActorClass::MonsterTop
+                    | ActorClass::MonsterBottom => {
                         monster::update_monster(
                             actor,
                             player.as_ref(),
@@ -911,9 +892,8 @@ impl GameState {
             // overlapping the padded viewport. Culled actors (event link
             // reset) re-materialize here when scrolled back into range.
             let in_window = (4..=8).contains(&event.class) || {
-                let sprite = event.sprite.unwrap_or_else(|| {
-                    STATE_TO_SPRITE.get(event.state as usize).copied().unwrap_or(0)
-                });
+                let sprite =
+                    event.sprite.unwrap_or_else(|| STATE_TO_SPRITE.get(event.state as usize).copied().unwrap_or(0));
                 let (w, h) = self.sprite_dims.get(sprite as usize).copied().unwrap_or((16, 16));
                 collision::in_event_window(event.y, &self.camera, self.screen_w, self.screen_h)
                     // Event nodes carry z = 0 (verified via Frida); the
@@ -1034,16 +1014,12 @@ impl GameState {
 
     /// Get player position for HUD
     pub fn player_pos(&self) -> Option<(i16, i16, i16)> {
-        self.player_idx
-            .and_then(|idx| self.pool.get(idx))
-            .map(|a| (a.x, a.y, a.z))
+        self.player_idx.and_then(|idx| self.pool.get(idx)).map(|a| (a.x, a.y, a.z))
     }
 
     /// Get player velocity for HUD
     pub fn player_velocity(&self) -> Option<(i16, i16, i16)> {
-        self.player_idx
-            .and_then(|idx| self.pool.get(idx))
-            .map(|a| (a.vx, a.vy, a.vz))
+        self.player_idx.and_then(|idx| self.pool.get(idx)).map(|a| (a.vx, a.vy, a.vz))
     }
 }
 
@@ -1062,10 +1038,7 @@ fn clock_seed() -> u32 {
     if let Some(clock_ms) = CLOCK_SOURCE.get() {
         return clock_ms();
     }
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u32
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u32
 }
 
 /// Mob-node classes (4-8): ambient mobs and the four monsters.
@@ -1114,7 +1087,10 @@ mod tests {
         for _ in 0..15 {
             g.tick(40);
         }
-        let xs: Vec<i16> = g.pool.active_indices().into_iter()
+        let xs: Vec<i16> = g
+            .pool
+            .active_indices()
+            .into_iter()
             .filter_map(|i| g.pool.get(i))
             .filter(|a| a.sprite_id == 0x39 || a.sprite_id == 0x3a)
             .map(|a| a.x)
@@ -1130,10 +1106,20 @@ mod tests {
         for _ in 0..3 {
             g.tick(40);
         }
-        let monsters: Vec<bool> = g.pool.active_indices().into_iter()
+        let monsters: Vec<bool> = g
+            .pool
+            .active_indices()
+            .into_iter()
             .filter_map(|i| g.pool.get(i))
-            .filter(|a| matches!(a.class, ActorClass::MonsterLeft | ActorClass::MonsterRight
-                | ActorClass::MonsterTop | ActorClass::MonsterBottom))
+            .filter(|a| {
+                matches!(
+                    a.class,
+                    ActorClass::MonsterLeft
+                        | ActorClass::MonsterRight
+                        | ActorClass::MonsterTop
+                        | ActorClass::MonsterBottom
+                )
+            })
             .map(|a| a.flags.on_screen)
             .collect();
         assert_eq!(monsters.len(), 4, "monster nodes exist from world build");
@@ -1328,7 +1314,10 @@ mod tests {
             a.z = 0;
         }
         g.tick(40);
-        let effect = g.pool.active_indices().into_iter()
+        let effect = g
+            .pool
+            .active_indices()
+            .into_iter()
             .filter_map(|i| g.pool.get(i))
             .find(|a| a.class == ActorClass::Effect)
             .expect("jump effect actor spawned");
@@ -1352,7 +1341,10 @@ mod tests {
             param: -2,
         });
         g.tick(40);
-        let mob = g.pool.active_indices().into_iter()
+        let mob = g
+            .pool
+            .active_indices()
+            .into_iter()
             .filter_map(|i| g.pool.get(i))
             .find(|a| a.class == ActorClass::AmbientMob)
             .expect("ambient mob materialized");

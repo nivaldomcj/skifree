@@ -90,12 +90,8 @@ pub fn resources(data: &[u8]) -> Result<Vec<Resource<'_>>> {
         if raw & 0x8000_0000 != 0 {
             let o = rsrc + (raw & 0x7FFF_FFFF) as usize;
             let n = u16_at(data, o)? as usize;
-            let units: Vec<u16> = slice(data, o + 2, n * 2)?
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|c| u16::from_le_bytes(*c))
-                .collect();
+            let units: Vec<u16> =
+                slice(data, o + 2, n * 2)?.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
             Ok(Name::Str(String::from_utf16_lossy(&units)))
         } else {
             Ok(Name::Id(raw as u16))

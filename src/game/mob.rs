@@ -237,16 +237,7 @@ mod tests {
     }
 
     fn ambient(x: i16, y: i16, z: i16, state: u16, vy: i16) -> Actor {
-        Actor {
-            active: true,
-            class: ActorClass::AmbientMob,
-            x,
-            y,
-            z,
-            vy,
-            state,
-            ..Default::default()
-        }
+        Actor { active: true, class: ActorClass::AmbientMob, x, y, z, vy, state, ..Default::default() }
     }
 
     #[test]
@@ -311,15 +302,7 @@ mod tests {
     }
 
     fn snowboarder(x: i16, y: i16, z: i16, state: u16) -> Actor {
-        Actor {
-            active: true,
-            class: ActorClass::Snowboarder,
-            x,
-            y,
-            z,
-            state,
-            ..Default::default()
-        }
+        Actor { active: true, class: ActorClass::Snowboarder, x, y, z, state, ..Default::default() }
     }
 
     #[test]

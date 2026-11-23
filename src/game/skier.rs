@@ -36,14 +36,7 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool, sounds: &mut Vec<Soun
     // Get physics params for current state
     if (state as usize) < SKIER_PHYSICS.len() {
         let entry = &SKIER_PHYSICS[state as usize];
-        physics::apply_steering(
-            actor,
-            entry.accel,
-            entry.max_speed,
-            entry.decel,
-            entry.friction_div,
-            entry.direction,
-        );
+        physics::apply_steering(actor, entry.accel, entry.max_speed, entry.decel, entry.friction_div, entry.direction);
     }
 
     // State transitions for skiing states
@@ -187,11 +180,7 @@ pub fn steer_mouse(actor: &mut Actor, dx: i16, dy: i16) {
     if actor.state == 0x0b || actor.state == 0x11 {
         return;
     }
-    let dir = if actor.z == 0 {
-        mouse_direction(dx, dy)
-    } else {
-        mouse_air_direction(dx, dy)
-    };
+    let dir = if actor.z == 0 { mouse_direction(dx, dy) } else { mouse_air_direction(dx, dy) };
     physics::change_state(actor, dir);
 }
 

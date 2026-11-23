@@ -182,14 +182,7 @@ pub fn pick_spawn(
     } else {
         (None, Some(sprite_for_class(class, rng)))
     };
-    Some(SpawnRequest {
-        class: ActorClass::from_u16(class)?,
-        state,
-        sprite,
-        x,
-        y,
-        z: 0,
-    })
+    Some(SpawnRequest { class: ActorClass::from_u16(class)?, state, sprite, x, y, z: 0 })
 }
 
 #[cfg(test)]

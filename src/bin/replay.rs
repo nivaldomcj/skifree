@@ -63,10 +63,7 @@ fn main() -> ExitCode {
             if draw_out.is_none() || !draw_ticks.contains(&tick) {
                 return;
             }
-            let items: Vec<[i16; 3]> = draw_list(game)
-                .iter()
-                .map(|d| [d.sprite as i16, d.left, d.top])
-                .collect();
+            let items: Vec<[i16; 3]> = draw_list(game).iter().map(|d| [d.sprite as i16, d.left, d.top]).collect();
             let frame = serde_json::json!({
                 "tick": tick, "w": game.screen_w, "h": game.screen_h, "items": items,
             });
@@ -111,11 +108,7 @@ fn main() -> ExitCode {
             .iter()
             .zip(golden.iter())
             .position(|(a, b)| a != b)
-            .or(if records.len() != golden.len() {
-                Some(records.len().min(golden.len()))
-            } else {
-                None
-            });
+            .or(if records.len() != golden.len() { Some(records.len().min(golden.len())) } else { None });
         match divergence {
             None => eprintln!("replay: OK ({} records match)", records.len()),
             Some(tick) => {
