@@ -304,6 +304,27 @@ Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
     `BM_CLICK` its OK button; a posted `WM_COMMAND IDOK` didn't. The port's
     Windows build shows the same native box over the same frame.
 
+24. **Real tick rate.** `SetTimer(hwnd, 666, 40, ...)` asks for 40 ms, but
+    Windows' system timer resolution is 15.625 ms (`NtQueryTimerResolution`
+    in the VM: current 156250 × 100 ns), so the timer fires on the first
+    timer interrupt after 40 ms: **3 × 15.625 = 46.875 ms**. Measured in the
+    VM without `fixed_clock.js` (`tools/vm/measure_tick.js`, and the
+    hook-free `measure_tick_poll.js`; 795 ticks each): the game's own
+    `GetTickCount` deltas (`DAT_0040c5f4`) are 46/47 ms on ~74 % of ticks
+    (7 × 47 + 1 × 46 = 375 ms = 8 × 46.875) and 62/63 ms on ~26 % (a
+    missed interrupt), mean 51 ms ≈ **19.6 ticks/s**. A minimal x64
+    program doing only `SetTimer(40)` + `GetMessage` in the same VM shows
+    the same distribution (mean 50.4 ms, 19.8 ticks/s), so the late ticks
+    are the VM's (Windows on ARM, x86 emulation), not SkiFree's work. On
+    real hardware with the default resolution the interval should be the
+    46.875 ms base (≈ 21.3 ticks/s) — an inference, not measured here.
+    Everything per tick (movement, steering, spawning) therefore runs
+    slower in real time than at 40 ms, and the Speed readout, computed
+    from the real delta (`vy·1000 / (delta·16)`), shows less (vy 16 →
+    21 m/s at 47 ms instead of 25). The verified scenarios and the replay
+    harness use a fixed 40 ms on both sides, so they're unaffected; the
+    port's real-time pacing is a separate choice (TODO.md).
+
 ## Verified scenarios
 
 All run with seed 0, from a fresh process, world built at the scenario's
@@ -403,6 +424,7 @@ above). Pieces:
 | `status_align.py` | first status repaint where original and port differ (tick or strings) |
 | `capture_frames.js` | saves the client area after each main tick in `CAPTURE_TICKS` (pixel comparison) |
 | `export_font.js` / `make_font.py` | render the OEM fixed font in the VM and turn it into `assets/fonts/oem_fixed.png` (cross-check of the `vgaoem.fon` extraction) |
+| `measure_tick.js` / `measure_tick_poll.js` | the original's real tick intervals (QPC + its own `GetTickCount` deltas), and a hook-free poller of `DAT_0040c698`/`DAT_0040c708` |
 | `port_frames_win.py` | runs the port's Windows build (`x86_64-pc-windows-gnu`) in the VM in frame-capture mode, through a one-shot interactive scheduled task (the VM's x86 frida-server can't spawn x64 programs) |
 | `frames.sh` / `frames.py` | run a pixel comparison and write `orig_`, `port_`, `diff_`, `side_` (and `win_`, `diffwin_`) PNGs per tick |
 
