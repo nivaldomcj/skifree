@@ -11,7 +11,7 @@ This repository contains **only our own code and documentation**. It does
 **not** contain, and we do **not** distribute:
 
 - the original game binaries (`ski32.exe`, `SKI.EXE`, or any zip of them), or
-- the assets extracted from them (sprites, icons, string tables).
+- the assets extracted from them (sprites, icons, string tables, sounds).
 
 The original game is © Chris Pirih / Microsoft. To build and play, **you must
 supply your own copy of `ski32.exe`** that you already own. The build extracts
@@ -48,6 +48,21 @@ downloaded or committed.
    bundled IBM VGA 8x14 font (from The Ultimate Oldschool PC Font Pack),
    which looks very close.
 
+4. Optional, for sound. The original code plays nine sound effects, but
+   the shipped `ski32.exe` never contained the sounds, so SkiFree has always
+   been silent. Chris Pirih later sent the sounds to foone, who wrote
+   [Uncovering the sounds of SkiFree](https://foone.wordpress.com/2017/06/20/uncovering-the-sounds-of-skifree/)
+   and published a build with them embedded, `ski32sounds.exe`
+   ([ski32sounds.zip on the Wayback Machine](https://web.archive.org/web/20240324032244/http://foone.org/downloads/skifree/ski32sounds.zip)).
+   Put `ski32sounds.exe` in `originals/` (next to `ski32.exe`, or instead
+   of it) before step 2. The extractor then writes `assets/sounds/`, and the
+   next build has sound. Delete `assets/sounds/` for a silent build.
+
+   Sound is a small addition to the original game. It plays from launch,
+   **M** mutes and unmutes, and starting the game with the original's
+   `nosound` argument starts it muted. As in the original, only one sound
+   plays at a time, and a new one cuts off the one before.
+
 ## Build & run
 
 ```bash
@@ -73,7 +88,8 @@ your user (Wayland shows app icons from desktop entries);
 `--uninstall` removes them.
 
 Controls are faithful to the original (arrows/numpad steer, Insert/numpad0 or
-click to jump, F2 restart, F3 pause, F fast-forward, T step, X/Y teleport).
+click to jump, F2 restart, F3 pause, F fast-forward, T step, X/Y teleport),
+plus M to mute in builds with sound.
 See `docs/skier-physics.md` for the full map.
 
 ## Verify

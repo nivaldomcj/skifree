@@ -8,6 +8,11 @@ If originals/vgaoem.fon (Windows' "Terminal" font, the stock OEM_FIXED_FONT
 the status display uses; copy it from C:\\Windows\\Fonts) is present, also
 writes assets/fonts/oem_fixed.png: printable ASCII in 8x12 cells. Without
 it the port draws the status display with a fallback font.
+If the exe has WAVE resources (foone's ski32sounds.exe does; the shipped
+ski32.exe doesn't), writes the nine the game plays to
+assets/sounds/sound_1.wav .. sound_9.wav. When the chosen exe has none,
+another originals/*.exe that has them is used for the sounds only. A
+build with assets/sounds/ has sound; delete the folder for a silent one.
 Idempotent: same input produces identical output bytes.
 """
 
@@ -98,6 +103,53 @@ def parse_pe_resources(data):
 
     walk(0, [])
     return resources
+
+
+# ---------------------------------------------------------------- sounds
+
+# FUN_004052d0 loads WAVE resources 1-9; others (10, 11 in ski32sounds.exe)
+# are never played.
+GAME_SOUNDS = range(1, 10)
+
+
+def wave_resources(data):
+    """{id: RIFF bytes} for the exe's WAVE resources (the game's nine)."""
+    waves = {}
+    for rtype, rname, _lang, off, size in parse_pe_resources(data):
+        if rtype == ("string", "WAVE") and rname[0] == "id" and rname[1] in GAME_SOUNDS:
+            payload = data[off:off + size]
+            if payload[:4] == b"RIFF" and payload[8:12] == b"WAVE":
+                waves[rname[1]] = payload
+    return waves
+
+
+def extract_sounds(exe, data):
+    """Write assets/sounds/sound_<id>.wav from `exe`, or from another
+    originals/*.exe when it has no WAVE resources."""
+    waves, source = wave_resources(data), exe
+    if not waves:
+        originals = ROOT / "originals"
+        others = sorted(p for p in originals.glob("*")
+                        if p.suffix.lower() == ".exe" and p.resolve() != exe.resolve()) \
+            if originals.is_dir() else []
+        for other in others:
+            try:
+                found = wave_resources(other.read_bytes())
+            except (SystemExit, ValueError, AssertionError, struct.error):
+                continue  # not a PE32 SkiFree exe
+            if found:
+                waves, source = found, other
+                break
+    if not waves:
+        print("sounds:  none (no exe with WAVE resources; the build is silent)")
+        return
+    out = OUT / "sounds"
+    out.mkdir(parents=True, exist_ok=True)
+    for rid, payload in sorted(waves.items()):
+        (out / f"sound_{rid}.wav").write_bytes(payload)
+    missing = [i for i in GAME_SOUNDS if i not in waves]
+    note = f", missing {missing}" if missing else ""
+    print(f"sounds:  {len(waves)} WAVE resources from {source.name}{note}")
 
 
 # ---------------------------------------------------------------- DIB decode
@@ -377,6 +429,7 @@ def main():
     fon = ROOT / "originals" / "vgaoem.fon"
     if fon.exists():
         extract_oem_font(fon)
+    extract_sounds(exe, data)
     print(f"output:  {OUT}")
 
 

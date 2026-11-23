@@ -88,8 +88,10 @@ async fn main() {
     let renderer = Renderer::new().await;
     let mut timer = GameTimer::new();
     let mut input = Input::new();
-    let audio = Audio::new();
-    audio.load_sounds();
+    // `ski32.exe nosound` (the whole command line, any case) disables the
+    // original's sound (FUN_004047e0); here it starts the game muted.
+    let nosound = std::env::args().skip(1).collect::<Vec<_>>().join(" ").eq_ignore_ascii_case("nosound");
+    let mut audio = Audio::new(nosound);
 
     // SKIFREE_SEED=<u32> forces a deterministic world for side-by-side
     // testing against the original running a patched seed.
@@ -222,6 +224,7 @@ async fn main() {
                     // Single-step one tick even when paused
                     game.step_tick(timer.step());
                 }
+                GameAction::ToggleMute => audio.toggle_mute(),
                 GameAction::Repaint => {
                     // Force repaint — no-op in macroquad (always repaints)
                 }
@@ -302,6 +305,13 @@ async fn main() {
             // Every 46.875 ms with the original's GetTickCount deltas (see
             // platform::timer), not the rendered frame's duration.
             game.tick(delta);
+        }
+
+        // This frame's sounds (normally one tick's): each cuts off the one
+        // before, as sndPlaySoundA does. Capture runs stay silent.
+        let sounds = std::mem::take(&mut game.sounds);
+        if capture.is_none() {
+            audio.play_tick(&sounds);
         }
 
         if game.paused != shown_paused {

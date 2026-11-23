@@ -19,6 +19,9 @@ pub enum GameAction {
     FastForward,
     StepTick,
     Repaint,
+    /// M: mute or unmute the sound (the port's own key; the original has
+    /// no mute key, only the `nosound` command line).
+    ToggleMute,
     TeleportLeft,
     TeleportRight,
     TeleportUp,
@@ -129,6 +132,10 @@ impl Input {
         }
         if is_key_pressed(KeyCode::R) {
             actions.push(GameAction::Repaint);
+        }
+        // Not a cheat key: the original's WM_CHAR handler ignores M.
+        if is_key_pressed(KeyCode::M) {
+            actions.push(GameAction::ToggleMute);
         }
         if is_key_pressed(KeyCode::X) {
             if is_key_down(KeyCode::LeftShift) || is_key_down(KeyCode::RightShift) {

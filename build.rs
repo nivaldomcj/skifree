@@ -58,4 +58,22 @@ fn main() {
     }
 
     println!("cargo:warning=assets OK: {} sprite files verified", sprite_files);
+
+    // Sound is optional: with all nine extracted WAVs (from an exe that has
+    // them, e.g. ski32sounds.exe) the build embeds them and compiles the
+    // audio code; otherwise it has no sound at all, like the shipped game.
+    println!("cargo:rustc-check-cfg=cfg(skifree_sound)");
+    println!("cargo:rerun-if-changed=assets/sounds");
+    let sounds = (1..=9)
+        .filter(|i| Path::new(&format!("assets/sounds/sound_{i}.wav")).exists())
+        .count();
+    if sounds == 9 {
+        println!("cargo:rustc-cfg=skifree_sound");
+        println!("cargo:warning=sounds OK: 9 WAVs embedded, sound enabled");
+    } else if sounds > 0 {
+        println!(
+            "cargo:warning=only {sounds} of 9 sounds in assets/sounds/: building without sound \
+             (re-run tools/extract_assets.py with ski32sounds.exe in originals/)"
+        );
+    }
 }

@@ -26,6 +26,7 @@ src/
     rng.rs          # MSVC LCG (FUN_00406cda), with call counter
     state_table.rs  # byte-verified data tables from the binary
     scoring.rs      # HUD scoring/formatting
+    sound.rs        # the nine sound events (FUN_00402ba0), recorded per tick
   platform/         # macroquad-specific: window, input, renderer, audio, persistence
   replay.rs         # Scenario/InputEvent/TickRecord + run_scenario
 tests/
@@ -100,9 +101,19 @@ may be gone after a reboot. To regenerate: configure Ghidra 12.x
   `WindowMinimized` event is inbound-only and the native handle is private), so
   a literal minimize would need unsafe per-OS FFI. Chosen deliberately; see
   `docs/skier-physics.md`.
-- **No sound.** The binary references 9 `WAVE` resources but they are absent
-  from the shipped `ski32.exe` (`FindResourceA` returns NULL). The audio layer
-  is a stub awaiting free replacement sounds.
+- **Sound is optional, and a small addition.** The shipped `ski32.exe` has no
+  `WAVE` resources, so the original is silent. The port can play the sounds
+  from foone's `ski32sounds.exe` (`docs/how-ski32-works.md`, "Sound"):
+  - **Logic:** `game::sound` records each `FUN_00402ba0` call per tick. The
+    calls are verified against the original by `tools/vm/trace_sounds.js` /
+    `sound_align.py`.
+  - **Playback:** `platform::audio` plays the last sound of each tick, cutting
+    off the previous one, like `sndPlaySoundA`. On Windows it *is*
+    `sndPlaySoundA`; macOS uses NSSound; Linux loads libasound at runtime.
+  - **Build switch:** build.rs embeds the nine WAVs and sets
+    `cfg(skifree_sound)` only when `assets/sounds/` holds all nine.
+  - **Additions:** M mutes and unmutes; the original's `nosound` command line
+    starts the game muted.
 - **Ambient-mob secondary spawn** (1-in-1000) and the **snowboarder jump
   effect** are ported via `SpawnRequest` (see `docs/monster-mob-physics.md`).
 - **Monster/mob proxy vs actor**: the port uses one merged actor instead of
@@ -180,7 +191,7 @@ without shifted characters (`;` instead of `&&`) or use SSH.
 
 ## Copyrighted files (not in this repo)
 
-`SKI.EXE`, `ski.zip`, `ski32.exe`, `ski32.zip` and everything extracted from
+`SKI.EXE`, `ski.zip`, `ski32.exe`, `ski32.zip`, `ski32sounds.exe` and everything extracted from
 them (all of `assets/` except `assets/README.md`) are Microsoft/Chris Pirih
 property and are **gitignored and scrubbed from history**. Place a `ski32.exe`
 in the repo root and run `python3 tools/extract_assets.py` to regenerate
