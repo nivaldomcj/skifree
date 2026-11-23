@@ -65,6 +65,10 @@ CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc \
 
 Put `skifree.exe` next to an `assets/` folder.
 
+On Linux the game uses X11 by default (through XWayland in a Wayland
+session). `SKIFREE_LINUX_BACKEND=wayland` runs it on native Wayland
+(`wayland-first` / `x11-first` try one and fall back to the other).
+
 Controls are faithful to the original (arrows/numpad steer, Insert/numpad0 or
 click to jump, F2 restart, F3 pause, F fast-forward, T step, X/Y teleport).
 See `docs/skier-physics.md` for the full map.

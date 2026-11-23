@@ -27,7 +27,37 @@ pub fn conf() -> Conf {
         window_height: height,
         icon: window_icon(),
         window_resizable: true,
+        platform: miniquad::conf::Platform {
+            linux_backend: linux_backend(),
+            ..Default::default()
+        },
         ..Default::default()
+    }
+}
+
+/// Linux window system, chosen with SKIFREE_LINUX_BACKEND:
+///
+/// - `x11` (default, miniquad's own default): X11 only — under a Wayland
+///   session through XWayland;
+/// - `wayland`: native Wayland only;
+/// - `wayland-first`: Wayland, falling back to X11 when it's unavailable;
+/// - `x11-first`: X11, falling back to Wayland.
+///
+/// Ignored on other platforms. An unknown value keeps the default.
+fn linux_backend() -> miniquad::conf::LinuxBackend {
+    use miniquad::conf::LinuxBackend;
+    match std::env::var("SKIFREE_LINUX_BACKEND").as_deref() {
+        Err(_) | Ok("") | Ok("x11") => LinuxBackend::X11Only,
+        Ok("wayland") => LinuxBackend::WaylandOnly,
+        Ok("wayland-first") => LinuxBackend::WaylandWithX11Fallback,
+        Ok("x11-first") => LinuxBackend::X11WithWaylandFallback,
+        Ok(other) => {
+            eprintln!(
+                "SKIFREE_LINUX_BACKEND={other:?} not recognised \
+                 (x11, wayland, wayland-first, x11-first); using x11"
+            );
+            LinuxBackend::X11Only
+        }
     }
 }
 
