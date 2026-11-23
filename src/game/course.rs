@@ -58,10 +58,7 @@ fn marker(events: &mut Vec<SpawnEvent>, sprite: u16, x: i16, y: i16) {
         sprite: Some(sprite),
         x,
         y,
-        // Course markers draw 16 (0x10) units up (the banner's sprite anchor
-        // offset; its collision box follows the draw box). The skier's box
-        // still grazes the banner's on the crossing tick.
-        z: 0x10,
+        z: 0,
         param: 0,
     });
 }

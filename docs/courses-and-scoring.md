@@ -23,9 +23,8 @@ Course identity is settled by the entrance banner sprites: 61 "Slalom ↙"
 - **Entrance banner** (class 0x11, sprites 61/62/63) near the spawn area;
   its x comes from a camera formula clamped into the strip's direction, its
   y is `client_h − client_h/3 − 0x3c` (clamped to 0x208 past 0x280) at the
-  client size of world-build time. Course markers' event nodes carry z = 0;
-  materialized they draw 16 units up, and the skier grazes the banner on the
-  crossing tick.
+  client size of world-build time. Course markers carry z = 0 (they stand
+  on the snow like everything else).
 - **Start posts** (sprites 57/58, "Start" arrows) at the strip edges, y=0x280.
 - **Gate posts** (class 0x0c, sprites 0x17/0x18 alternating): slalom at
   x=-496/-400, y from 0x3c0 step 0x140; tree slalom at x=400/432, y from
