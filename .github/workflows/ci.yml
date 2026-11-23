@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: rustup toolchain install stable --profile minimal --component rustfmt && rustup default stable
+      - run: rustup toolchain install # the version in rust-toolchain.toml
       - run: cargo fmt --check
 
   # Each OS compiles its own platform code (os_window, audio), so Clippy
@@ -47,7 +47,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: rustup toolchain install stable --profile minimal --component clippy && rustup default stable
+      - run: rustup toolchain install # the version in rust-toolchain.toml
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - name: Unit and extract tests (the replay tests need the assets)
@@ -59,8 +59,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: |
-          rustup toolchain install stable --profile minimal --component clippy --target wasm32-unknown-unknown
-          rustup default stable
+      - run: rustup toolchain install # the version in rust-toolchain.toml, with wasm32
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo clippy --locked --target wasm32-unknown-unknown --all-targets -- -D warnings
