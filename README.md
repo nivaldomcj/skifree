@@ -3,12 +3,23 @@
 A multiplatform reimplementation of **SkiFree** in Rust, built by reverse
 engineering the original `ski32.exe` (the 2005 32-bit recompile of Chris
 Pirih's 1991 classic) with [REA](https://github.com/morluto/rea) + Ghidra and
-porting the recovered logic faithfully. macOS first; the code is portable.
+porting the recovered logic faithfully. Runs on macOS, Windows and Linux.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/nivaldomcj/skifree/refs/heads/docs/media/screenshots/macos.png"
+       alt="The port running on macOS: the yeti chases the skier uphill" width="480">
+</p>
+
+<p align="center"><sub>The port on macOS. Screenshot of the game running with
+assets extracted from my own copy; SkiFree's graphics are © Chris Pirih /
+Microsoft. The same seed and inputs (<code>replays/showcase.json</code>) give
+the same picture on Windows and Linux.</sub></p>
 
 ## ⚠️ No copyrighted game files here
 
-This repository contains **only our own code and documentation**. It does
-**not** contain, and we do **not** distribute:
+This repository contains **only our own code and documentation** (plus the
+screenshot above, kept on the separate `docs/media` branch). It does **not**
+contain, and we do **not** distribute:
 
 - the original game binaries (`ski32.exe`, `SKI.EXE`, or any zip of them), or
 - the assets extracted from them (sprites, icons, string tables, sounds).
