@@ -5,7 +5,7 @@ Stdlib only. Usage: python3 tools/extract_assets.py [path-to-exe]
 Default input: auto-discovers originals/*.exe (not committed — supply your own copy).
 Writes assets/{sprites,icons}/, assets/meta.json and assets/strings.json.
 If originals/vgaoem.fon (Windows' "Terminal" font, the stock OEM_FIXED_FONT
-the status display uses; copy it from C:\Windows\Fonts) is present, also
+the status display uses; copy it from C:\\Windows\\Fonts) is present, also
 writes assets/fonts/oem_fixed.png: printable ASCII in 8x12 cells. Without
 it the port draws the status display with a fallback font.
 Idempotent: same input produces identical output bytes.
