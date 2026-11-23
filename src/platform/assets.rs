@@ -29,7 +29,7 @@ fn decode_png(bytes: &[u8]) -> Option<Rgba> {
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
     use super::decode_png;
-    use skifree::extract::{AssetSet, Rgba, SPRITE_COUNT};
+    use skifree::extract::{AssetSet, Rgba};
     use std::path::Path;
 
     fn read_png(path: &Path) -> Option<Rgba> {
@@ -39,10 +39,11 @@ mod imp {
     pub async fn load() -> AssetSet {
         let root = skifree::game::assets::asset_root();
         let mut set = AssetSet::new();
-        for id in 1..=SPRITE_COUNT {
+        // Slot 0 is unused: sprites are indexed by resource id, 1..=SPRITE_COUNT.
+        for (id, sprite) in set.sprites.iter_mut().enumerate().skip(1) {
             let path = root.join(format!("sprites/bitmap_{:02}.png", id));
-            set.sprites[id] = read_png(&path);
-            if set.sprites[id].is_none() {
+            *sprite = read_png(&path);
+            if sprite.is_none() {
                 eprintln!("warning: failed to load sprite {}", path.display());
             }
         }
