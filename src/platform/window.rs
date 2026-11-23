@@ -96,19 +96,11 @@ fn window_icon() -> Option<miniquad::conf::Icon> {
     }
     let px = |x: usize, y: usize| &img.bytes[(y * 32 + x) * 4..(y * 32 + x) * 4 + 4];
     let mut icon = miniquad::conf::Icon {
-        small: [0; 16 * 16 * 4],
+        small: icon_small(&img.bytes),
         medium: [0; 32 * 32 * 4],
         big: [0; 64 * 64 * 4],
     };
     icon.medium.copy_from_slice(&img.bytes);
-    for y in 0..16 {
-        for x in 0..16 {
-            let o = (y * 16 + x) * 4;
-            icon.small[o..o + 3].copy_from_slice(&px(2 * x + 1, 2 * y + 1)[..3]);
-            let opaque = (0..2).any(|dy| (0..2).any(|dx| px(2 * x + dx, 2 * y + dy)[3] > 0));
-            icon.small[o + 3] = if opaque { 255 } else { 0 };
-        }
-    }
     for y in 0..64 {
         for x in 0..64 {
             let o = (y * 64 + x) * 4;
@@ -116,6 +108,33 @@ fn window_icon() -> Option<miniquad::conf::Icon> {
         }
     }
     Some(icon)
+}
+
+/// The 16x16 title-bar image Windows makes from the 32x32 icon: colour
+/// from every odd pixel, opaque if any pixel of the 2x2 block is.
+pub fn icon_small(rgba32: &[u8]) -> [u8; 16 * 16 * 4] {
+    let px = |x: usize, y: usize| &rgba32[(y * 32 + x) * 4..(y * 32 + x) * 4 + 4];
+    let mut small = [0; 16 * 16 * 4];
+    for y in 0..16 {
+        for x in 0..16 {
+            let o = (y * 16 + x) * 4;
+            small[o..o + 3].copy_from_slice(&px(2 * x + 1, 2 * y + 1)[..3]);
+            let opaque = (0..2).any(|dy| (0..2).any(|dx| px(2 * x + dx, 2 * y + dy)[3] > 0));
+            small[o + 3] = if opaque { 255 } else { 0 };
+        }
+    }
+    small
+}
+
+/// Web: the page's favicon from the player's ICONSKI face, 16x16 as
+/// `icon_small` makes it and 32x32 as is.
+#[cfg(target_arch = "wasm32")]
+pub fn set_favicon(assets: &skifree::extract::AssetSet) {
+    use crate::platform::web;
+    if let Some(icon) = assets.icon.as_ref().filter(|i| i.width == 32 && i.height == 32) {
+        web::set_favicon(16, &icon_small(&icon.data));
+        web::set_favicon(32, &icon.data);
+    }
 }
 
 fn in_app_bundle() -> bool {

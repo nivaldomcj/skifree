@@ -36,24 +36,51 @@ const TITLE_TEXT: &str = "SkiFree";
 /// scenario at its fixed tick rate, ignoring live input and the clock, and
 /// saves the framebuffer after each tick in `ticks` to `dir` as raw RGBA
 /// (`frame_<tick>_<w>x<h>.rgba`) for tools/vm/frames.py.
+///
+/// On the web: `?replay=<scenario name>&ticks=<t1,...>` loads
+/// `replays/<name>.json` from the server and hands the frames to the page
+/// (`window.skifreeCapture`, read by tools/web/capture_frames.mjs).
 struct FrameCapture {
     scenario: skifree::replay::Scenario,
+    #[cfg(not(target_arch = "wasm32"))]
     dir: std::path::PathBuf,
     ticks: Vec<u32>,
     tick: u32,
 }
 
-fn load_frame_capture() -> Option<FrameCapture> {
+fn parse_ticks(list: &str) -> Vec<u32> {
+    list.split(',').filter_map(|t| t.trim().parse().ok()).collect()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn load_frame_capture() -> Option<FrameCapture> {
     let path = std::env::var("SKIFREE_REPLAY").ok()?;
     let scenario = serde_json::from_str(&std::fs::read_to_string(&path).ok()?).ok()?;
     let dir = std::path::PathBuf::from(std::env::var("SKIFREE_FRAMES").ok()?);
-    let ticks = std::env::var("SKIFREE_FRAME_TICKS")
-        .ok()?
-        .split(',')
-        .filter_map(|t| t.trim().parse().ok())
-        .collect();
+    let ticks = parse_ticks(&std::env::var("SKIFREE_FRAME_TICKS").ok()?);
     std::fs::create_dir_all(&dir).ok()?;
     Some(FrameCapture { scenario, dir, ticks, tick: 0 })
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn load_frame_capture() -> Option<FrameCapture> {
+    use platform::web::url_param;
+    let name = url_param("replay")?;
+    let ticks = parse_ticks(&url_param("ticks")?);
+    let text = load_string(&format!("replays/{name}.json")).await.ok()?;
+    let scenario = serde_json::from_str(&text).ok()?;
+    Some(FrameCapture { scenario, ticks, tick: 0 })
+}
+
+/// Hand one captured frame (RGBA rows top-down) to the capture's sink.
+fn save_frame(cap: &FrameCapture, width: u32, height: u32, rgba: &[u8]) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let name = format!("frame_{}_{}x{}.rgba", cap.tick, width, height);
+        let _ = std::fs::write(cap.dir.join(name), rgba);
+    }
+    #[cfg(target_arch = "wasm32")]
+    platform::web::capture_frame(cap.tick, width, height, rgba);
 }
 
 /// Paint one frame of `game` at its client size (sw x sh): sprites, the
@@ -83,15 +110,33 @@ fn draw_frame(game: &GameState, renderer: &Renderer, items: &[DrawItem], pause_i
 
 }
 
+/// `ski32.exe nosound` (the whole command line, any case) disables the
+/// original's sound (FUN_004047e0); here it starts the game muted. On the
+/// web: `?nosound` in the page URL.
+fn nosound() -> bool {
+    #[cfg(target_arch = "wasm32")]
+    return platform::web::url_param("nosound").is_some();
+    #[cfg(not(target_arch = "wasm32"))]
+    std::env::args().skip(1).collect::<Vec<_>>().join(" ").eq_ignore_ascii_case("nosound")
+}
+
+/// Milliseconds since the Unix epoch, truncated (the clock `GameState`
+/// seeds new games with).
+fn clock_ms() -> u32 {
+    (macroquad::miniquad::date::now() * 1000.0) as u64 as u32
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
-    let renderer = Renderer::new().await;
+    skifree::game::state::set_clock_source(clock_ms);
+    let assets = platform::assets::load().await;
+    #[cfg(target_arch = "wasm32")]
+    window::set_favicon(&assets);
+    let renderer = Renderer::new(&assets);
     let mut timer = GameTimer::new();
     let mut input = Input::new();
-    // `ski32.exe nosound` (the whole command line, any case) disables the
-    // original's sound (FUN_004047e0); here it starts the game muted.
-    let nosound = std::env::args().skip(1).collect::<Vec<_>>().join(" ").eq_ignore_ascii_case("nosound");
-    let mut audio = Audio::new(nosound);
+    let mut audio = Audio::new(nosound(), &assets);
+    drop(assets);
 
     // SKIFREE_SEED=<u32> forces a deterministic world for side-by-side
     // testing against the original running a patched seed.
@@ -102,16 +147,18 @@ async fn main() {
     game.new_game();
     game.high_scores = persistence::load_scores();
 
-    let mut capture = load_frame_capture();
+    let mut capture = load_frame_capture().await;
     if let Some(cap) = &capture {
         let (w, h) = (cap.scenario.screen_w.unwrap_or(640), cap.scenario.screen_h.unwrap_or(480));
         // On macOS miniquad's request_new_screen_size sets the window frame,
         // title bar included, so the client would come out short (and
         // screen_width/height report the requested size at once): set the
-        // client size directly there.
+        // client size directly there. A web page can't resize its canvas:
+        // frames are drawn offscreen at the scenario's size anyway.
         if !platform::os_window::set_client_size(w as f64, h as f64) {
             request_new_screen_size(w as f32, h as f32);
         }
+        #[cfg(not(target_arch = "wasm32"))]
         for _ in 0..120 {
             next_frame().await;
             if screen_width() as i16 == w && screen_height() as i16 == h {
@@ -127,7 +174,7 @@ async fn main() {
     // comparison with the original (which is driven by the same schedule
     // through Frida PostMessage). Format: [{"at_ms": 2000, "key": "down"}]
     let script = load_script();
-    let script_start = std::time::Instant::now();
+    let script_start = get_time();
     let mut script_fired = 0usize;
 
     let mut running = true;
@@ -151,9 +198,9 @@ async fn main() {
             // The box takes the focus: the window goes inactive (timer
             // stopped, input dropped) until OK, like the original.
             game.set_active(false);
-            let opened = std::time::Instant::now();
+            let opened = get_time();
             if platform::os_window::message_box(HIGH_SCORES_CAPTION, &text) {
-                game.add_wall_time(opened.elapsed().as_millis() as u32);
+                game.add_wall_time(((get_time() - opened) * 1000.0) as u32);
                 game.set_active(true);
                 timer.reset();
             } else {
@@ -273,7 +320,7 @@ async fn main() {
 
         // Fire due scripted events (side-by-side testing only).
         if let Some(events) = &script {
-            let now_ms = script_start.elapsed().as_millis() as u64;
+            let now_ms = ((get_time() - script_start) * 1000.0) as u64;
             while script_fired < events.len() && events[script_fired].at_ms <= now_ms {
                 if !game.input_enabled {
                     script_fired += 1;
@@ -368,11 +415,12 @@ async fn main() {
                 // The render target's rows come out bottom-up: save top-down.
                 let row = img.width as usize * 4;
                 let top_down: Vec<u8> = img.bytes.chunks(row).rev().flatten().copied().collect();
-                let name = format!("frame_{}_{}x{}.rgba", cap.tick, img.width, img.height);
-                let _ = std::fs::write(cap.dir.join(name), top_down);
+                save_frame(cap, img.width as u32, img.height as u32, &top_down);
             }
             cap.tick += 1;
             if cap.ticks.iter().all(|&t| t < cap.tick) {
+                #[cfg(target_arch = "wasm32")]
+                platform::web::capture_done();
                 running = false;
             }
         }

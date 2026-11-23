@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 /// Locate the extracted assets directory: `assets/` under the working
 /// directory in development, `assets/` next to the executable (a Windows or
@@ -22,4 +23,18 @@ pub fn asset_root() -> PathBuf {
         }
     }
     cwd
+}
+
+static SPRITE_DIMS: OnceLock<Vec<(i16, i16)>> = OnceLock::new();
+
+/// Sprite sizes by id from the sprites the game actually loaded (the
+/// platform layer installs them once at startup, before the first
+/// `GameState`). Without them `GameState` reads `assets/meta.json`, as the
+/// replay tools and tests do.
+pub fn install_sprite_dims(dims: Vec<(i16, i16)>) {
+    let _ = SPRITE_DIMS.set(dims);
+}
+
+pub fn installed_sprite_dims() -> Option<&'static [(i16, i16)]> {
+    SPRITE_DIMS.get().map(Vec::as_slice)
 }

@@ -333,8 +333,28 @@ mod imp {
     }
 }
 
+/// Web: the page title (`document.title`), which a tab shows unless the
+/// page is fullscreen. No native message box: the game draws its own.
+#[cfg(target_arch = "wasm32")]
+mod imp {
+    use crate::platform::web;
+
+    pub fn set_title(title: &str) -> bool {
+        web::set_title(title);
+        true
+    }
+
+    pub fn title_visible() -> bool {
+        !web::is_fullscreen()
+    }
+
+    pub fn message_box(_caption: &str, _text: &str) -> bool {
+        false
+    }
+}
+
 /// Other platforms: no native title or message box.
-#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux", target_arch = "wasm32")))]
 mod imp {
     pub fn set_title(_title: &str) -> bool {
         false

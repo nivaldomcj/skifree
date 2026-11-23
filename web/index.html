@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SkiFree</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background: #fff;
+    color: #000;
+  }
+  /* The game's client area: one game pixel per CSS pixel, never smaller
+     than the original's 304x261 minimum client, sharp on high-DPI screens. */
+  #glcanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-width: 304px;
+    min-height: 261px;
+    outline: none;
+    background: #fff;
+    image-rendering: pixelated;
+  }
+  #drop {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    font: 14px/1.5 ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  #drop[hidden] { display: none; }
+  #drop .box {
+    max-width: 34em;
+    margin: 16px;
+    padding: 16px 20px;
+    border: 1px solid #000;
+  }
+  #drop h1 { font-size: 1.2em; margin: 0 0 0.6em; }
+  #drop p { margin: 0.6em 0; }
+  #drop .error { color: #b00; min-height: 1.5em; }
+  #drop a { color: #00c; }
+  #drop label {
+    display: inline-block;
+    padding: 2px 12px;
+    border: 1px solid #000;
+    cursor: pointer;
+  }
+  #drop input[type=file] { position: absolute; left: -9999px; }
+  #drop input[type=file]:focus + span { outline: 1px dotted #000; }
+</style>
+</head>
+<body>
+<canvas id="glcanvas" tabindex="1"></canvas>
+<div id="drop" hidden>
+  <div class="box">
+    <h1>SkiFree</h1>
+    <p>This page plays SkiFree from your own copy of the game. Drop
+      <b>ski32.exe</b> or <b>ski32.zip</b> here, or
+      <label><input type="file" multiple accept=".exe,.zip,.fon"><span>choose files</span></label>.</p>
+    <p>Chris Pirih offers it free on his SkiFree site:
+      <a href="https://ski.ihoc.net/" target="_blank" rel="noopener">ski.ihoc.net</a>.</p>
+    <p>Optional, dropped together with it: foone's <b>ski32sounds.zip</b>
+      (<a href="https://web.archive.org/web/20240324032244/http://foone.org/downloads/skifree/ski32sounds.zip" target="_blank" rel="noopener">Wayback Machine</a>)
+      for sound, and <b>vgaoem.fon</b> from <code>C:\Windows\Fonts</code> for
+      the original status font.</p>
+    <p>Your files stay in this browser. Nothing is uploaded.</p>
+    <p class="error" role="alert"></p>
+  </div>
+</div>
+<script src="gl.js"></script>
+<script src="skifree.js"></script>
+<script>load("skifree.wasm");</script>
+</body>
+</html>
