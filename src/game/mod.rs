@@ -8,6 +8,8 @@ pub mod camera;
 pub mod collision;
 #[allow(dead_code)]
 pub mod course;
+#[allow(dead_code)]
+pub mod draw;
 pub mod hud;
 #[allow(dead_code)]
 pub mod mob;

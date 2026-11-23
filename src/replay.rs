@@ -149,6 +149,34 @@ pub fn fnv1a_update(hash: u64, bytes: &[u8]) -> u64 {
 
 pub const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
 
+/// Feed the scenario's inputs for `tick` to the game, like the original's
+/// window procedure would before that main tick.
+pub fn apply_inputs(game: &mut GameState, scenario: &Scenario, tick: u32) {
+    for input in scenario.inputs.iter().filter(|i| i.tick == tick) {
+        // The original's window procedure drops keyboard and mouse
+        // messages while the window is inactive (DAT_0040c67c).
+        if !game.input_enabled && !matches!(input.kind, InputKind::Focus { .. }) {
+            continue;
+        }
+        match &input.kind {
+            InputKind::Steer {
+                left,
+                right,
+                up,
+                down,
+            } => game.steer_keyboard(*left, *right, *up, *down),
+            InputKind::SteerAbsolute { state } => game.steer_absolute(*state),
+            InputKind::Jump => game.jump_keyboard(),
+            InputKind::Click => game.click(),
+            InputKind::Mouse { x, y } => game.mouse_move(*x, *y),
+            InputKind::FastForward => game.fast_forward = !game.fast_forward,
+            InputKind::Restart => game.new_game(),
+            InputKind::Pause => game.toggle_pause(),
+            InputKind::Focus { active } => game.set_active(*active),
+        }
+    }
+}
+
 pub fn run_scenario(scenario: &Scenario) -> Vec<TickRecord> {
     run_scenario_with_size(
         scenario,
@@ -162,6 +190,17 @@ pub fn run_scenario_with_size(
     screen_w: i16,
     screen_h: i16,
 ) -> Vec<TickRecord> {
+    run_scenario_observed(scenario, screen_w, screen_h, |_, _| {})
+}
+
+/// Like [`run_scenario_with_size`], calling `observe(tick, &game)` after each
+/// tick (e.g. to dump the frame the original paints at the end of it).
+pub fn run_scenario_observed(
+    scenario: &Scenario,
+    screen_w: i16,
+    screen_h: i16,
+    mut observe: impl FnMut(u32, &GameState),
+) -> Vec<TickRecord> {
     let mut game = GameState::new_seeded(screen_w, screen_h, scenario.seed);
     game.course_type = scenario.course.into();
     game.new_game();
@@ -170,29 +209,7 @@ pub fn run_scenario_with_size(
     let mut hash = FNV_OFFSET_BASIS;
 
     for tick in 0..scenario.ticks {
-        for input in scenario.inputs.iter().filter(|i| i.tick == tick) {
-            // The original's window procedure drops keyboard and mouse
-            // messages while the window is inactive (DAT_0040c67c).
-            if !game.input_enabled && !matches!(input.kind, InputKind::Focus { .. }) {
-                continue;
-            }
-            match &input.kind {
-                InputKind::Steer {
-                    left,
-                    right,
-                    up,
-                    down,
-                } => game.steer_keyboard(*left, *right, *up, *down),
-                InputKind::SteerAbsolute { state } => game.steer_absolute(*state),
-                InputKind::Jump => game.jump_keyboard(),
-                InputKind::Click => game.click(),
-                InputKind::Mouse { x, y } => game.mouse_move(*x, *y),
-                InputKind::FastForward => game.fast_forward = !game.fast_forward,
-                InputKind::Restart => game.new_game(),
-                InputKind::Pause => game.toggle_pause(),
-                InputKind::Focus { active } => game.set_active(*active),
-            }
-        }
+        apply_inputs(&mut game, scenario, tick);
 
         game.tick(scenario.delta_ms);
 
@@ -222,6 +239,7 @@ pub fn run_scenario_with_size(
         hash = fnv1a_update(hash, record.payload_json().as_bytes());
         record.hash = hash;
         records.push(record);
+        observe(tick, &game);
     }
 
     records

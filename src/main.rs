@@ -1,5 +1,6 @@
 mod platform;
 
+use skifree::game::draw::draw_list;
 use skifree::game::state::GameState;
 use macroquad::prelude::*;
 use platform::audio::Audio;
@@ -25,6 +26,118 @@ fn load_script() -> Option<Vec<ScriptEvent>> {
     serde_json::from_str(&data).ok()
 }
 
+/// Frame-capture replay (SKIFREE_REPLAY): the real renderer plays a replay
+/// scenario at its fixed tick rate, ignoring live input and the clock, and
+/// saves the framebuffer after each tick in `ticks` to `dir` as raw RGBA
+/// (`frame_<tick>_<w>x<h>.rgba`) for tools/vm/frames.py.
+struct FrameCapture {
+    scenario: skifree::replay::Scenario,
+    dir: std::path::PathBuf,
+    ticks: Vec<u32>,
+    tick: u32,
+}
+
+fn load_frame_capture() -> Option<FrameCapture> {
+    let path = std::env::var("SKIFREE_REPLAY").ok()?;
+    let scenario = serde_json::from_str(&std::fs::read_to_string(&path).ok()?).ok()?;
+    let dir = std::path::PathBuf::from(std::env::var("SKIFREE_FRAMES").ok()?);
+    let ticks = std::env::var("SKIFREE_FRAME_TICKS")
+        .ok()?
+        .split(',')
+        .filter_map(|t| t.trim().parse().ok())
+        .collect();
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(FrameCapture { scenario, dir, ticks, tick: 0 })
+}
+
+/// Paint one frame of `game` at its client size (sw x sh): sprites, the
+/// pause notice, the status display and the high-score table.
+fn draw_frame(game: &GameState, renderer: &Renderer) {
+    let (sw, sh) = (game.screen_w as f32, game.screen_h as f32);
+    // Render
+    clear_background(WHITE);
+
+    // Sprites in the original's painting order and placement
+    // (FUN_00401540 / FUN_004014b0, see game::draw).
+    for item in draw_list(&game) {
+        renderer.draw_sprite(item.sprite as u32, item.left as f32, item.top as f32);
+    }
+
+    // Pause overlay
+    if game.paused {
+        let text = "Ski Paused ... Press F3 to continue";
+        let dims = measure_text(text, None, 24, 1.0);
+        let x = (sw - dims.width) / 2.0;
+        let y = sh / 2.0 + 40.0;
+        draw_rectangle(x - 8.0, y - 20.0, dims.width + 16.0, 28.0, WHITE);
+        draw_rectangle_lines(x - 8.0, y - 20.0, dims.width + 16.0, 28.0, 1.0, BLACK);
+        draw_text(text, x, y, 24.0, BLACK);
+    }
+
+    // Status display (FUN_00401b80): stacked rows at the top-right.
+    let rows = [
+        ("Time:", game.scoring.format_time(game.hud_time_ms())),
+        ("Dist:", game.scoring.format_dist(game.hud_dist_m())),
+        ("Speed:", game.scoring.format_speed(game.hud_speed())),
+        ("Style:", game.scoring.format_style()),
+    ];
+    let font_size = 15u16;
+    let value_x = sw - 62.0;
+    let label_x = value_x - 48.0;
+    let mut row_y = 16.0;
+    for (label, value) in rows {
+        draw_text(label, label_x, row_y, font_size as f32, DARKGRAY);
+        draw_text(&value, value_x, row_y, font_size as f32, BLACK);
+        row_y += 16.0;
+    }
+
+    // High-score table after a course finish (FUN_00402ec0 display),
+    // with " <-- that's you!" / " <-- try again!" markers.
+    if let Some(finish) = game.last_finish {
+        let title = match finish.course {
+            0 => "Slalom High Scores",
+            1 => "Giant Slalom High Scores",
+            _ => "Freestyle High Scores",
+        };
+        let entries: Vec<String> = if finish.course == 2 {
+            game.high_scores
+                .freestyle_style
+                .iter()
+                .map(|s| format!("{:>9}", s))
+                .collect()
+        } else {
+            let times = if finish.course == 0 {
+                &game.high_scores.slalom_ms
+            } else {
+                &game.high_scores.giant_slalom_ms
+            };
+            times.iter().map(|&ms| game.scoring.format_time(ms)).collect()
+        };
+        let mut y = row_y + 24.0;
+        draw_text(title, label_x, y, font_size as f32, DARKGRAY);
+        y += 16.0;
+        for (i, entry) in entries.iter().enumerate() {
+            let marker = if finish.rank == Some(i) {
+                " <-- that's you!"
+            } else {
+                ""
+            };
+            draw_text(&format!("{}{}", entry, marker), label_x, y, font_size as f32, BLACK);
+            y += 16.0;
+        }
+        if finish.rank.is_none() {
+            // Didn't place: show the own result below with try-again.
+            y += 16.0;
+            let own = if finish.course == 2 {
+                format!("{:>9}", finish.style)
+            } else {
+                game.scoring.format_time(finish.ms)
+            };
+            draw_text(&format!("{} <-- try again!", own), label_x, y, font_size as f32, BLACK);
+        }
+    }
+}
+
 #[macroquad::main(window_conf)]
 async fn main() {
     let renderer = Renderer::new().await;
@@ -41,6 +154,21 @@ async fn main() {
     };
     game.new_game();
     game.high_scores = persistence::load_scores();
+
+    let mut capture = load_frame_capture();
+    if let Some(cap) = &capture {
+        let (w, h) = (cap.scenario.screen_w.unwrap_or(640), cap.scenario.screen_h.unwrap_or(480));
+        request_new_screen_size(w as f32, h as f32);
+        for _ in 0..120 {
+            next_frame().await;
+            if screen_width() as i16 == w && screen_height() as i16 == h {
+                break;
+            }
+        }
+        game = GameState::new_seeded(w, h, cap.scenario.seed);
+        game.course_type = cap.scenario.course.into();
+        game.new_game();
+    }
 
     // SKIFREE_SCRIPT=<json file> replays timed key events for side-by-side
     // comparison with the original (which is driven by the same schedule
@@ -59,11 +187,14 @@ async fn main() {
         // the top-right, so the game viewport is the full window.
         let view_w = screen_width().max(window::MIN_WIDTH as f32) as i16;
         let view_h = screen_height().max(window::MIN_HEIGHT as f32) as i16;
-        game.screen_w = view_w;
-        game.screen_h = view_h;
+        if capture.is_none() {
+            game.screen_w = view_w;
+            game.screen_h = view_h;
+        }
 
 
-        for action in input.poll() {
+        let live_input = if capture.is_some() { Vec::new() } else { input.poll() };
+        for action in live_input {
             // While the window is inactive or minimized the original's window
             // procedure drops every key and mouse message (DAT_0040c67c).
             if !game.input_enabled && !matches!(action, GameAction::Focus(_)) {
@@ -167,106 +298,46 @@ async fn main() {
 
         // Ticks keep arriving while paused: the game state stays frozen but
         // the wall clock advances (see GameState::wall_ms).
-        if timer.should_tick() {
+        if let Some(cap) = &capture {
+            if cap.tick < cap.scenario.ticks {
+                skifree::replay::apply_inputs(&mut game, &cap.scenario, cap.tick);
+                game.tick(cap.scenario.delta_ms);
+            }
+        } else if timer.should_tick() {
             let delta = (timer.frame_delta() * 1000.0) as u32;
             game.tick(delta);
         }
 
-        if game.pending_score_save {
+        if game.pending_score_save && capture.is_none() {
             persistence::save_scores(&game.high_scores);
             game.pending_score_save = false;
         }
 
-        // Render
-        clear_background(WHITE);
+        draw_frame(&game, &renderer);
 
-        // Draw all active actors
-        let indices = game.pool.active_indices();
-        for idx in indices {
-            if let Some(actor) = game.pool.get(idx) {
-                let (sx, sy) = game.camera.world_to_screen(
-                    actor.x,
-                    actor.y,
-                    view_w,
-                    view_h,
-                );
-                // The original draws actors at sy - z (FUN_004014b0): jumps
-                // and pole-mounted course markers appear aloft.
-                renderer.draw_sprite(actor.sprite_id as u32, sx as f32, (sy - actor.z) as f32);
+        if let Some(cap) = &mut capture {
+            if cap.ticks.contains(&cap.tick) {
+                // Same drawing into an offscreen target of the exact client
+                // size (the window itself may be clamped by the screen).
+                let target = render_target(game.screen_w as u32, game.screen_h as u32);
+                target.texture.set_filter(FilterMode::Nearest);
+                let mut cam = Camera2D::from_display_rect(Rect::new(
+                    0.0, 0.0, game.screen_w as f32, game.screen_h as f32,
+                ));
+                cam.render_target = Some(target.clone());
+                set_camera(&cam);
+                draw_frame(&game, &renderer);
+                set_default_camera();
+                let img = target.texture.get_texture_data();
+                // The render target's rows come out bottom-up: save top-down.
+                let row = img.width as usize * 4;
+                let top_down: Vec<u8> = img.bytes.chunks(row).rev().flatten().copied().collect();
+                let name = format!("frame_{}_{}x{}.rgba", cap.tick, img.width, img.height);
+                let _ = std::fs::write(cap.dir.join(name), top_down);
             }
-        }
-
-        // Pause overlay
-        if game.paused {
-            let text = "Ski Paused ... Press F3 to continue";
-            let dims = measure_text(text, None, 24, 1.0);
-            let x = (screen_width() - dims.width) / 2.0;
-            let y = screen_height() / 2.0 + 40.0;
-            draw_rectangle(x - 8.0, y - 20.0, dims.width + 16.0, 28.0, WHITE);
-            draw_rectangle_lines(x - 8.0, y - 20.0, dims.width + 16.0, 28.0, 1.0, BLACK);
-            draw_text(text, x, y, 24.0, BLACK);
-        }
-
-        // Status display (FUN_00401b80): stacked rows at the top-right.
-        let rows = [
-            ("Time:", game.scoring.format_time(game.hud_time_ms())),
-            ("Dist:", game.scoring.format_dist(game.hud_dist_m())),
-            ("Speed:", game.scoring.format_speed(game.hud_speed())),
-            ("Style:", game.scoring.format_style()),
-        ];
-        let font_size = 15u16;
-        let value_x = screen_width() - 62.0;
-        let label_x = value_x - 48.0;
-        let mut row_y = 16.0;
-        for (label, value) in rows {
-            draw_text(label, label_x, row_y, font_size as f32, DARKGRAY);
-            draw_text(&value, value_x, row_y, font_size as f32, BLACK);
-            row_y += 16.0;
-        }
-
-        // High-score table after a course finish (FUN_00402ec0 display),
-        // with " <-- that's you!" / " <-- try again!" markers.
-        if let Some(finish) = game.last_finish {
-            let title = match finish.course {
-                0 => "Slalom High Scores",
-                1 => "Giant Slalom High Scores",
-                _ => "Freestyle High Scores",
-            };
-            let entries: Vec<String> = if finish.course == 2 {
-                game.high_scores
-                    .freestyle_style
-                    .iter()
-                    .map(|s| format!("{:>9}", s))
-                    .collect()
-            } else {
-                let times = if finish.course == 0 {
-                    &game.high_scores.slalom_ms
-                } else {
-                    &game.high_scores.giant_slalom_ms
-                };
-                times.iter().map(|&ms| game.scoring.format_time(ms)).collect()
-            };
-            let mut y = row_y + 24.0;
-            draw_text(title, label_x, y, font_size as f32, DARKGRAY);
-            y += 16.0;
-            for (i, entry) in entries.iter().enumerate() {
-                let marker = if finish.rank == Some(i) {
-                    " <-- that's you!"
-                } else {
-                    ""
-                };
-                draw_text(&format!("{}{}", entry, marker), label_x, y, font_size as f32, BLACK);
-                y += 16.0;
-            }
-            if finish.rank.is_none() {
-                // Didn't place: show the own result below with try-again.
-                y += 16.0;
-                let own = if finish.course == 2 {
-                    format!("{:>9}", finish.style)
-                } else {
-                    game.scoring.format_time(finish.ms)
-                };
-                draw_text(&format!("{} <-- try again!", own), label_x, y, font_size as f32, BLACK);
+            cap.tick += 1;
+            if cap.ticks.iter().all(|&t| t < cap.tick) {
+                running = false;
             }
         }
 

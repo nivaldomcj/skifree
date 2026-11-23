@@ -6,10 +6,21 @@ pub const DEFAULT_WIDTH: i32 = 640;
 pub const DEFAULT_HEIGHT: i32 = 480;
 
 pub fn conf() -> Conf {
+    // Frame-capture replays (SKIFREE_REPLAY) open at the scenario's client
+    // size: growing the window later can be clamped by the screen.
+    let (width, height) = std::env::var("SKIFREE_REPLAY")
+        .ok()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .map(|v| {
+            let get = |k: &str, d: i32| v.get(k).and_then(|x| x.as_i64()).map_or(d, |x| x as i32);
+            (get("screen_w", DEFAULT_WIDTH), get("screen_h", DEFAULT_HEIGHT))
+        })
+        .unwrap_or((DEFAULT_WIDTH, DEFAULT_HEIGHT));
     Conf {
         window_title: "SkiFree".to_owned(),
-        window_width: DEFAULT_WIDTH,
-        window_height: DEFAULT_HEIGHT,
+        window_width: width,
+        window_height: height,
         window_resizable: true,
         ..Default::default()
     }
