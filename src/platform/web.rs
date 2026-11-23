@@ -6,7 +6,7 @@
 //! memory. Data coming back (a stored value, a URL parameter, a dropped
 //! file) arrives in two calls: the first returns its length (-1 for none)
 //! and holds the bytes on the JS side, then `skifree_take` copies them into
-//! a buffer Rust allocated.
+//! a buffer Rust allocated, at most that buffer's length.
 //!
 //! Every import that takes (pointer, length) reads or copies those bytes
 //! before it returns and keeps no pointer (see `register_plugin` in
@@ -14,7 +14,7 @@
 
 #[link(wasm_import_module = "env")]
 extern "C" {
-    fn skifree_take(dst: *mut u8);
+    fn skifree_take(dst: *mut u8, len: usize);
     fn skifree_set_title(ptr: *const u8, len: usize);
     fn skifree_is_fullscreen() -> u32;
     fn skifree_storage_get(key: *const u8, key_len: usize) -> i32;
@@ -39,18 +39,20 @@ extern "C" {
 }
 
 /// The plugin's version check (miniquad's `init_plugins` compares it with
-/// the `version` of the JS plugin named "skifree").
+/// the `version` of the JS plugin named "skifree"). 2: `skifree_take`
+/// takes the buffer length.
 #[no_mangle]
 pub extern "C" fn skifree_crate_version() -> u32 {
-    1
+    2
 }
 
 fn take(len: i32) -> Option<Vec<u8>> {
     let len = usize::try_from(len).ok()?;
     let mut buf = vec![0u8; len];
-    // SAFETY: the JS side holds exactly the `len` bytes the call before
-    // reported, and writes them into `buf`, which has that length.
-    unsafe { skifree_take(buf.as_mut_ptr()) };
+    // SAFETY: the import writes at most `buf.len()` bytes into `buf` (it
+    // holds `len` of them when the caller passes the length the previous
+    // import returned; any other length only truncates or zero-fills).
+    unsafe { skifree_take(buf.as_mut_ptr(), buf.len()) };
     Some(buf)
 }
 

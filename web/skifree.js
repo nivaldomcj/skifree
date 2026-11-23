@@ -5,7 +5,8 @@
 //
 // Rust passes strings and bytes as (pointer, length) into its memory. Data
 // going back to Rust is held here by `hold` (which returns its length, -1
-// for none) and copied into a Rust buffer by `skifree_take`.
+// for none) and copied into a Rust buffer by `skifree_take`, never more
+// than the buffer's length.
 
 "use strict";
 
@@ -290,8 +291,11 @@
     function register_plugin(importObject) {
         const env = importObject.env;
 
-        env.skifree_take = (ptr) => {
-            if (held !== null) view(ptr, held.length).set(held);
+        env.skifree_take = (ptr, len) => {
+            if (held !== null) {
+                const n = Math.min(len >>> 0, held.length);
+                view(ptr, n).set(held.subarray(0, n));
+            }
             held = null;
         };
 
@@ -378,5 +382,6 @@
         window.addEventListener("touchend", unlockAudio, true);
     }
 
-    miniquad_add_plugin({ register_plugin, on_init, name: "skifree", version: 1 });
+    // Version 2: skifree_take takes the buffer length.
+    miniquad_add_plugin({ register_plugin, on_init, name: "skifree", version: 2 });
 })();
