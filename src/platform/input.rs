@@ -111,6 +111,12 @@ impl Input {
         let mut activated = false;
         for event in events.0 {
             match event {
+                // miniquad on macOS also sends the "minimized" event when the
+                // window is merely moved, and no "restored" follows while it
+                // stays key: deactivating then froze the game after a drag.
+                // The original keeps running while its window moves, so a
+                // focus loss counts only if the window really is inactive.
+                WindowEvent::Focus(false) if super::os_window::window_is_active() == Some(true) => {}
                 WindowEvent::Focus(active) => {
                     activated |= active;
                     actions.push(GameAction::Focus(active));
