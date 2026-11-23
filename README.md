@@ -6,7 +6,7 @@ Pirih's 1991 classic) with [REA](https://github.com/morluto/rea) + Ghidra and
 porting the recovered logic faithfully. Runs on macOS, Windows and Linux.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/nivaldomcj/skifree/refs/heads/docs/media/screenshots/macos.png"
+  <img src="https://github.com/nivaldomcj/skifree/raw/refs/heads/docs/media/screenshots/macos.png"
        alt="The port running on macOS: the yeti chases the skier uphill" width="480">
 </p>
 
