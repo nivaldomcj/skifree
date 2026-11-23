@@ -1,9 +1,9 @@
 use super::physics;
 use super::rng::Rng;
 use super::sound::Sound;
-use super::types::*;
+use super::types::{Actor, ActorClass};
 
-/// Monster AI (FUN_004041c0 integration + FUN_00404350 logic)
+/// Monster AI (`FUN_004041c0` integration + `FUN_00404350` logic)
 ///
 /// Four boundary guards: left (5), right (6), top (7), bottom (8). Each tick
 /// the monster integrates its velocity into position, applies gravity (it can
@@ -86,22 +86,21 @@ pub fn update_monster(
 
     let mut vx: i16 = 0;
     let mut vy: i16 = 0;
-    if in_region && triggered {
-        let p = player.unwrap();
-        let dx = p.x as i32 - actor.x as i32;
-        let dy = p.y as i32 - actor.y as i32;
+    if let Some(p) = player.filter(|_| in_region && triggered) {
+        let dx = i32::from(p.x) - i32::from(actor.x);
+        let dy = i32::from(p.y) - i32::from(actor.y);
         // Rubber-band: keep within one screen of the player (window dims).
-        let sw = screen_w as i32;
-        let sh = screen_h as i32;
+        let sw = i32::from(screen_w);
+        let sh = i32::from(screen_h);
         if dx > sw {
-            actor.x = (p.x as i32 - sw) as i16;
+            actor.x = (i32::from(p.x) - sw) as i16;
         } else if dx < -sw {
-            actor.x = (p.x as i32 + sw) as i16;
+            actor.x = (i32::from(p.x) + sw) as i16;
         }
         if dy > sh {
-            actor.y = (p.y as i32 - sh) as i16;
+            actor.y = (i32::from(p.y) - sh) as i16;
         } else if dy < -sh {
-            actor.y = (p.y as i32 + sh) as i16;
+            actor.y = (i32::from(p.y) + sh) as i16;
         }
         // Velocity toward the player.
         vx = dx.clamp(-16, 16) as i16;
@@ -154,7 +153,7 @@ fn toggle_anim(actor: &mut Actor, base: u16) {
     physics::change_state(actor, next);
 }
 
-/// Monster catches the skier (FUN_00403a00 case 5-8)
+/// Monster catches the skier (`FUN_00403a00` case 5-8)
 pub fn eat_skier(monster: &mut Actor, skier_idx: usize, elapsed_ms: u32) -> usize {
     physics::change_state(monster, 0x32);
     monster.timestamp = elapsed_ms;

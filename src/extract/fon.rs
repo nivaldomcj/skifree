@@ -1,6 +1,6 @@
 //! The status display's font from a Windows `.fon` (an NE file of FNT
 //! resources): the 12-pixel face of `vgaoem.fon` ("Terminal", the stock
-//! OEM_FIXED_FONT), as `tools/extract_assets.py` (`extract_oem_font`) cuts
+//! `OEM_FIXED_FONT`), as `tools/extract_assets.py` (`extract_oem_font`) cuts
 //! it: printable ASCII (0x20..0x7E) in one strip of fixed-width cells,
 //! black glyph pixels on transparent.
 
@@ -16,7 +16,7 @@ fn fonts(data: &[u8]) -> Result<Vec<&[u8]>> {
         return Err("not an NE file".to_owned());
     }
     let table = ne + u16_at(data, ne + 0x24)? as usize;
-    let shift = u16_at(data, table)? as u32;
+    let shift = u32::from(u16_at(data, table)?);
     if shift > 16 {
         return Err("font file is damaged".to_owned());
     }

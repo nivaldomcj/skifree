@@ -1,13 +1,15 @@
 use super::physics;
 use super::sound::Sound;
-use super::state_table::*;
-use super::types::*;
+use super::state_table::{
+    mouse_air_direction, mouse_direction, CRASH_LANDING, LEFT_TRANSITION, RIGHT_TRANSITION, SKIER_PHYSICS,
+};
+use super::types::Actor;
 
-/// Skier state machine (FUN_004028e0)
+/// Skier state machine (`FUN_004028e0`)
 /// States 0x00-0x15: skiing, jumping, crashing.
 ///
 /// Returns the style points earned this tick (the caller adds them through
-/// `Scoring::add`, which only counts inside freestyle, like FUN_00403420).
+/// `Scoring::add`, which only counts inside freestyle, like `FUN_00403420`).
 /// A landing pushes its sound to `sounds`.
 pub fn update_skier(actor: &mut Actor, fast_forward: bool, sounds: &mut Vec<Sound>) -> i32 {
     let state = actor.state;
@@ -70,7 +72,7 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool, sounds: &mut Vec<Soun
     points
 }
 
-/// Handle keyboard steering input (FUN_00406170, faithful port)
+/// Handle keyboard steering input (`FUN_00406170`, faithful port)
 ///
 /// The original handles each cardinal key as a discrete event:
 /// - DOWN (ground): straight down (state 0) — the fastest descent.
@@ -78,6 +80,7 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool, sounds: &mut Vec<Soun
 /// - LEFT/RIGHT: step through the left/right transition fan (0→1→2→3→7 and
 ///   0→4→5→6→8); the hard-carve states 7/8 also kick lateral velocity to ±8.
 /// - In the air, UP/DOWN cycle the jump-trick poses instead of steering.
+#[expect(clippy::fn_params_excessive_bools, reason = "the four arrow keys, held or not")]
 pub fn steer_keyboard(actor: &mut Actor, left: bool, right: bool, up: bool, down: bool) {
     if actor.state == 0x0b || actor.state == 0x11 {
         return; // crashed or jumping
@@ -145,7 +148,7 @@ pub fn steer_keyboard(actor: &mut Actor, left: bool, right: bool, up: bool, down
     }
 }
 
-/// Keyboard jump (Insert / numpad0, FUN_00406170 case 0x2d/0x60).
+/// Keyboard jump (Insert / numpad0, `FUN_00406170` case 0x2d/0x60).
 /// Smaller hop than the mouse (vz=2) that also scrubs downhill speed.
 pub fn jump_keyboard(actor: &mut Actor) {
     if actor.state == 0x0b || actor.state == 0x11 {
@@ -160,7 +163,7 @@ pub fn jump_keyboard(actor: &mut Actor) {
     }
 }
 
-/// Diagonal steering (FUN_00406170): set a skiing state directly on the ground.
+/// Diagonal steering (`FUN_00406170`): set a skiing state directly on the ground.
 pub fn steer_absolute(actor: &mut Actor, target_state: u16) {
     if actor.state == 0x0b || actor.state == 0x11 {
         return;
@@ -170,10 +173,10 @@ pub fn steer_absolute(actor: &mut Actor, target_state: u16) {
     }
 }
 
-/// Mouse steering (FUN_00406550): `dx`/`dy` are the cursor's offset from
+/// Mouse steering (`FUN_00406550`): `dx`/`dy` are the cursor's offset from
 /// the skier's screen anchor (client w/2, h/3). Ignored while crashed (0xb)
 /// or crash-landing (0x11); on the ground the slope picks a skiing
-/// direction (FUN_004065e0), in the air a jump pose (FUN_00406670).
+/// direction (`FUN_004065e0`), in the air a jump pose (`FUN_00406670`).
 pub fn steer_mouse(actor: &mut Actor, dx: i16, dy: i16) {
     if actor.state == 0x0b || actor.state == 0x11 {
         return;
@@ -182,14 +185,9 @@ pub fn steer_mouse(actor: &mut Actor, dx: i16, dy: i16) {
     physics::change_state(actor, dir);
 }
 
+/// One step toward 0.
 fn decelerate(v: i16) -> i16 {
-    if v > 0 {
-        v - 1
-    } else if v < 0 {
-        v + 1
-    } else {
-        0
-    }
+    v - v.signum()
 }
 
 #[cfg(test)]

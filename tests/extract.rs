@@ -1,5 +1,5 @@
 //! The Rust extractor (`skifree::extract`, used by the public web build)
-//! against tools/extract_assets.py's output in assets/: same sprite pixels
+//! against `tools/extract_assets.py`'s output in assets/: same sprite pixels
 //! and sizes, same icon, same font, same WAV bytes, from the exes and from
 //! the zips they are distributed in.
 //!
@@ -22,7 +22,7 @@ fn originals(names: &[&str]) -> Option<Vec<(String, Vec<u8>)>> {
 fn png(rel: &str) -> Option<Rgba> {
     let bytes = std::fs::read(root().join("assets").join(rel)).ok()?;
     let img = Image::from_file_with_format(&bytes, Some(ImageFormat::Png)).expect("decodes");
-    Some(Rgba { width: img.width as u32, height: img.height as u32, data: img.bytes })
+    Some(Rgba { width: u32::from(img.width), height: u32::from(img.height), data: img.bytes })
 }
 
 macro_rules! need {

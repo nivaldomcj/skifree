@@ -1,4 +1,4 @@
-//! Dynamic obstacle populator (FUN_004025c0 + friends).
+//! Dynamic obstacle populator (`FUN_004025c0` + friends).
 //!
 //! The original fills the slope procedurally: every time the camera scrolls
 //! past a 0x3c boundary it spawns one actor at the entering screen edge. The
@@ -8,29 +8,29 @@
 
 use super::rng::Rng;
 use super::state_table::CLASS_INITIAL_STATE;
-use super::types::*;
+use super::types::{Actor, ActorClass, Camera, SpawnRequest};
 
 /// Picker result meaning "spawn nothing" (0x12 in the original).
 const NOTHING: u16 = 0x12;
 
 /// Viewport padding used by the density metric: (w + 0xf0) * (h + 0xf0)
-/// (DAT_0040c748, from the client rect inflated by 0x78 on every side).
+/// (`DAT_0040c748`, from the client rect inflated by 0x78 on every side).
 pub fn padded_area(screen_w: i16, screen_h: i16) -> i32 {
-    (screen_w as i32 + 0xf0) * (screen_h as i32 + 0xf0)
+    (i32::from(screen_w) + 0xf0) * (i32::from(screen_h) + 0xf0)
 }
 
-/// Live-actor density (DAT_0040c6fc): sum of sprite areas (width * height,
+/// Live-actor density (`DAT_0040c6fc`): sum of sprite areas (width * height,
 /// sprite-table entry +0xe) over all active actors.
 pub fn sprite_weight<'a>(actors: impl Iterator<Item = &'a Actor>, sprite_dims: &[(i16, i16)]) -> i32 {
     actors
         .map(|a| {
             let (w, h) = sprite_dims.get(a.sprite_id as usize).copied().unwrap_or((16, 16));
-            w as i32 * h as i32
+            i32::from(w) * i32::from(h)
         })
         .sum()
 }
 
-/// Edge directions, matching FUN_004024f0's parameter.
+/// Edge directions, matching `FUN_004024f0`'s parameter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Edge {
     Left = 0,
@@ -39,9 +39,9 @@ pub enum Edge {
     Bottom = 3,
 }
 
-/// Spawn position on an entering edge (FUN_004024f0). The camera anchors the
+/// Spawn position on an entering edge (`FUN_004024f0`). The camera anchors the
 /// viewport center; the original's window-frame offsets are 0 here. The RNG
-/// is consumed exactly like the original: one rand() for the along-edge axis.
+/// is consumed exactly like the original: one `rand()` for the along-edge axis.
 pub fn edge_position(edge: Edge, camera: &Camera, screen_w: i16, screen_h: i16, rng: &mut Rng) -> (i16, i16) {
     let left = camera.cx - screen_w / 2;
     let top = camera.cy - screen_h / 3; // player anchored at h/3 (FUN_00406060)
@@ -53,7 +53,7 @@ pub fn edge_position(edge: Edge, camera: &Camera, screen_w: i16, screen_h: i16, 
     }
 }
 
-/// Default open-slope picker (FUN_004026f0).
+/// Default open-slope picker (`FUN_004026f0`).
 fn pick_default(weight: i32, area: i32, rng: &mut Rng) -> u16 {
     if weight > area >> 5 {
         return NOTHING;
@@ -78,7 +78,7 @@ fn pick_default(weight: i32, area: i32, rng: &mut Rng) -> u16 {
     }
 }
 
-/// Freestyle strip picker (FUN_00402770): always snow bumps, tighter cap.
+/// Freestyle strip picker (`FUN_00402770`): always snow bumps, tighter cap.
 fn pick_zone_a(weight: i32, area: i32) -> u16 {
     if weight > area >> 6 {
         NOTHING
@@ -87,7 +87,7 @@ fn pick_zone_a(weight: i32, area: i32) -> u16 {
     }
 }
 
-/// Slalom strip picker (FUN_004027a0): trees with a rare snowboarder.
+/// Slalom strip picker (`FUN_004027a0`): trees with a rare snowboarder.
 fn pick_zone_b(weight: i32, area: i32, rng: &mut Rng) -> u16 {
     if weight > area >> 4 {
         return NOTHING;
@@ -99,7 +99,7 @@ fn pick_zone_b(weight: i32, area: i32, rng: &mut Rng) -> u16 {
     }
 }
 
-/// Tree-slalom strip picker (FUN_004027e0).
+/// Tree-slalom strip picker (`FUN_004027e0`).
 fn pick_zone_c(weight: i32, area: i32, rng: &mut Rng) -> u16 {
     if weight > area >> 5 {
         return NOTHING;
@@ -120,7 +120,7 @@ fn pick_zone_c(weight: i32, area: i32, rng: &mut Rng) -> u16 {
     }
 }
 
-/// Zone test + pick for a spawn position (FUN_004025c0's region dispatch).
+/// Zone test + pick for a spawn position (`FUN_004025c0`'s region dispatch).
 /// Zone A = freestyle strip, B = slalom strip, C = tree-slalom strip.
 fn pick_class(x: i16, y: i16, weight: i32, area: i32, rng: &mut Rng) -> u16 {
     if (-0x240..=-0x140).contains(&x) && (0x280..=0x21c0).contains(&y) {
@@ -134,7 +134,7 @@ fn pick_class(x: i16, y: i16, weight: i32, area: i32, rng: &mut Rng) -> u16 {
     }
 }
 
-/// Raw sprite for classes >= 0xb (FUN_00402850).
+/// Raw sprite for classes >= 0xb (`FUN_00402850`).
 fn sprite_for_class(class: u16, rng: &mut Rng) -> u16 {
     match class {
         0xb => 0x1b,
@@ -162,7 +162,7 @@ fn sprite_for_class(class: u16, rng: &mut Rng) -> u16 {
     }
 }
 
-/// Pick one actor to spawn at an entering edge (FUN_004025c0), or None when
+/// Pick one actor to spawn at an entering edge (`FUN_004025c0`), or None when
 /// the density cap or the picker says nothing.
 pub fn pick_spawn(
     edge: Edge,

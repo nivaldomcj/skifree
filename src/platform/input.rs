@@ -16,7 +16,7 @@ pub enum GameAction {
     RestartIfDead,
     PauseToggle,
     /// Esc, natively (nothing on the web).
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    #[cfg_attr(target_arch = "wasm32", expect(dead_code, reason = "a browser tab cannot quit"))]
     Quit,
     FastForward,
     StepTick,
@@ -31,7 +31,7 @@ pub enum GameAction {
     MouseSteer(f32, f32),
     Click(f32, f32),
     /// The window gained (`true`) or lost (`false`) focus, or was minimized
-    /// (WM_ACTIVATE / WM_SIZE in the original). Always delivered first.
+    /// (`WM_ACTIVATE` / `WM_SIZE` in the original). Always delivered first.
     Focus(bool),
 }
 
@@ -45,11 +45,11 @@ pub struct Input {
 enum WindowEvent {
     /// Activation change: miniquad reports focus loss as
     /// `window_minimized_event` and focus gain as `window_restored_event` on
-    /// Windows, macOS and X11 — the transitions the original's WM_ACTIVATE /
-    /// WM_SIZE handlers react to.
+    /// Windows, macOS and X11 — the transitions the original's `WM_ACTIVATE` /
+    /// `WM_SIZE` handlers react to.
     Focus(bool),
     /// A key-down from the OS, auto-repeats included — the original reacts
-    /// to each WM_KEYDOWN, so holding a key steps once on the press and then
+    /// to each `WM_KEYDOWN`, so holding a key steps once on the press and then
     /// at the OS repeat rate.
     KeyDown(KeyCode),
 }
@@ -70,9 +70,12 @@ impl macroquad::miniquad::EventHandler for WindowEvents {
     }
 }
 
-/// WM_KEYDOWN handling (FUN_00406170): the action for one key-down.
+/// `WM_KEYDOWN` handling (`FUN_00406170`): the action for one key-down.
 fn key_action(key: KeyCode) -> Option<GameAction> {
-    use KeyCode::*;
+    use KeyCode::{
+        Down, End, Enter, Home, Insert, Kp0, Kp1, Kp2, Kp3, Kp4, Kp6, Kp7, Kp8, Kp9, KpEnter, Left, PageDown, PageUp,
+        Right, Up, F2, F3,
+    };
     Some(match key {
         Left | Kp4 => GameAction::SteerLeft,
         Right | Kp6 => GameAction::SteerRight,
@@ -92,7 +95,7 @@ fn key_action(key: KeyCode) -> Option<GameAction> {
         // The original minimizes; natively the port quits (see
         // docs/porting-guide.md). A browser tab can do neither: nothing.
         #[cfg(not(target_arch = "wasm32"))]
-        Escape => GameAction::Quit,
+        KeyCode::Escape => GameAction::Quit,
         _ => return None,
     })
 }
@@ -176,17 +179,35 @@ impl Input {
     }
 }
 
-/// The mouse position in client pixels, as WM_MOUSEMOVE reports it
+/// The mouse position in client pixels, as `WM_MOUSEMOVE` reports it
 /// (whole pixels, origin at the top-left).
 ///
 /// miniquad's macOS backend converts Cocoa's bottom-up position with
 /// `height - y*scale - 1` in backing pixels, so after macroquad's division
 /// by the scale the pointer reads one backing pixel too high — measured
-/// with synthetic NSEvents: a pointer at client y 100.1 read 99.1, i.e. row
+/// with synthetic `NSEvent`s: a pointer at client y 100.1 read 99.1, i.e. row
 /// 99. Undo that there; the Windows and X11/Wayland backends pass client
 /// coordinates through unchanged. Cocoa positions are fractional: floor.
 pub fn client_mouse_position() -> (f32, f32) {
     let (x, y) = mouse_position();
     let y = if cfg!(target_os = "macos") { y + 1.0 / macroquad::miniquad::window::dpi_scale() } else { y };
     (x.floor(), y.floor())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A key without an action does nothing; only Esc quits. (Esc is
+    /// spelled `KeyCode::Escape` in `key_action`: an import list without
+    /// it would make the arm a catch-all binding that quits on every key.)
+    #[test]
+    fn only_mapped_keys_act() {
+        assert_eq!(key_action(KeyCode::A), None);
+        assert_eq!(key_action(KeyCode::Space), None);
+        assert_eq!(key_action(KeyCode::Left), Some(GameAction::SteerLeft));
+        assert_eq!(key_action(KeyCode::F3), Some(GameAction::PauseToggle));
+        #[cfg(not(target_arch = "wasm32"))]
+        assert_eq!(key_action(KeyCode::Escape), Some(GameAction::Quit));
+    }
 }

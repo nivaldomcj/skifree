@@ -1,13 +1,13 @@
 use super::sound::Sound;
-use super::types::*;
+use super::types::{Actor, ActorClass, Camera};
 
-/// AABB intersection test (FUN_00401290)
+/// AABB intersection test (`FUN_00401290`)
 #[expect(clippy::too_many_arguments, reason = "two RECTs, as FUN_00401290 takes them")]
 pub fn intersects(l1: i16, t1: i16, r1: i16, b1: i16, l2: i16, t2: i16, r2: i16, b2: i16) -> bool {
     l1 < r2 && l2 < r1 && t1 < b2 && t2 < b1
 }
 
-/// Actor bounding box from sprite dimensions and position (FUN_004014b0)
+/// Actor bounding box from sprite dimensions and position (`FUN_004014b0`)
 pub fn actor_bounds(
     actor: &Actor,
     sprite_w: i16,
@@ -23,12 +23,12 @@ pub fn actor_bounds(
 }
 
 /// Padding around the client rect for the original's "live" viewport
-/// (DAT_0040c680 = client rect inflated by 0x78 on every side).
+/// (`DAT_0040c680` = client rect inflated by 0x78 on every side).
 pub const VIEW_PAD: i16 = 0x78;
 
 /// Whether a sprite at (x, y, z) is "on screen" in the original's sense: its
-/// FUN_004014b0 draw box strictly overlaps the padded viewport DAT_0040c680
-/// (FUN_00401290). Gates materialization (FUN_00404130), culling and the
+/// `FUN_004014b0` draw box strictly overlaps the padded viewport `DAT_0040c680`
+/// (`FUN_00401290`). Gates materialization (`FUN_00404130`), culling and the
 /// populator's density sum.
 #[expect(clippy::too_many_arguments, reason = "the position, size and view FUN_004014b0 reads")]
 pub fn in_padded_view(
@@ -56,15 +56,15 @@ pub fn in_padded_view(
     )
 }
 
-/// The spawn-event y window scanned by FUN_004046e0 / FUN_004040a0: event y
-/// on screen within [pad_top - 0x3c, pad_bottom + 0x3c).
+/// The spawn-event y window scanned by `FUN_004046e0` / `FUN_004040a0`: event y
+/// on screen within [`pad_top` - 0x3c, `pad_bottom` + 0x3c).
 pub fn in_event_window(y: i16, camera: &Camera, screen_w: i16, screen_h: i16) -> bool {
     let (_, sy) = camera.world_to_screen(0, y, screen_w, screen_h);
     sy >= -VIEW_PAD - 0x3c && sy < screen_h + VIEW_PAD + 0x3c
 }
 
-/// FUN_00403a00's crossing flag (local_4, a.k.a. bVar4). Compares both
-/// actors' current y with their previous y (FUN_00404070: the previous-
+/// `FUN_00403a00`'s crossing flag (`local_4`, a.k.a. bVar4). Compares both
+/// actors' current y with their previous y (`FUN_00404070`: the previous-
 /// position copy at `[actor+4]`, i.e. the y at the start of the tick, or the
 /// actor itself when it has none). Set when their vertical order flipped or
 /// they met this tick — exactly one tick per crossing. Mirrors the original's
@@ -75,7 +75,7 @@ pub fn crossed(y: i16, pre_y: i16, other_y: i16, other_pre_y: i16) -> bool {
     flips && !(a == b && a0 == b0)
 }
 
-/// Collision handler for one *ordered* pair (FUN_00403a00): `a` is the first
+/// Collision handler for one *ordered* pair (`FUN_00403a00`): `a` is the first
 /// actor, whose class picks the outer switch case; `b` is the other one.
 /// `check_all_collisions` calls it for both orders, like the original.
 /// `a_dims` / `b_dims` are the actors' current sprite dimensions, needed for
@@ -115,9 +115,13 @@ pub fn handle_collision(
 
         match other.class {
             // Skier-first vs a monster does nothing (inner cases 5-8 fall
-            // to the default); the eating runs monster-first.
-            ActorClass::MonsterLeft | ActorClass::MonsterRight | ActorClass::MonsterTop | ActorClass::MonsterBottom => {
-            }
+            // to the default); the eating runs monster-first. Skier vs
+            // skier falls to the default too.
+            ActorClass::MonsterLeft
+            | ActorClass::MonsterRight
+            | ActorClass::MonsterTop
+            | ActorClass::MonsterBottom
+            | ActorClass::Skier => {}
             ActorClass::SnowBump => {
                 // Snow bump: launches a straight-downhill skier (state 0).
                 if skier.state == 0 {
@@ -173,8 +177,10 @@ pub fn handle_collision(
             ActorClass::Banner => {
                 // Rainbow freestyle ramp (case 0x10): on the crossing tick, a
                 // skier below half the ramp's top launches at its own speed.
+                #[expect(clippy::manual_midpoint, reason = "half of the ramp's top, z + height, not a midpoint")]
+                let half_top = (i32::from(other.z) + i32::from(other_dims.1)) / 2;
                 if crossed(skier.y, skier.prev_y.unwrap_or(skier.y), other.y, other.prev_y.unwrap_or(other.y))
-                    && (skier.z as i32) < (other.z as i32 + other_dims.1 as i32) / 2
+                    && i32::from(skier.z) < half_top
                     && skier.vy > 0
                 {
                     skier.vz = skier.vy;
@@ -197,7 +203,6 @@ pub fn handle_collision(
                     result.score_delta += -0x10;
                 }
             }
-            _ => {}
         }
 
         // Check for gate pass (event_type 0x0c = slalom gate)
@@ -217,11 +222,11 @@ pub struct CollisionResult {
     pub skier_eaten: bool,
     pub eaten_by: Option<usize>,
     pub free_actor: Option<usize>,
-    /// The sound this handler call played (FUN_00402ba0; at most one).
+    /// The sound this handler call played (`FUN_00402ba0`; at most one).
     pub sound: Option<Sound>,
 }
 
-/// FUN_00403a00's shared solid-obstacle path (skier first; inner cases
+/// `FUN_00403a00`'s shared solid-obstacle path (skier first; inner cases
 /// 1/3/4/9/10/13, and 14 for a grounded skier). In order: fly over/under
 /// (+6, or +1000 for hurdling the eating monster, which leaves a dead tree);
 /// nothing unless this is the crossing tick; a tree hit off-centre by more
@@ -252,7 +257,7 @@ fn solid_hit(
         return;
     }
     if other.class == ActorClass::Tree
-        && (skier.x as i32 - other.x as i32).abs() > (skier_dims.0.max(other_dims.0) as i32) / 2
+        && (i32::from(skier.x) - i32::from(other.x)).abs() > i32::from(skier_dims.0.max(other_dims.0)) / 2
     {
         skier.vy /= 2;
         return;
@@ -277,11 +282,11 @@ fn solid_hit(
     }
 }
 
-/// Outer cases of FUN_00403a00 for a non-skier first actor `a` against `b`.
+/// Outer cases of `FUN_00403a00` for a non-skier first actor `a` against `b`.
 /// `top` is the other actor's top (`b.z` + its sprite height); "below the
 /// top" compares the first actor's z against it. Style points go through
-/// `score_delta` (FUN_00403420); state changes apply immediately, as the
-/// original's FUN_00402120 calls do.
+/// `score_delta` (`FUN_00403420`); state changes apply immediately, as the
+/// original's `FUN_00402120` calls do.
 fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -> CollisionResult {
     let mut result = CollisionResult::default();
     let top = b.z + b_dims.1;
@@ -359,17 +364,17 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
 }
 
 /// `SKIFREE_LOG_PAIRS=1`: print every ordered collision-handler call (diff
-/// against tools/vm/trace_pairs.js).
+/// against `tools/vm/trace_pairs.js`).
 fn log_pairs() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("SKIFREE_LOG_PAIRS").is_some())
 }
 
-/// Collision pass (FUN_00401e50, after the mob nodes). Mirrors the original's
+/// Collision pass (`FUN_00401e50`, after the mob nodes). Mirrors the original's
 /// pair walk: for each actor `j` in list order, against each actor `i`
 /// *before* it in the list (the inner loop stops at the outer actor, so every
 /// unordered pair is visited once), test the pair when at least one of them
-/// moved this tick (flag 0x20, set by FUN_00402390 on a position change) and
+/// moved this tick (flag 0x20, set by `FUN_00402390` on a position change) and
 /// their boxes intersect; then run the handler for (later, earlier) and, if
 /// neither got removed, for (earlier, later). `collidable` excludes actors the
 /// original wouldn't have in its list (mob nodes without a live actor).

@@ -43,9 +43,7 @@ fn main() {
         println!("cargo:warning=embed-assets only applies to the web build (wasm32)");
     }
     if std::env::var_os("SKIFREE_NO_ASSETS").is_some_and(|v| v == "1") {
-        if web {
-            panic!("SKIFREE_NO_ASSETS=1 cannot build the private web version (embed-assets)");
-        }
+        assert!(!web, "SKIFREE_NO_ASSETS=1 cannot build the private web version (embed-assets)");
         println!("cargo:rustc-cfg=skifree_sound");
         println!("cargo:rustc-cfg=skifree_no_assets");
         println!("cargo:warning=SKIFREE_NO_ASSETS=1: assets not checked, for linting and tests only");
@@ -117,21 +115,19 @@ fn check_assets() {
     // The extractor always produces the 89 bitmap sprites, the string
     // tables and the icons.
     let strings_ok = Path::new("assets/strings.json").exists();
-    let icons_ok = std::fs::read_dir("assets/icons").map(|mut d| d.next().is_some()).unwrap_or(false);
+    let icons_ok = std::fs::read_dir("assets/icons").is_ok_and(|mut d| d.next().is_some());
 
-    if sprite_files < 89 || missing > 0 || !strings_ok || !icons_ok {
-        panic!(
-            "{EXTRACT_HINT}\n\n(details: {} sprite files, {} missing files, strings.json: {}, icons/: {})",
-            sprite_files, missing, strings_ok, icons_ok
-        );
-    }
+    assert!(
+        sprite_files >= 89 && missing == 0 && strings_ok && icons_ok,
+        "{EXTRACT_HINT}\n\n(details: {sprite_files} sprite files, {missing} missing files, strings.json: {strings_ok}, icons/: {icons_ok})"
+    );
 
-    println!("cargo:warning=assets OK: {} sprite files verified", sprite_files);
+    println!("cargo:warning=assets OK: {sprite_files} sprite files verified");
 }
 
 /// The private web build: `$OUT_DIR/web_assets.rs` embeds the 89 sprite
 /// PNGs, the font and icon 3 when present, and the sounds when all nine
-/// are (platform::assets decodes them like the native build's files).
+/// are (`platform::assets` decodes them like the native build's files).
 fn embed_web_assets() {
     for dir in ["assets/sprites", "assets/fonts", "assets/icons", "assets/sounds"] {
         println!("cargo:rerun-if-changed={dir}");

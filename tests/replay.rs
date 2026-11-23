@@ -3,28 +3,27 @@ use std::path::Path;
 use skifree::replay::{parse_jsonl, records_to_jsonl, run_scenario, Scenario};
 
 fn scenario_path(name: &str) -> String {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("replays").join(format!("{}.json", name)).to_string_lossy().into_owned()
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("replays").join(format!("{name}.json")).to_string_lossy().into_owned()
 }
 
 fn golden_path(name: &str) -> String {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("replays")
         .join("golden")
-        .join(format!("{}.jsonl", name))
+        .join(format!("{name}.jsonl"))
         .to_string_lossy()
         .into_owned()
 }
 
 fn load_scenario(name: &str) -> Scenario {
     let text =
-        std::fs::read_to_string(scenario_path(name)).unwrap_or_else(|e| panic!("cannot read {} scenario: {}", name, e));
-    serde_json::from_str(&text).unwrap_or_else(|e| panic!("bad {} scenario: {}", name, e))
+        std::fs::read_to_string(scenario_path(name)).unwrap_or_else(|e| panic!("cannot read {name} scenario: {e}"));
+    serde_json::from_str(&text).unwrap_or_else(|e| panic!("bad {name} scenario: {e}"))
 }
 
 fn load_golden(name: &str) -> Vec<skifree::replay::TickRecord> {
-    let text =
-        std::fs::read_to_string(golden_path(name)).unwrap_or_else(|e| panic!("cannot read {} golden: {}", name, e));
-    parse_jsonl(&text).unwrap_or_else(|e| panic!("bad {} golden: {}", name, e))
+    let text = std::fs::read_to_string(golden_path(name)).unwrap_or_else(|e| panic!("cannot read {name} golden: {e}"));
+    parse_jsonl(&text).unwrap_or_else(|e| panic!("bad {name} golden: {e}"))
 }
 
 fn check(name: &str) {
@@ -37,7 +36,7 @@ fn check(name: &str) {
             .zip(golden.iter())
             .position(|(a, b)| a != b)
             .unwrap_or_else(|| records.len().min(golden.len()));
-        panic!("{} diverges from golden at tick {}", name, divergence);
+        panic!("{name} diverges from golden at tick {divergence}");
     }
 }
 
@@ -60,7 +59,7 @@ fn descend_reaches_finish_area() {
     let last = records.last().unwrap();
     let y0 = first.player.as_ref().unwrap().y;
     let y1 = last.player.as_ref().unwrap().y;
-    assert!(y1 > y0 + 5000, "skier should descend the course, y {} -> {}", y0, y1);
+    assert!(y1 > y0 + 5000, "skier should descend the course, y {y0} -> {y1}");
 }
 
 #[test]
@@ -174,7 +173,7 @@ fn verified_focus_matches() {
 }
 
 /// Window resized four times mid-run, down to the minimum 304x261 client
-/// (WM_SIZE): every rand() call, player tick and status repaint matches the
+/// (`WM_SIZE`): every `rand()` call, player tick and status repaint matches the
 /// original, and the frames are pixel-identical at every size.
 #[test]
 fn verified_resize_matches() {
@@ -183,7 +182,7 @@ fn verified_resize_matches() {
 
 /// Sound coverage: a snowboarder jumps (sound 8) and is knocked down (3) in
 /// the same tick, plus take-off, landing and crashes. Every sound call
-/// matches the original (tools/vm/trace_sounds.js); the other scenarios
+/// matches the original (`tools/vm/trace_sounds.js`); the other scenarios
 /// cover the rest of the nine sounds.
 #[test]
 fn verified_sounds_matches() {

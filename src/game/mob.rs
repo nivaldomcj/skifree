@@ -1,10 +1,10 @@
 use super::physics;
 use super::rng::Rng;
 use super::sound::Sound;
-use super::state_table::*;
-use super::types::*;
+use super::state_table::{DOG_PHYSICS, SNOWBOARDER_PHYSICS};
+use super::types::{Actor, ActorClass, SpawnRequest};
 
-/// Dog behavior (FUN_00403540, class 1)
+/// Dog behavior (`FUN_00403540`, class 1)
 pub fn update_dog(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
     let state = actor.state;
     if state > 0x18 {
@@ -28,11 +28,11 @@ pub fn update_dog(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
     }
 }
 
-/// Snowboarder behavior (FUN_00403610, class 2)
+/// Snowboarder behavior (`FUN_00403610`, class 2)
 ///
 /// State 0x1e can trigger the jump: a class-0x11 effect actor (sprite 0x52)
 /// is spawned at (x-4, y-2, z) from the pre-integration position, and the
-/// snowboarder continues in state 0x1b, with the jump sound (FUN_00402ba0).
+/// snowboarder continues in state 0x1b, with the jump sound (`FUN_00402ba0`).
 pub fn update_snowboarder(
     actor: &mut Actor,
     rng: &mut Rng,
@@ -84,7 +84,7 @@ pub fn update_snowboarder(
     None
 }
 
-/// Ambient mob behavior (FUN_004041c0 pure integration + FUN_00404290, class 4)
+/// Ambient mob behavior (`FUN_004041c0` pure integration + `FUN_00404290`, class 4)
 ///
 /// The ambient mob is a spawner that drifts vertically just left of the slope
 /// center (x = -112 heading up in state 0x27, x = -144 heading down in 0x29),
@@ -95,7 +95,7 @@ pub fn update_snowboarder(
 /// skier (class 3, state 0x21) at the mob's current position — including its
 /// z = 0x20, so the skier visibly drops in from above — and flip to state
 /// 0x28. The original gates the roll on the mob node having a live visible
-/// actor ([node+0x00] != 0 in FUN_00404290); `materialized` carries that
+/// actor ([node+0x00] != 0 in `FUN_00404290`); `materialized` carries that
 /// state from the caller (see `GameState::update_proxies`). The integration
 /// and wrap run regardless, like the original's mob nodes.
 pub fn update_ambient(actor: &mut Actor, rng: &mut Rng, materialized: bool) -> Option<SpawnRequest> {
@@ -135,7 +135,7 @@ pub fn update_ambient(actor: &mut Actor, rng: &mut Rng, materialized: bool) -> O
     None
 }
 
-/// Lift chair behavior (FUN_004037b0, class 10)
+/// Lift chair behavior (`FUN_004037b0`, class 10)
 pub fn update_lift(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
     match actor.state {
         0x3c => {
@@ -175,7 +175,7 @@ pub fn update_lift(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
     }
 }
 
-/// Obstacle behavior (FUN_00403910, class 3)
+/// Obstacle behavior (`FUN_00403910`, class 3)
 pub fn update_obstacle(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
     let state = actor.state;
     if !(0x1f..=0x26).contains(&state) {
@@ -212,7 +212,7 @@ pub fn update_obstacle(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
     }
 }
 
-/// Eating behavior (FUN_00403750, class 9)
+/// Eating behavior (`FUN_00403750`, class 9)
 pub fn update_eating(actor: &mut Actor, _fast_forward: bool) {
     let next = actor.state + 1;
     if next > 0x3b {
@@ -226,7 +226,7 @@ pub fn update_eating(actor: &mut Actor, _fast_forward: bool) {
 mod tests {
     use super::*;
 
-    /// Find a seed whose first rand_range(n) roll is 0 (for the rare paths).
+    /// Find a seed whose first `rand_range(n)` roll is 0 (for the rare paths).
     fn seed_with_first_roll_zero(n: u16) -> u32 {
         (0..1_000_000u32)
             .find(|&s| {

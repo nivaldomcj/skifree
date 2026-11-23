@@ -6,12 +6,12 @@ pub struct Renderer {
     sprites: HashMap<u32, Texture2D>,
     /// Status display font: printable ASCII in 8x12 cells from 0x20. The
     /// stock OEM fixed font ("Terminal") extracted from vgaoem.fon
-    /// (assets/fonts/oem_fixed.png), or the bundled fallback.
+    /// (`assets/fonts/oem_fixed.png`), or the bundled fallback.
     font: Texture2D,
 }
 
 /// Status display geometry, from the original's text metrics
-/// (FUN_00406a70): 8x12 cells, label column = widest label ("Speed:"),
+/// (`FUN_00406a70`): 8x12 cells, label column = widest label ("Speed:"),
 /// value column = widest value template ("00:00:00.00"), 2 px margins.
 const CELL_W: f32 = 8.0;
 /// IBM VGA 8x14 cut to 8x12, from The Ultimate Oldschool PC Font Pack by
@@ -44,7 +44,7 @@ impl Renderer {
     }
 
     /// Draw `text` in the OEM fixed font with its top-left cell at (x, y),
-    /// black on an opaque white background (TextOutA's default OPAQUE mode).
+    /// black on an opaque white background (`TextOutA`'s default OPAQUE mode).
     pub fn draw_oem_text(&self, text: &str, x: f32, y: f32) {
         let n = text.chars().count() as f32;
         draw_rectangle(x, y, n * CELL_W, CELL_H, WHITE);
@@ -115,7 +115,7 @@ impl Renderer {
     }
 
     /// The status display: a white box with a one-pixel black frame
-    /// (FrameRect, stock black brush) at the client's top-right corner,
+    /// (`FrameRect`, stock black brush) at the client's top-right corner,
     /// labels at (2, 2 + 12 row), values at (label column + 2, ...).
     /// Returns the box's bottom edge.
     pub fn draw_status(&self, values: &[String; 4], client_w: f32) -> f32 {
@@ -140,26 +140,5 @@ impl Renderer {
         if let Some(tex) = self.sprites.get(&id) {
             draw_texture(tex, x, y, WHITE);
         }
-    }
-
-    #[allow(dead_code)]
-    pub fn draw_sprite_scaled(&self, id: u32, x: f32, y: f32, scale: f32) {
-        if let Some(tex) = self.sprites.get(&id) {
-            draw_texture_ex(
-                tex,
-                x,
-                y,
-                WHITE,
-                DrawTextureParams {
-                    dest_size: Some(vec2(tex.width() * scale, tex.height() * scale)),
-                    ..Default::default()
-                },
-            );
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn sprite_count(&self) -> usize {
-        self.sprites.len()
     }
 }

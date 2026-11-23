@@ -52,6 +52,11 @@ struct Section {
 }
 
 /// Every resource of a PE32 file, in directory order.
+///
+/// # Errors
+///
+/// When `data` is not a 32-bit Windows program or its resource directory is
+/// cut short or malformed.
 pub fn resources(data: &[u8]) -> Result<Vec<Resource<'_>>> {
     if kind(data) != Kind::Pe {
         return Err("not a 32-bit Windows program".to_owned());

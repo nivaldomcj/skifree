@@ -1,7 +1,7 @@
 use super::state_table::STATE_TO_SPRITE;
-use super::types::*;
+use super::types::{Actor, ActorClass};
 
-/// Fixed-size actor pool (100 slots, mirrors FUN_00404a00)
+/// Fixed-size actor pool (100 slots, mirrors `FUN_00404a00`)
 pub struct ActorPool {
     actors: Vec<Actor>,
     free: Vec<usize>,
@@ -29,7 +29,7 @@ impl ActorPool {
         Some(idx)
     }
 
-    /// Allocate an actor with a raw sprite id (FUN_004026a0), bypassing the
+    /// Allocate an actor with a raw sprite id (`FUN_004026a0`), bypassing the
     /// state-to-sprite table. Used for class >= 0xb effect actors whose
     /// "state" field is really a sprite id (e.g. the snowboarder jump puff).
     pub fn alloc_with_sprite(&mut self, class: ActorClass, sprite_id: u16) -> Option<usize> {
