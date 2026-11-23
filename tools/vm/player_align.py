@@ -4,7 +4,9 @@
 Usage: player_align.py <original-run.txt> <port-ticks.jsonl> [context]
 
 Original call N (end of FUN_00401e50) is matched with the port's tick N.
-Reports the first tick where x/y/z/vx/vy/vz/state differ, with context.
+Reports the first tick where x/y/z/vx/vy/vz/state, the style score
+(DAT_0040c6a8) or the course clock (DAT_0040c944; only when the capture has
+it) differ, with context.
 """
 import ast
 import json
@@ -28,14 +30,15 @@ def main():
 
     def o_tuple(i):
         d = orig[i]
-        return tuple(d.get(f) for f in FIELDS) if "x" in d else None
+        player = tuple(d.get(f) for f in FIELDS) if "x" in d else None
+        return (player, d.get("score"), d.get("cms", port[i].get("course_ms")))
 
     def p_tuple(i):
         p = port[i]["player"]
-        return tuple(p[f] for f in FIELDS) if p else None
+        return (tuple(p[f] for f in FIELDS) if p else None, port[i]["score"], port[i].get("course_ms"))
 
     first = next((i for i in range(n) if o_tuple(i) != p_tuple(i)), None)
-    print(f"original ticks: {len(orig)}  port ticks: {len(port)}  fields: {FIELDS}")
+    print(f"original ticks: {len(orig)}  port ticks: {len(port)}  fields: {FIELDS} + score + course clock")
     if first is None:
         print(f"player identical for all {n} common ticks")
         return

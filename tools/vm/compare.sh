@@ -25,10 +25,14 @@ FRIDA_PY=${FRIDA_PY:-"$HOME/Library/Application Support/pipx/venvs/frida-tools/b
 if [ "$1" = "--suite" ]; then
     out=${2:?out-dir}; mkdir -p "$out"
     # scenario:seconds (seconds cover the scenario's ticks at ~19 ticks/s
-    # under Frida)
+    # under Frida; the whole suite takes ~16 minutes)
     for entry in compare_vm:32 compare_steer:32 compare_size_640x480:34 \
                  compare_size_1024x700:34 compare_slalom:66 \
-                 compare_tree_slalom:66 compare_monster:72; do
+                 compare_tree_slalom:66 compare_slalom_timed:68 \
+                 compare_tree_slalom_timed:68 compare_freestyle:68 \
+                 compare_mouse:68 compare_restart:40 compare_focus:40 \
+                 compare_monster:72 \
+                 compare_long:240; do
         name=${entry%%:*}; secs=${entry#*:}
         echo "== $name"
         "$0" "replays/$name.json" "$out/$name" "$secs"
@@ -41,8 +45,8 @@ size=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('%dx%d
 python3 tools/vm/scenario_inputs.py "$scenario" > "$prefix.inputs.js"
 ssh -o BatchMode=yes "$SSH_DEST" 'taskkill /f /im ski32-autoplay.exe' >/dev/null 2>&1 || true
 "$FRIDA_PY" tools/vm/spawn_locked.py "$SKIFREE_VM_EXE" "$secs" "$SKIFREE_VM_HOST" --size "$size" \
-    tools/vm/trace_ticks.js tools/vm/trace_rand.js tools/vm/trace_player.js \
-    tools/vm/fixed_clock.js "$prefix.inputs.js" > "$prefix.orig.txt" 2>&1
+    tools/vm/trace_rand.js tools/vm/trace_player.js \
+    tools/vm/fixed_clock.js tools/vm/no_dialogs.js "$prefix.inputs.js" > "$prefix.orig.txt" 2>&1
 cargo build -q --features rng_sites --bin replay
 SKIFREE_LOG_RNG=1 ./target/debug/replay "$scenario" 2> "$prefix.port_rng.txt" > "$prefix.port.jsonl"
 python3 tools/vm/rng_align.py "$prefix.orig.txt" "$prefix.port_rng.txt" 10

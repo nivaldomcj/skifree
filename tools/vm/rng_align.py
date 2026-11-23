@@ -27,6 +27,9 @@ def original_calls(path):
         d = ast.literal_eval(line)
         if d.get("t") == "tick":
             ticks += 1
+        elif d.get("t") == "rb":
+            for call, ra, n, st in d["calls"]:
+                calls.append((call, ra, n, st))
         elif d.get("t") == "r":
             # Prefer the main-tick index; older captures only have the
             # integrated-tick count (which stalls while the skier is crashed).
@@ -55,18 +58,44 @@ def main():
         sys.exit(__doc__)
     ctx = int(sys.argv[3]) if len(sys.argv) > 3 else 10
     o, p = original_calls(sys.argv[1]), port_calls(sys.argv[2])
-    n = min(len(o), len(p))
-    first = next((i for i in range(n) if o[i][0] != p[i][0] or o[i][3] != p[i][1]), None)
     print(f"original calls: {len(o)}  port calls: {len(p)}")
-    if first is None:
-        print(f"identical for all {n} common calls")
+    # Walk both logs. Calls the original makes inside an injected input
+    # handler (an F2 world rebuild) are invisible to trace_rand.js — Frida
+    # does not fire hooks for calls made from inside a hook callback. Those
+    # runs show up as a port re-seed (stream index drops back) the original
+    # log skips; accept them when the original resumes at exactly the stream
+    # index the port reaches after the run, which proves the same number of
+    # calls happened.
+    i = j = hidden = 0
+    while i < len(o) and j < len(p):
+        if o[i][0] == p[j][0] and o[i][3] == p[j][1]:
+            i += 1
+            j += 1
+            continue
+        if j > 0 and p[j][0] < p[j - 1][0]:
+            k = j
+            while k < len(p) and k - j < 1000 and p[k][0] != o[i][0]:
+                k += 1
+            if k < len(p) and p[k][0] == o[i][0] and p[k][1] == o[i][3]:
+                print(f"  port calls {j}..{k - 1} (stream {p[j][0]}..{p[k - 1][0]}, after a "
+                      f"re-seed) happened inside an injected input in the original; "
+                      f"it resumes at stream index {o[i][0]} like the port")
+                hidden += k - j
+                j = k
+                continue
+        break
+    if i >= len(o) or j >= len(p):
+        print(f"identical for all {i} common calls" + (f" (+{hidden} verified by stream position)" if hidden else ""))
         return
-    print(f"first divergence at call {first}")
-    for j in range(max(0, first - ctx), min(first + ctx, n)):
-        _, t, ra, on = o[j]
-        _, pn, site = p[j]
-        mark = ">>" if j == first else "  "
-        print(f"{mark}{j:5d} | orig t{t:<4} {ra} n={on:<5} | port n={pn:<5} {site}")
+    print(f"first divergence at original call {i} / port call {j}")
+    for d in range(-ctx, ctx):
+        a, b = i + d, j + d
+        if a < 0 or b < 0 or a >= len(o) or b >= len(p):
+            continue
+        _, t, ra, on = o[a]
+        _, pn, site = p[b]
+        mark = ">>" if d == 0 else "  "
+        print(f"{mark}{a:5d} | orig t{t:<4} {ra} n={on:<5} | port n={pn:<5} {site}")
 
 
 if __name__ == "__main__":
