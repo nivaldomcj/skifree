@@ -1,0 +1,5 @@
+# Formatting-only commits: `git blame` skips them (GitHub reads this file too).
+# git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: rustfmt with 120 columns, the code's existing width
+fa515906dd1d9e20d43cfb79976968841cb22f69
