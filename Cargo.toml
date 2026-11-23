@@ -3,6 +3,7 @@ name = "skifree"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+default-run = "skifree"
 
 [dependencies]
 macroquad = "0.4"
