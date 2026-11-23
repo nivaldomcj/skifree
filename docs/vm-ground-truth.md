@@ -278,6 +278,16 @@ Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
     fonts that fits the 12-pixel rows (11 rows of ink, slashed zero), 311
     differing pixels inside the box's text at `compare_steer` tick 300.
 
+22. **Window icon**: the main window class gets `LoadIconA(hInstance,
+    "iconSki")` (`0x40547f`), the ICONSKI group: the goggled skier's face in
+    32×32 only (mono, 8- and 16-colour; Windows uses the 16-colour icon 3).
+    For the 16×16 title-bar icon Windows shrinks it itself: colour from
+    every odd pixel (`[1::2, 1::2]`), opaque when any pixel of the 2×2 block
+    is. The port builds its `Conf::icon` the same way from
+    `assets/icons/icon_3.png`; its title bar in the VM matches the
+    original's pixel for pixel (icon and paused title). On macOS the icon
+    is only the Dock image, so the `.app` keeps its bundle icon.
+
 ## Verified scenarios
 
 All run with seed 0, from a fresh process, world built at the scenario's
