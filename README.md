@@ -44,8 +44,9 @@ downloaded or committed.
    (the stock OEM fixed font), which is part of Windows, not of SkiFree.
    Copy `C:\Windows\Fonts\vgaoem.fon` from a Windows installation you
    own into `originals/` before step 2; the extractor then also writes
-   `assets/fonts/oem_fixed.png`. Without it the status display uses a
-   fallback font.
+   `assets/fonts/oem_fixed.png`. Without it the status display uses the
+   bundled IBM VGA 8x14 font (from The Ultimate Oldschool PC Font Pack),
+   which looks very close.
 
 ## Build & run
 
@@ -102,3 +103,9 @@ The original code, tools, and documentation written for this project are
 released under the [MIT License](LICENSE). That license grants **no rights to
 SkiFree itself**: the original game, its binaries, assets, data, and name are
 © Chris Pirih / Microsoft and are not included or licensed here.
+
+The fallback status-display font in `resources/fonts/` is derived from "IBM
+VGA 8x14" in [The Ultimate Oldschool PC Font
+Pack](https://int10h.org/oldschool-pc-fonts/) by VileR and is licensed under
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); see
+`resources/fonts/README.md`.

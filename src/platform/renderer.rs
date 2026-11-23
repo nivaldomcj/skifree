@@ -3,16 +3,19 @@ use std::collections::HashMap;
 
 pub struct Renderer {
     sprites: HashMap<u32, Texture2D>,
-    /// Stock OEM fixed font ("Terminal") as Windows renders it: printable
-    /// ASCII in 8x12 cells from 0x20 (assets/fonts/oem_fixed.png, exported
-    /// from the VM by tools/vm/export_font.js + make_font.py).
-    font: Option<Texture2D>,
+    /// Status display font: printable ASCII in 8x12 cells from 0x20. The
+    /// stock OEM fixed font ("Terminal") extracted from vgaoem.fon
+    /// (assets/fonts/oem_fixed.png), or the bundled fallback.
+    font: Texture2D,
 }
 
 /// Status display geometry, from the original's text metrics
 /// (FUN_00406a70): 8x12 cells, label column = widest label ("Speed:"),
 /// value column = widest value template ("00:00:00.00"), 2 px margins.
 const CELL_W: f32 = 8.0;
+/// IBM VGA 8x14 cut to 8x12, from The Ultimate Oldschool PC Font Pack by
+/// VileR (CC BY-SA 4.0; see resources/fonts/README.md).
+const FALLBACK_FONT: &[u8] = include_bytes!("../../resources/fonts/ibm_vga_8x12.png");
 const CELL_H: f32 = 12.0;
 const LABELS: [&str; 4] = ["Time:", "Dist:", "Speed:", "Style:"];
 const VALUE_TEMPLATE_CHARS: f32 = 11.0;
@@ -33,17 +36,14 @@ impl Renderer {
                 }
             }
         }
+        // Terminal extracted from the user's vgaoem.fon if present, else the
+        // bundled IBM VGA fallback (resources/fonts, CC BY-SA 4.0).
         let font_path = root.join("fonts/oem_fixed.png");
         let font = match load_texture(&font_path.to_string_lossy()).await {
-            Ok(tex) => {
-                tex.set_filter(FilterMode::Nearest);
-                Some(tex)
-            }
-            Err(e) => {
-                eprintln!("warning: failed to load {}: {}", font_path.display(), e);
-                None
-            }
+            Ok(tex) => tex,
+            Err(_) => Texture2D::from_file_with_format(FALLBACK_FONT, Some(ImageFormat::Png)),
         };
+        font.set_filter(FilterMode::Nearest);
         Self { sprites, font }
     }
 
@@ -52,19 +52,13 @@ impl Renderer {
     pub fn draw_oem_text(&self, text: &str, x: f32, y: f32) {
         let n = text.chars().count() as f32;
         draw_rectangle(x, y, n * CELL_W, CELL_H, WHITE);
-        let Some(font) = &self.font else {
-            // No extracted font (originals/vgaoem.fon missing): readable,
-            // not faithful.
-            draw_text(text, x, y + 10.0, 14.0, BLACK);
-            return;
-        };
         for (i, c) in text.chars().enumerate() {
             let code = c as u32;
             if !(0x20..0x7f).contains(&code) {
                 continue;
             }
             draw_texture_ex(
-                font,
+                &self.font,
                 x + i as f32 * CELL_W,
                 y,
                 WHITE,

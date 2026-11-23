@@ -272,7 +272,11 @@ Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
     Its glyphs come from Windows' `vgaoem.fon` (the file behind
     OEM_FIXED_FONT at 96 DPI), extracted by `tools/extract_assets.py`;
     they equal the font as GDI renders it in the VM (`export_font.js` +
-    `make_font.py`), pixel for pixel.
+    `make_font.py`), pixel for pixel. Without `vgaoem.fon` the port uses a bundled
+    fallback, IBM VGA 8x14 from The Ultimate Oldschool PC Font Pack (CC
+    BY-SA 4.0, `resources/fonts/`): the closest of the pack's 296 bitmap
+    fonts that fits the 12-pixel rows (11 rows of ink, slashed zero), 311
+    differing pixels inside the box's text at `compare_steer` tick 300.
 
 ## Verified scenarios
 
