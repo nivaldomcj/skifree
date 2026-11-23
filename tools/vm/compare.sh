@@ -30,7 +30,7 @@ if [ "$1" = "--suite" ]; then
                  compare_size_1024x700:34 compare_slalom:66 \
                  compare_tree_slalom:66 compare_slalom_timed:68 \
                  compare_tree_slalom_timed:68 compare_freestyle:68 \
-                 compare_mouse:68 compare_restart:40 compare_focus:40 \
+                 compare_mouse:68 compare_restart:40 compare_focus:40 compare_resize:42 \
                  compare_monster:72 \
                  compare_long:240; do
         name=${entry%%:*}; secs=${entry#*:}

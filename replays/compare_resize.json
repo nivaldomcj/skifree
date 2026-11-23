@@ -1,0 +1,171 @@
+{
+  "seed": 0,
+  "course": "freestyle",
+  "ticks": 700,
+  "delta_ms": 40,
+  "screen_w": 704,
+  "screen_h": 681,
+  "inputs": [
+    {
+      "tick": 0,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 40,
+      "type": "steer",
+      "left": true
+    },
+    {
+      "tick": 41,
+      "type": "steer",
+      "left": true
+    },
+    {
+      "tick": 70,
+      "type": "steer",
+      "right": true
+    },
+    {
+      "tick": 71,
+      "type": "steer",
+      "right": true
+    },
+    {
+      "tick": 72,
+      "type": "steer",
+      "right": true
+    },
+    {
+      "tick": 100,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 120,
+      "type": "jump"
+    },
+    {
+      "tick": 150,
+      "type": "resize",
+      "w": 500,
+      "h": 400
+    },
+    {
+      "tick": 160,
+      "type": "click"
+    },
+    {
+      "tick": 163,
+      "type": "click"
+    },
+    {
+      "tick": 200,
+      "type": "steer_absolute",
+      "state": 3
+    },
+    {
+      "tick": 230,
+      "type": "steer_absolute",
+      "state": 4
+    },
+    {
+      "tick": 260,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 280,
+      "type": "steer",
+      "up": true
+    },
+    {
+      "tick": 300,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 300,
+      "type": "resize",
+      "w": 960,
+      "h": 600
+    },
+    {
+      "tick": 330,
+      "type": "steer_absolute",
+      "state": 6
+    },
+    {
+      "tick": 360,
+      "type": "steer_absolute",
+      "state": 1
+    },
+    {
+      "tick": 390,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 420,
+      "type": "steer",
+      "left": true
+    },
+    {
+      "tick": 421,
+      "type": "steer",
+      "left": true
+    },
+    {
+      "tick": 422,
+      "type": "steer",
+      "left": true
+    },
+    {
+      "tick": 423,
+      "type": "steer",
+      "left": true
+    },
+    {
+      "tick": 450,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 450,
+      "type": "resize",
+      "w": 400,
+      "h": 320
+    },
+    {
+      "tick": 480,
+      "type": "click"
+    },
+    {
+      "tick": 482,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 520,
+      "type": "steer",
+      "right": true
+    },
+    {
+      "tick": 520,
+      "type": "resize",
+      "w": 304,
+      "h": 261
+    },
+    {
+      "tick": 560,
+      "type": "steer",
+      "down": true
+    },
+    {
+      "tick": 600,
+      "type": "resize",
+      "w": 704,
+      "h": 681
+    }
+  ]
+}

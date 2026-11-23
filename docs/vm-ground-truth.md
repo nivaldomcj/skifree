@@ -329,6 +329,22 @@ Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
     47/…/46 ms `GetTickCount` deltas passed to each tick (it used to pass
     the rendered frame's ~16.7 ms, which ran the course clock at ~0.4×).
 
+25. **Resizing** (`WM_SIZE` → `FUN_00405fa0`): re-reads the client rect,
+    re-anchors the view at (w/2, h/3) (`FUN_00406060`, which also drops
+    every actor's cached box), recomputes the padded view, and moves the
+    status window to the new top-right corner with `MoveWindow(...,
+    bRepaint = TRUE)` (`FUN_00406890`); `UpdateWindow` then repaints, the
+    status window included, so a resize **repaints the status display and
+    restarts its 327 ms schedule**. The world isn't rebuilt. Minimum:
+    `WM_GETMINMAXINFO` limits the *window* to 320×300, a **304×261 client**
+    with Windows 10/11 frames (measured); the port uses that client minimum
+    everywhere. `compare_resize` (500×400, 960×600, 400×320, 304×261, back
+    to 704×681) matches on every rand() call, player tick and status
+    repaint, and its frames are pixel-identical at every size. The status
+    repaint happens inside the injector's `MoveWindow`, where Frida hooks
+    don't fire; `trace_status.js` notices it from the changed
+    `DAT_0040c5dc` stamp (`status_hidden`, timing only).
+
 ## Verified scenarios
 
 All run with seed 0, from a fresh process, world built at the scenario's
@@ -350,6 +366,7 @@ time, the port for the scenario's ticks; the shorter side bounds the check).
 | `compare_slalom_timed.json` | 704×681 | slalom course run: interpolated start, every gate missed (+5 s each), course clock | 1250 | 6560 | identical, clock included |
 | `compare_tree_slalom_timed.json` | 704×681 | tree-slalom course run, course clock | 1250 | 5452 | identical, clock included |
 | `compare_focus.json` | 704×681 | focus loss/gain via real `WM_ACTIVATE`, keys/clicks/mouse dropped while inactive, F3 surviving a focus change | 700 | 3528 | identical (a control run that accepts the dropped key diverges at tick 100) |
+| `compare_resize.json` | 704×681 → 500×400 → 960×600 → 400×320 → 304×261 → 704×681 | the steering inputs while the window is resized (`MoveWindow` → `WM_SIZE`), down to the minimum client | 700 | 3086 | identical, status included |
 | `compare_long.json` | 704×681 | freestyle top to bottom: finish line (high-score box auto-dismissed), then caught by the 2000 m yeti | 4500 | 20384 | identical |
 
 Each scenario has a golden log in `replays/golden/`; `cargo test` replays
@@ -372,6 +389,11 @@ high-score writes) and saves each listed frame drawn by the normal
 renderer (macroquad) into an offscreen target of the scenario's client
 size, as raw RGBA.
 
+Don't capture the frame of the tick right before a `focus`/`resize` tick:
+those window messages are sent after that tick, before the capture (taken
+on entry to the next main tick), so the original's frame already shows the
+change.
+
 Two VM setup requirements, both learned the hard way:
 
 - frida-server must run in the **console session** (the `FridaServer`
@@ -393,6 +415,7 @@ Results (ticks spread over each run):
 | `compare_freestyle` | 200 … 1240 (6) | identical |
 | `compare_monster` | 300 … 1340 (6) | identical |
 | `compare_size_1024x700` | 0, 100, 300, 600 | identical |
+| `compare_resize` | 100 … 690 (13, every size) | identical |
 
 "Identical" is the whole client area, status box included, for frames
 drawn by the port's real renderer (macroquad) — both the macOS build and

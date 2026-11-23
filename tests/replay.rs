@@ -176,3 +176,11 @@ fn verified_long_run_matches() {
 fn verified_focus_matches() {
     check("compare_focus");
 }
+
+/// Window resized four times mid-run, down to the minimum 304x261 client
+/// (WM_SIZE): every rand() call, player tick and status repaint matches the
+/// original, and the frames are pixel-identical at every size.
+#[test]
+fn verified_resize_matches() {
+    check("compare_resize");
+}

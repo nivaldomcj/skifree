@@ -53,6 +53,7 @@ table of scenarios and how they were verified.
 - `compare_mouse.json` — mouse steering on the ground and in the air.
 - `compare_restart.json` — two F2 restarts mid-run.
 - `compare_long.json` — the whole freestyle strip, past its finish line.
+- `compare_resize.json` — the window resized four times mid-run, down to the minimum client.
 
 Their inputs use only what the original's handlers accept (`steer`,
 `steer_absolute` 1/3/4/6, `jump`, `click`, `mouse`, `restart`), and the
@@ -63,7 +64,8 @@ Input types: `steer {left,right,up,down}`, `steer_absolute {state}`, `jump`
 (keyboard), `click` (mouse button), `mouse {x, y}` (cursor moved to client
 coordinates), `restart` (F2), `pause` (F3 toggle), `focus {active}` (window
 activation; while inactive every other input is dropped, like the
-original's window procedure), `fast_forward` (F cheat).
+original's window procedure), `resize {w, h}` (client area resized,
+WM_SIZE), `fast_forward` (F cheat).
 Records include the style score.
 
 ## Determinism

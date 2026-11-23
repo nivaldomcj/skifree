@@ -4,9 +4,11 @@
 Usage: status_align.py <orig.txt> <port.jsonl>
 
 <orig.txt> holds trace_status.js records ({'t': 'status', 'after': N,
-'values': [...]}: repainted during main-tick call N, -1 = the first paint
-when the window shows); <port.jsonl> is the replay's output, whose records
-carry `status` on the ticks the port repainted it. Both lists of
+'values': [...]}: repainted during main-tick call N, or between ticks right
+before it); <port.jsonl> is the replay's output, whose records carry
+`status` when the port repainted it during or right before that tick.
+Repaints the original made where the hooks couldn't see them ('status_hidden',
+e.g. a resize) are compared by tick only. Both lists of
 (tick, values) must match up to the shorter run's last tick.
 """
 import ast
@@ -17,10 +19,9 @@ import sys
 def main():
     orig = []
     for line in open(sys.argv[1]):
-        if line.startswith("{'t': 'status'"):
+        if line.startswith("{'t': 'status"):
             m = ast.literal_eval(line.strip())
-            if m["after"] >= 0:
-                orig.append((m["after"], m["values"]))
+            orig.append((m["after"], m.get("values")))
     port, last = [], -1
     for line in open(sys.argv[2]):
         if not line.strip():
@@ -33,6 +34,8 @@ def main():
     o = [p for p in orig if p[0] <= end]
     q = [p for p in port if p[0] <= end]
     for i, (a, b) in enumerate(zip(o, q)):
+        if a[1] is None:  # hidden repaint: tick only
+            a, b = a[0], b[0]
         if a != b:
             print(f"status: first difference at repaint {i}: original {a}, port {b}")
             return 1

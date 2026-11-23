@@ -62,7 +62,8 @@ pub struct GameState {
     /// `DAT_0040c698 - DAT_0040c5dc`). Never reset by a new game: F2
     /// neither repaints the display nor restarts its schedule.
     pub status_age_ms: u32,
-    /// The status display was painted during the last `tick` call.
+    /// The status display was painted since the replay runner last looked
+    /// (it clears this after each tick's record).
     pub status_painted: bool,
     pub last_tick_ms: u32,
     pub screen_w: i16,
@@ -227,6 +228,19 @@ impl GameState {
         self.status_age_ms = self.status_age_ms.saturating_add(ms);
     }
 
+    /// The client area changed size (WM_SIZE -> FUN_00405fa0): the view
+    /// follows the new size (anchor at w/2, h/3), and the status window is
+    /// moved to the new top-right corner with MoveWindow(..., bRepaint =
+    /// TRUE) (FUN_00406890), which repaints it before the next tick.
+    pub fn resize(&mut self, w: i16, h: i16) {
+        if (w, h) == (self.screen_w, self.screen_h) {
+            return;
+        }
+        self.screen_w = w;
+        self.screen_h = h;
+        self.paint_status();
+    }
+
     /// Repaint the status display (FUN_00401b80): take the current values
     /// and restart the 327 ms repaint schedule.
     pub fn paint_status(&mut self) {
@@ -275,7 +289,6 @@ impl GameState {
         // nothing updates, but wall time still passes.
         self.wall_ms = self.wall_ms.wrapping_add(delta_ms);
         self.status_age_ms = self.status_age_ms.saturating_add(delta_ms);
-        self.status_painted = false;
         if !self.timer_running {
             return;
         }

@@ -84,6 +84,11 @@ pub enum InputKind {
     Focus {
         active: bool,
     },
+    /// The client area resized to w x h (WM_SIZE).
+    Resize {
+        w: i16,
+        h: i16,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -163,7 +168,7 @@ pub fn apply_inputs(game: &mut GameState, scenario: &Scenario, tick: u32) {
     for input in scenario.inputs.iter().filter(|i| i.tick == tick) {
         // The original's window procedure drops keyboard and mouse
         // messages while the window is inactive (DAT_0040c67c).
-        if !game.input_enabled && !matches!(input.kind, InputKind::Focus { .. }) {
+        if !game.input_enabled && !matches!(input.kind, InputKind::Focus { .. } | InputKind::Resize { .. }) {
             continue;
         }
         match &input.kind {
@@ -181,6 +186,7 @@ pub fn apply_inputs(game: &mut GameState, scenario: &Scenario, tick: u32) {
             InputKind::Restart => game.new_game(),
             InputKind::Pause => game.toggle_pause(),
             InputKind::Focus { active } => game.set_active(*active),
+            InputKind::Resize { w, h } => game.resize(*w, *h),
         }
     }
 }
@@ -242,7 +248,9 @@ pub fn run_scenario_observed(
             score: game.scoring.score,
             course_ms: game.course_clock_ms,
             rng_calls: game.rng.call_count(),
-            status: game.status_painted.then(|| game.status_values.clone()),
+            // Repaints since the last record: during this tick, or between
+            // ticks before it (the first paint, a resize).
+            status: std::mem::take(&mut game.status_painted).then(|| game.status_values.clone()),
             hash: 0,
         };
         hash = fnv1a_update(hash, record.payload_json().as_bytes());

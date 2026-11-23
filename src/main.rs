@@ -160,8 +160,7 @@ async fn main() {
         let view_w = screen_width().max(window::MIN_WIDTH as f32) as i16;
         let view_h = screen_height().max(window::MIN_HEIGHT as f32) as i16;
         if capture.is_none() {
-            game.screen_w = view_w;
-            game.screen_h = view_h;
+            game.resize(view_w, view_h);
         }
 
 

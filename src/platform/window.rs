@@ -1,7 +1,11 @@
 use macroquad::prelude::*;
 
-pub const MIN_WIDTH: i32 = 320;
-pub const MIN_HEIGHT: i32 = 300;
+/// Smallest client area. The original limits its *window* to 320x300
+/// (WM_GETMINMAXINFO, ptMinTrackSize), frame included; with Windows 10/11
+/// frames that leaves a 304x261 client (measured in the VM), which the port
+/// uses on every platform.
+pub const MIN_WIDTH: i32 = 304;
+pub const MIN_HEIGHT: i32 = 261;
 pub const DEFAULT_WIDTH: i32 = 640;
 pub const DEFAULT_HEIGHT: i32 = 480;
 
