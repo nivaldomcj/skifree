@@ -24,14 +24,17 @@ contain, and we do **not** distribute:
 - the original game binaries (`ski32.exe`, `SKI.EXE`, or any zip of them), or
 - the assets extracted from them (sprites, icons, string tables, sounds).
 
-The original game is © Chris Pirih / Microsoft. To build and play, **you must
-supply your own copy of `ski32.exe`** that you already own. The build extracts
-the assets from your local copy at setup time — nothing copyrighted is ever
-downloaded or committed.
+The original game is © Chris Pirih / Microsoft. To build and play, **you
+supply your own copy of `ski32.exe`**. Chris Pirih offers it as a free
+download on his official SkiFree site, **<https://ski.ihoc.net/>** (as
+`ski32.zip`, or `ski32.exe` directly). The build extracts the assets from your
+local copy at setup time; nothing copyrighted is downloaded by the build or
+committed here.
 
 ## Getting the assets (required once)
 
-1. Put your `ski32.exe` in the `originals/` folder:
+1. Download `ski32.exe` from <https://ski.ihoc.net/> (or unzip it from
+   `ski32.zip` there) and put it in the `originals/` folder:
 
    ```
    originals/ski32.exe
