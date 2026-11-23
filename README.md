@@ -54,6 +54,16 @@ cargo run            # play (window opens)
 cargo build --release
 ```
 
+Windows build from macOS (`brew install mingw-w64`,
+`rustup target add x86_64-pc-windows-gnu`):
+
+```bash
+CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc \
+  cargo build --release --target x86_64-pc-windows-gnu
+```
+
+Put `skifree.exe` next to an `assets/` folder.
+
 Controls are faithful to the original (arrows/numpad steer, Insert/numpad0 or
 click to jump, F2 restart, F3 pause, F fast-forward, T step, X/Y teleport).
 See `docs/skier-physics.md` for the full map.

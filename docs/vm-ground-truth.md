@@ -340,8 +340,10 @@ Results (ticks spread over each run):
 | `compare_size_1024x700` | 0, 100, 300, 600 | identical |
 
 "Identical" is the whole client area, status box included, for frames
-drawn by the real renderer (macroquad, on macOS); the composite covers the
-sprite layer only.
+drawn by the port's real renderer (macroquad) — both the macOS build and
+the Windows build running in the same VM as the original
+(`port_frames_win.py`; OpenGL 2.1 context there) — and for the composite,
+which covers the sprite layer only.
 
 They cover the title splash, course banners and Start posts, gates,
 crashes, moguls, jumps and air tricks, the monster's chase and meal, and
@@ -371,7 +373,7 @@ above). Pieces:
 | `status_align.py` | first status repaint where original and port differ (tick or strings) |
 | `capture_frames.js` | saves the client area after each main tick in `CAPTURE_TICKS` (pixel comparison) |
 | `export_font.js` / `make_font.py` | render the OEM fixed font in the VM and turn it into `assets/fonts/oem_fixed.png` (cross-check of the `vgaoem.fon` extraction) |
-| `port_frames_win.py` | runs the port's Windows build in the VM in frame-capture mode |
+| `port_frames_win.py` | runs the port's Windows build (`x86_64-pc-windows-gnu`) in the VM in frame-capture mode, through a one-shot interactive scheduled task (the VM's x86 frida-server can't spawn x64 programs) |
 | `frames.sh` / `frames.py` | run a pixel comparison and write `orig_`, `port_`, `diff_`, `side_` (and `win_`, `diffwin_`) PNGs per tick |
 
 ```bash
