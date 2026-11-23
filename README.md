@@ -121,8 +121,8 @@ machines on your network can open it too. The public page asks for your own
 `ski32.exe` or `ski32.zip` (optionally `ski32sounds.zip` for sound and
 `vgaoem.fon` for the font): drop them on the page or pick them. They are read
 in the browser, never uploaded, and kept in the browser's storage for the
-next visit. Drop more files on the running game to add them (the sounds, say);
-open the page with `?forget` to clear them. `?nosound` starts muted.
+next visit. To change them (to add the sounds later, say), open the page
+with `?forget` and drop them all again. `?nosound` starts muted.
 
 The private build carries copyrighted data: keep it to yourself, never
 publish or commit it.

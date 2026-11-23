@@ -125,10 +125,10 @@
     // ski32.zip), optionally ski32sounds.exe/.zip and vgaoem.fon. Rust
     // extracts them; the page only collects them and, once Rust accepted
     // them, keeps them in IndexedDB so the next visit skips the drop box.
-    // Nothing leaves the browser.
+    // Nothing leaves the browser. Files are taken only by the drop box: to
+    // change them, open the page with ?forget and drop them again.
 
     const MAX_FILE = 16 * 1024 * 1024;
-    let filesWanted = false;
     let offered = null; // { files: [{name, bytes}], cached: bool }
 
     function idb() {
@@ -186,7 +186,6 @@
     }
 
     async function startFiles() {
-        filesWanted = true;
         // ?forget: drop the cached files (once: the parameter is taken out
         // of the address so a reload doesn't forget the next ones too).
         if (params.has("forget")) {
@@ -203,14 +202,20 @@
         }
     }
 
-    // A drop on the running game adds or replaces files (e.g. the sounds
-    // after the game) and restarts with the new set.
-    async function addFiles(fileList) {
-        const files = await readFiles(fileList);
-        if (!files) return;
-        const merged = ((await cache("get")) || []).filter((c) => !files.some((f) => f.name === c.name));
-        await cache("put", merged.concat(files));
-        window.location.reload();
+    // Outside the drop box (the game running, in either build) a dragged
+    // file shows the "not allowed" cursor and a drop does nothing: neither
+    // the browser (which would open the file) nor miniquad (which would copy
+    // it into the game's memory) gets it.
+    function refuseDrops() {
+        const refuse = (e) => {
+            const box = dropBox();
+            if (box && !box.hidden) return;
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = "none";
+        };
+        window.addEventListener("dragover", refuse, true);
+        window.addEventListener("drop", refuse, true);
     }
 
     function setupDropBox() {
@@ -236,12 +241,6 @@
                 picker.value = "";
             });
         }
-        window.addEventListener("drop", (e) => {
-            if (!filesWanted || !box.hidden || !e.dataTransfer || !e.dataTransfer.files.length) return;
-            e.preventDefault();
-            e.stopPropagation();
-            addFiles(e.dataTransfer.files);
-        }, true);
     }
 
     // ------------------------------------------------------------ capture
@@ -365,6 +364,7 @@
     }
 
     function on_init() {
+        refuseDrops();
         setupDropBox();
         window.addEventListener("keydown", onKeyDown, true);
         window.addEventListener("pointerdown", unlockAudio, true);
