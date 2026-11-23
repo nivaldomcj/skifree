@@ -141,3 +141,38 @@ fn verified_640x480_matches() {
 fn verified_1024x700_matches() {
     check("compare_size_1024x700");
 }
+
+#[test]
+fn verified_slalom_timed_matches() {
+    check("compare_slalom_timed");
+}
+
+#[test]
+fn verified_tree_slalom_timed_matches() {
+    check("compare_tree_slalom_timed");
+}
+
+#[test]
+fn verified_freestyle_tricks_match() {
+    check("compare_freestyle");
+}
+
+#[test]
+fn verified_mouse_steering_matches() {
+    check("compare_mouse");
+}
+
+#[test]
+fn verified_restart_matches() {
+    check("compare_restart");
+}
+
+#[test]
+fn verified_long_run_matches() {
+    check("compare_long");
+}
+
+#[test]
+fn verified_focus_matches() {
+    check("compare_focus");
+}

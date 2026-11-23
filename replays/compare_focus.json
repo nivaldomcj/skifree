@@ -1,0 +1,31 @@
+{
+  "seed": 0,
+  "course": "freestyle",
+  "ticks": 700,
+  "delta_ms": 40,
+  "screen_w": 704,
+  "screen_h": 681,
+  "inputs": [
+    {"tick": 0, "type": "steer", "down": true},
+    {"tick": 100, "type": "focus", "active": false},
+    {"tick": 100, "type": "steer", "left": true},
+    {"tick": 100, "type": "focus", "active": true},
+    {"tick": 200, "type": "focus", "active": true},
+    {"tick": 200, "type": "pause"},
+    {"tick": 200, "type": "focus", "active": false},
+    {"tick": 200, "type": "focus", "active": true},
+    {"tick": 200, "type": "pause"},
+    {"tick": 300, "type": "focus", "active": true},
+    {"tick": 300, "type": "steer", "left": true},
+    {"tick": 300, "type": "click"},
+    {"tick": 400, "type": "focus", "active": false},
+    {"tick": 400, "type": "click"},
+    {"tick": 400, "type": "mouse", "x": 100, "y": 400},
+    {"tick": 400, "type": "focus", "active": true},
+    {"tick": 450, "type": "steer", "down": true},
+    {"tick": 500, "type": "steer", "down": true},
+    {"tick": 550, "type": "steer", "down": true},
+    {"tick": 600, "type": "steer", "down": true},
+    {"tick": 650, "type": "steer", "down": true}
+  ]
+}
