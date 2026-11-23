@@ -141,6 +141,34 @@ Checked on macOS (Retina, 2560×1080 points) beyond the VM comparisons:
   no emulated Windows timing). Windows' defaults are ~500 ms delay and
   ~33 ms rate; elsewhere the player's own keyboard settings apply.
 
+## Linux (tested on Debian 13, arm64)
+
+All four sessions of one install — GNOME (Wayland), GNOME on Xorg, Plasma
+(Wayland), Plasma (X11) — and, in the Wayland sessions, both of the port's
+backends (default X11 through XWayland, and `SKIFREE_LINUX_BACKEND=wayland`):
+
+- The full test suite passes on aarch64 Linux, golden logs included (the
+  simulation is the same on every platform).
+- Rendering, the extracted Terminal font and the bundled IBM VGA fallback
+  all display correctly.
+- **Pause:** the title can't be set on Linux yet (miniquad exposes neither
+  the X11 window nor the Wayland surface), so the notice box shows in the
+  window; it appears on F3 and disappears on resume in every session.
+- **High-score box:** the drawn box appears at a finish and closes on
+  Enter in every session.
+- **Title bar:** GNOME on Wayland leaves it to the app — miniquad draws it
+  through libdecor ("SkiFree", GNOME style); KWin and the X11 sessions
+  draw their own.
+- **Icon:** X11 windows (and XWayland) show the SkiFree icon (Plasma shows
+  it in the title bar and taskbar; GNOME shows no title-bar icons). Native
+  Wayland windows get the compositor's generic icon: Wayland takes icons
+  from an installed `.desktop` file matched by app id, not from the
+  program.
+
+Driving the VM over VMware's VNC with `vncdotool`: Shift never reaches the
+guest (capitals arrive lowercase, `&` as `7`, `|` as `\`), so type commands
+without shifted characters (`;` instead of `&&`) or use SSH.
+
 ## Copyrighted files (not in this repo)
 
 `SKI.EXE`, `ski.zip`, `ski32.exe`, `ski32.zip` and everything extracted from
