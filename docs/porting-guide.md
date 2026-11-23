@@ -137,8 +137,9 @@ Checked on macOS (Retina, 2560×1080 points) beyond the VM comparisons:
   Windows and X11/Wayland pass client coordinates through unchanged.
 - **Key repeat:** the original steers one step per `WM_KEYDOWN`, auto-
   repeats included, so holding an arrow depends on the OS repeat delay and
-  rate; the port does the same with the OS's repeats. Windows' defaults are
-  ~500 ms delay and ~33 ms rate; macOS uses its own keyboard settings.
+  rate; the port does the same with the OS's repeats (a deliberate choice:
+  no emulated Windows timing). Windows' defaults are ~500 ms delay and
+  ~33 ms rate; elsewhere the player's own keyboard settings apply.
 
 ## Copyrighted files (not in this repo)
 
