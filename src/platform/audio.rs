@@ -87,7 +87,7 @@ impl Drop for Audio {
 }
 
 /// The nine WAVs, by resource id - 1.
-#[cfg(skifree_sound)]
+#[cfg(all(skifree_sound, not(skifree_no_assets)))]
 static WAVS: [&[u8]; 9] = [
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/sounds/sound_1.wav")),
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/sounds/sound_2.wav")),
@@ -99,6 +99,11 @@ static WAVS: [&[u8]; 9] = [
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/sounds/sound_8.wav")),
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/sounds/sound_9.wav")),
 ];
+
+/// `SKIFREE_NO_ASSETS=1` (build.rs): compile, lint and test the sound code
+/// without the WAVs. This build plays nothing.
+#[cfg(all(skifree_sound, skifree_no_assets))]
+static WAVS: [&[u8]; 9] = [&[]; 9];
 
 #[cfg(all(skifree_sound, any(target_os = "windows", target_os = "linux")))]
 fn wav(sound: Sound) -> &'static [u8] {

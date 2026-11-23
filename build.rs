@@ -9,6 +9,11 @@
 //! the public one needs no assets at all (players supply their own exe in
 //! the page), and the private one (`--features embed-assets`) embeds them,
 //! through `$OUT_DIR/web_assets.rs`.
+//!
+//! `SKIFREE_NO_ASSETS=1` skips the gate, for `cargo clippy`, `cargo check`
+//! and `cargo test` where nobody has the game files (CI). It compiles the
+//! sound code with empty stand-in WAVs (`cfg(skifree_no_assets)`) so that
+//! code is linted too. The binary it builds does not run the game.
 
 use std::path::Path;
 
@@ -23,6 +28,8 @@ See README.md, \"Getting the assets\".";
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rustc-check-cfg=cfg(skifree_sound)");
+    println!("cargo:rustc-check-cfg=cfg(skifree_no_assets)");
+    println!("cargo:rerun-if-env-changed=SKIFREE_NO_ASSETS");
     // Any wasm32 target builds the web platform layer: wasm32-unknown-unknown
     // is the browser; wasm32-wasip1 only runs the replay tests
     // (tools/test_wasi.sh), for which cargo builds, but never runs, the game.
@@ -34,6 +41,15 @@ fn main() {
     }
     if embed && !web {
         println!("cargo:warning=embed-assets only applies to the web build (wasm32)");
+    }
+    if std::env::var_os("SKIFREE_NO_ASSETS").is_some_and(|v| v == "1") {
+        if web {
+            panic!("SKIFREE_NO_ASSETS=1 cannot build the private web version (embed-assets)");
+        }
+        println!("cargo:rustc-cfg=skifree_sound");
+        println!("cargo:rustc-cfg=skifree_no_assets");
+        println!("cargo:warning=SKIFREE_NO_ASSETS=1: assets not checked, for linting and tests only");
+        return;
     }
 
     check_assets();
