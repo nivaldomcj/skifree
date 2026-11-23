@@ -55,6 +55,20 @@ mod imp {
         true
     }
 
+    /// Whether the window is really active: still the key window and not
+    /// minimized. miniquad 0.4 reports a window *move* as
+    /// `window_minimized_event` (windowDidMove), the same event as a real
+    /// focus loss (windowDidResignKey), so callers check this to tell them
+    /// apart.
+    pub fn window_is_active() -> Option<bool> {
+        let window = ns_window()?;
+        unsafe {
+            let key: bool = msg_send![window, isKeyWindow];
+            let minimized: bool = msg_send![window, isMiniaturized];
+            Some(key && !minimized)
+        }
+    }
+
     pub fn title_visible() -> bool {
         let Some(window) = ns_window() else { return false };
         let mask: u64 = unsafe { msg_send![window, styleMask] };
@@ -350,6 +364,15 @@ mod imp {
 }
 
 pub use imp::{message_box, set_title, title_visible};
+
+/// Whether the window is active (key and not minimized), where the
+/// platform can tell; None elsewhere.
+pub fn window_is_active() -> Option<bool> {
+    #[cfg(target_os = "macos")]
+    return imp::window_is_active();
+    #[cfg(not(target_os = "macos"))]
+    None
+}
 
 /// Resize the client area to w x h; false where the platform has no
 /// direct way (callers then use request_new_screen_size, which sets the
