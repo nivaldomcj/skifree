@@ -15,6 +15,7 @@ Level 2 fidelity adds a deterministic replay harness to the SkiFree port. It let
 - `cargo run --bin replay -- <scenario.json>` runs the scenario and prints JSONL tick records.
 - `cargo run --bin replay -- <scenario.json> --check <golden.jsonl>` checks a run against a golden log.
 - `cargo run --bin replay -- <scenario.json> --update-golden <golden.jsonl>` regenerates the golden file after an intentional change.
+- `cargo run --bin replay -- <scenario.json> --draw <out.jsonl> --draw-ticks 100,200` also writes the draw list (sprite, box, painting order — `game::draw`) of the frame after each listed tick, for the pixel comparison with the original (`tools/vm/frames.sh`, see `docs/vm-ground-truth.md`).
 - `cargo test` runs the integration tests in `tests/replay.rs`, which compare every committed scenario against its golden log and assert structural invariants (pool ≤ 100 actors, RNG call count monotonic, deterministic across runs).
 
 ## Files

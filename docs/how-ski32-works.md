@@ -26,7 +26,7 @@ Reverse-engineered with [REA](https://github.com/morluto/rea) 6.10.1 + Ghidra 12
   1. Computes frame delta with `GetTickCount`
   2. Runs the world update `FUN_00401e50` (iterates the actor linked list: velocities, collisions, spawn events)
   3. Repaints via `FUN_00401060`
-  4. Flips the offscreen buffer to the screen, throttled to at most every ~328 ms (`FUN_00401b80`)
+  4. Repaints the status display (`FUN_00401b80`) only when more than 327 ms have passed since its last repaint (every 9th tick at 40 ms)
 - Pause (F3, `FUN_00405760`) kills/starts the timer and retitles the window `"Ski Paused … Press F3 to continue"` (string id 2)
 
 ### Input (`SkiMainWndProc`, `0x405800`)
@@ -54,8 +54,8 @@ Cheat keys (`WM_CHAR` handler):
 ### Rendering
 
 - Pure GDI. **89 bitmap resources** (skier poses, trees, rocks, jumps, lift poles, dogs, snowboarders, yeti frames) + 6 icons
-- Draws to an offscreen `CreateCompatibleDC`/`CreateCompatibleBitmap` buffer, then `BitBlt` to the window (`WM_PAINT` → `FUN_004060b0`)
-- Status bar text via `TextOutA` with format strings from the string table (`Time:`, `Dist:`, `Speed:`, `Style:`, ids 3–14)
+- Repaints only dirty rectangles: overlapping sprites are merged into a group, composed back to front (by world y) in a scratch `CreateCompatibleDC` buffer, then `BitBlt` to the window (`FUN_00401060` → `FUN_00401540`; full repaint on `WM_PAINT` → `FUN_004060b0`). Sprites are bottom-centre anchored. See `docs/vm-ground-truth.md` items 20–21
+- Status display text via `TextOutA` in the OEM fixed font ("Terminal") with format strings from the string table (`Time:`, `Dist:`, `Speed:`, `Style:`, ids 3–14), in a black frame at the top-right
 
 ### Persistence
 

@@ -83,9 +83,14 @@ Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
    must force the client size *before* the build (see "Harness"). An
    earlier "+32 title bar" correction in the port only compensated for runs
    whose world had been built at a different size than the one played at.
-4. **Course markers** carry z = 0 in their spawn-event nodes; once
-   materialized they draw 16 units up, and the skier grazes the banner's box
-   on the crossing tick (see item 5).
+4. **Course markers** (banners, Start/Finish posts) carry z = 0, both in
+   their spawn-event nodes and as live actors (read from the actor list).
+   The port once gave them z = 0x10, which drew them 16 px too high and
+   culled them one tick early; nothing checked against the original noticed,
+   because `actor_count` is a port-only field. Found by the pixel
+   comparison (item 20): the original culls the freestyle banner of
+   `compare_vm` in main-tick call 58, when its box bottom (−135) leaves the
+   padded view (−120); at call 57 it is −119, still inside.
 5. **Collision pass** (`FUN_00401e50` → `FUN_00403a00`):
    - **Pairs**: for each actor `j` in list order, against each actor `i`
      *before* it (the inner loop stops at the outer actor, so every
@@ -225,6 +230,37 @@ Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
     still. The port's merged actors carry the node velocity, so that test
     now ignores it for classes 4–8.
 
+20. **Painting** (`FUN_00401060` → `FUN_00401540`, box from `FUN_004014b0`):
+    a sprite's box is bottom-centre anchored — left = x − w/2, top =
+    y − z − h on screen. Only dirty rectangles are repainted; actors whose
+    boxes overlap are merged into one group, and a group is painted back
+    to front by repeatedly picking the unpainted actor with the smallest
+    key (strict `<`, so ties keep chain order): the key is the world y,
+    or y − h when flag 0x40 is set. Flag 0x40 is `FUN_00402310(sprite)`,
+    recomputed on every sprite change, and is true only for the flat
+    ground sprites 0x1b (mogul field) and 0x52 (small yellow patch), so
+    anything standing on them is painted over them. Sprites are masked
+    with white as the colour key (also inside a sprite): mask `SRCPAINT`,
+    then colour `SRCAND`, on a `WHITENESS` background. The port's
+    `game::draw::draw_list` sorts the visible sprites by that key (stable)
+    and draws them at those boxes; the port used to draw at (x, y − z) as
+    the top-left corner, in list order, so every sprite was half a width
+    right and a full height low. Verified pixel for pixel, see "Pixel
+    comparison" below.
+21. **Status display** (child window `SkiStatus`, painted by
+    `FUN_00401b80`): `TextOutA` in `GetStockObject(OEM_FIXED_FONT)` (the
+    "Terminal" bitmap font, 8×12 on the VM), black on white, inside a
+    one-pixel black `FrameRect` (stock black brush) at the client's
+    top-right corner (140×52 at 704 px wide). Row height = the font's
+    `tmHeight` (`DAT_0040c668`); label column = the widest of strings 3–6
+    (`DAT_0040c66e`), value column = the widest of strings 7–10, measured
+    as raw format strings (`FUN_00406a70`); labels drawn at x 2, values at
+    label width + 2, first row at y 2. The timer callback repaints it only
+    when more than 327 ms (`0x147`) have passed since its last paint
+    (`0x40104d`, `DAT_0040c5dc`): at 40 ms per tick, every 9th tick. Not
+    yet matched by the port (it draws every frame, in another font,
+    without the box).
+
 ## Verified scenarios
 
 All run with seed 0, from a fresh process, world built at the scenario's
@@ -252,6 +288,50 @@ Each scenario has a golden log in `replays/golden/`; `cargo test` replays
 them (`verified_*` in `tests/replay.rs`), so a port change that would break
 agreement with the original fails the test suite even without the VM.
 
+## Pixel comparison
+
+`tools/vm/frames.sh <scenario> <out-dir> <t1,t2,...>` captures the
+original's client area after the listed main ticks (`capture_frames.js`:
+GDI `BitBlt` of the window into a 32-bit DIB on entry to call t + 1,
+before that call's injected inputs; raw pixels, no compression) and the
+port's draw lists for the same ticks (`replay --draw`), then
+`frames.py` composites the port's frames from the same sprite PNGs and
+diffs them pixel by pixel. `frames.py --window DIR` also diffs frames
+saved by the real game binary: `SKIFREE_REPLAY=<scenario>
+SKIFREE_FRAMES=DIR SKIFREE_FRAME_TICKS=<t1,...> target/debug/skifree`
+replays the scenario at fixed ticks (no live input, no clock, no
+high-score writes) and saves each listed frame drawn by the normal
+renderer (macroquad) into an offscreen target of the scenario's client
+size, as raw RGBA.
+
+Two VM setup requirements, both learned the hard way:
+
+- frida-server must run in the **console session** (the `FridaServer`
+  scheduled task, interactive logon). Started over SSH it runs in session
+  0, where the game's window has no visible surface and every capture is
+  black.
+- The whole client area must be on screen: GDI doesn't paint rows that
+  hang off the screen, so they read back white. `spawn_locked.py` moves
+  the window up (keeping its size) when it would extend past the bottom —
+  the VM's screen is 1280×720 and a 1024×700 client at y 61 lost its last
+  41 rows.
+
+Results (ticks spread over each run):
+
+| Scenario | Frames | Outside the status box |
+|---|---|---|
+| `compare_steer` | 0, 25, 50, 120, 163, 300, 600 | identical (composite and real renderer) |
+| `compare_slalom` | 100 … 1240 (7) | identical |
+| `compare_freestyle` | 200 … 1240 (6) | identical |
+| `compare_monster` | 300 … 1340 (6) | identical |
+| `compare_size_1024x700` | 0, 100, 300, 600 | identical |
+
+They cover the title splash, course banners and Start posts, gates,
+crashes, moguls, jumps and air tricks, the monster's chase and meal, and
+two window sizes. The first run found two port bugs: the sprite anchor and
+order (item 20) and course markers at z = 0x10 (item 4). The status box
+(item 21) is the only remaining difference.
+
 ## Harness
 
 `tools/vm/compare.sh` drives one comparison (or `--suite` for all of the
@@ -270,6 +350,8 @@ above). Pieces:
 | `trace_pairs.js` | each collision-handler call (both actors, both orders) per tick |
 | `rng_align.py` | maps LCG states to stream indices and prints the first call where original and port differ, with call sites on both sides. Calls the original makes *inside* an injected input (an F2 world rebuild) are invisible to Frida — it doesn't fire hooks for calls made from a hook callback — so a port re-seed whose calls the original's log skips is accepted when the original resumes at exactly the same stream index |
 | `player_align.py` | first tick where the player's x/y/z/vx/vy/vz/state, the style score or the course clock differ |
+| `capture_frames.js` | saves the client area after each main tick in `CAPTURE_TICKS` (pixel comparison) |
+| `frames.sh` / `frames.py` | run a pixel comparison and write `orig_`, `port_`, `diff_`, `side_` (and `win_`, `diffwin_`) PNGs per tick |
 
 ```bash
 export SKIFREE_VM_HOST=<vm-ip>             # frida-server :27042
