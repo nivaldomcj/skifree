@@ -158,9 +158,10 @@ else runs without them. `compare_frames.sh` needs a private web build, Node
 
 CI (`.github/workflows/ci.yml`) runs rustfmt, Clippy on Linux, macOS,
 Windows and wasm32, and the tests that need no game files. It has none, so
-it sets `SKIFREE_NO_ASSETS=1`, which lets `build.rs` skip its asset check
-(the binary that builds then can't run the game). The replay tests need
-`assets/meta.json`: run `cargo test` before merging. The lint policy is in
+it sets `SKIFREE_NO_ASSETS`, which lets `build.rs` skip its asset check:
+`=1` builds like a player without the sounds, and `=sound` also compiles the
+audio code (over empty stand-ins it never plays), so Clippy runs both ways.
+The replay tests need `assets/meta.json`: run `cargo test` before merging. The lint policy is in
 `Cargo.toml` (`[lints]`); a deliberate exception in the code takes
 `#[expect(lint, reason = "...")]`.
 

@@ -1,7 +1,9 @@
 # Format, lint and unit-test every push to main and every pull request.
-# CI has no game files: SKIFREE_NO_ASSETS=1 lets build.rs skip its asset
-# gate (see build.rs). The replay tests need assets/meta.json, so they stay
-# local: run `cargo test` with the extracted assets before merging.
+# CI has no game files: SKIFREE_NO_ASSETS lets build.rs skip its asset gate
+# (see build.rs). =1 builds like a player without the sounds; =sound also
+# compiles the audio code, so Clippy runs once each way. The replay tests
+# need assets/meta.json, so they stay local: run `cargo test` with the
+# extracted assets before merging.
 name: ci
 
 on:
@@ -49,7 +51,12 @@ jobs:
           persist-credentials: false
       - run: rustup toolchain install # the version in rust-toolchain.toml
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Clippy, built like a player without the sounds
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Clippy with the audio code (empty stand-in WAVs, never played)
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+        env:
+          SKIFREE_NO_ASSETS: sound
       - name: Unit and extract tests (the replay tests need the assets)
         run: cargo test --locked --all-features --lib --bins --test extract
 

@@ -10,10 +10,15 @@
 //! the page), and the private one (`--features embed-assets`) embeds them,
 //! through `$OUT_DIR/web_assets.rs`.
 //!
-//! `SKIFREE_NO_ASSETS=1` skips the gate, for `cargo clippy`, `cargo check`
-//! and `cargo test` where nobody has the game files (CI). It compiles the
-//! sound code with empty stand-in WAVs (`cfg(skifree_no_assets)`) so that
-//! code is linted too. The binary it builds does not run the game.
+//! `SKIFREE_NO_ASSETS` skips the gate, for `cargo clippy`, `cargo check`
+//! and `cargo test` where nobody has the game files (CI):
+//! - `=1` builds like a player without the sounds: no audio code at all.
+//! - `=sound` also compiles the audio code, with empty stand-in WAVs
+//!   (`cfg(skifree_no_assets)`), so it is linted too; that build never
+//!   opens a player, so it stays silent.
+//!
+//! The binary still loads `assets/` at run time, so it runs the game where
+//! they exist, only without the build-time checks and embedding.
 
 use std::path::Path;
 
@@ -42,11 +47,17 @@ fn main() {
     if embed && !web {
         println!("cargo:warning=embed-assets only applies to the web build (wasm32)");
     }
-    if std::env::var_os("SKIFREE_NO_ASSETS").is_some_and(|v| v == "1") {
-        assert!(!web, "SKIFREE_NO_ASSETS=1 cannot build the private web version (embed-assets)");
-        println!("cargo:rustc-cfg=skifree_sound");
-        println!("cargo:rustc-cfg=skifree_no_assets");
-        println!("cargo:warning=SKIFREE_NO_ASSETS=1: assets not checked, for linting and tests only");
+    if let Some(mode) = std::env::var_os("SKIFREE_NO_ASSETS") {
+        assert!(!web, "SKIFREE_NO_ASSETS cannot build the private web version (embed-assets)");
+        match mode.to_str() {
+            Some("1") => {}
+            Some("sound") => {
+                println!("cargo:rustc-cfg=skifree_sound");
+                println!("cargo:rustc-cfg=skifree_no_assets");
+            }
+            _ => panic!("SKIFREE_NO_ASSETS must be 1 (no sound code) or sound (sound code, silent)"),
+        }
+        println!("cargo:warning=SKIFREE_NO_ASSETS: assets not checked, for linting and tests only");
         return;
     }
 

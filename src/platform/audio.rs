@@ -6,6 +6,8 @@
 //! `tools/extract_assets.py` found them (in `ski32sounds.exe`), build.rs
 //! embeds `assets/sounds/sound_1..9.wav` and sets `cfg(skifree_sound)`;
 //! without them nothing here plays and no audio code is compiled.
+//! `SKIFREE_NO_ASSETS=sound` (CI) compiles it with empty stand-ins and
+//! never opens a player (`cfg(skifree_no_assets)`).
 //!
 //! Backends, none of which needs anything at build time:
 //! - Windows: `sndPlaySoundA` itself, with the same bytes and flags.
@@ -35,8 +37,11 @@ impl Audio {
         let _ = assets;
         Self {
             muted,
+            // No player over the empty stand-in WAVs: sndPlaySoundA would
+            // read a WAV image from an empty slice. open() stays compiled
+            // (and linted) all the same.
             #[cfg(skifree_sound)]
-            player: imp::Player::open(),
+            player: if cfg!(skifree_no_assets) { None } else { imp::Player::open() },
             #[cfg(target_arch = "wasm32")]
             player: imp::Player::open(assets),
         }
@@ -64,6 +69,10 @@ impl Audio {
 
     /// Stop whatever is playing (`sndPlaySoundA(NULL, 0)`, as the original
     /// does on exit).
+    #[cfg_attr(
+        not(any(skifree_sound, target_arch = "wasm32")),
+        expect(clippy::unused_self, reason = "a build without sounds has no player to stop")
+    )]
     pub fn stop(&mut self) {
         #[cfg(any(skifree_sound, target_arch = "wasm32"))]
         if let Some(p) = self.player.as_mut() {
@@ -100,8 +109,8 @@ static WAVS: [&[u8]; 9] = [
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/sounds/sound_9.wav")),
 ];
 
-/// `SKIFREE_NO_ASSETS=1` (build.rs): compile, lint and test the sound code
-/// without the WAVs. This build plays nothing.
+/// `SKIFREE_NO_ASSETS=sound` (build.rs): compile, lint and test the sound
+/// code without the WAVs. `Audio::new` opens no player in this build.
 #[cfg(all(skifree_sound, skifree_no_assets))]
 static WAVS: [&[u8]; 9] = [&[]; 9];
 

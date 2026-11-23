@@ -116,7 +116,9 @@ may be gone after a reboot. To regenerate: configure Ghidra 12.x
     off the previous one, like `sndPlaySoundA`. On Windows it *is*
     `sndPlaySoundA`; macOS uses NSSound; Linux loads libasound at runtime.
   - **Build switch:** build.rs embeds the nine WAVs and sets
-    `cfg(skifree_sound)` only when `assets/sounds/` holds all nine.
+    `cfg(skifree_sound)` only when `assets/sounds/` holds all nine. Without
+    game files, `SKIFREE_NO_ASSETS=sound` compiles the audio code over empty
+    stand-ins for linting, and never opens a player.
   - **Additions:** M mutes and unmutes; the original's `nosound` command line
     starts the game muted.
 - **Ambient-mob secondary spawn** (1-in-1000) and the **snowboarder jump
