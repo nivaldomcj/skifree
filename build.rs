@@ -59,6 +59,14 @@ fn main() {
 
     println!("cargo:warning=assets OK: {} sprite files verified", sprite_files);
 
+    // Windows: embed the original's ICONSKI group (assets/icons/app_1.ico,
+    // extracted from the user's exe) as the exe's icon resource, so
+    // Explorer shows the SkiFree face on skifree.exe like on ski32.exe.
+    // The window icon is set at runtime (platform::window).
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        embed_windows_icon();
+    }
+
     // Sound is optional: with all nine extracted WAVs (from an exe that has
     // them, e.g. ski32sounds.exe) the build embeds them and compiles the
     // audio code; otherwise it has no sound at all, like the shipped game.
@@ -75,5 +83,19 @@ fn main() {
             "cargo:warning=only {sounds} of 9 sounds in assets/sounds/: building without sound \
              (re-run tools/extract_assets.py with ski32sounds.exe in originals/)"
         );
+    }
+}
+
+fn embed_windows_icon() {
+    let ico = Path::new("assets/icons/app_1.ico");
+    println!("cargo:rerun-if-changed=assets/icons/app_1.ico");
+    let ico = ico.canonicalize().expect("assets/icons/app_1.ico (checked above)");
+    let out = std::env::var("OUT_DIR").expect("OUT_DIR");
+    let rc = Path::new(&out).join("skifree.rc");
+    // The resource name the original uses (LoadIconA(hInstance, "iconSki")).
+    let path = ico.to_string_lossy().replace('\\', "/");
+    std::fs::write(&rc, format!("iconSki ICON \"{path}\"\n")).expect("write skifree.rc");
+    if let Err(e) = embed_resource::compile(&rc, embed_resource::NONE).manifest_optional() {
+        println!("cargo:warning=no exe icon (resource compiler failed: {e})");
     }
 }
