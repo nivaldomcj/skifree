@@ -273,9 +273,16 @@
         "Numpad5", "Numpad6", "Numpad7", "Numpad8", "Numpad9",
     ]);
 
+    // Firefox's Quick Find opens on ' and / and takes the keyboard from the
+    // game. gl.js means to block both, but it maps them to the key codes 222
+    // and 189 and then checks 39 and 47, so they get through. Matched by
+    // character, so any keyboard layout is covered (on some, / is Shift+7).
+    const QUICK_FIND_KEYS = new Set(["'", "/"]);
+
     function onKeyDown(e) {
         unlockAudio();
-        if (document.activeElement === canvas && GAME_KEYS.has(e.code)) e.preventDefault();
+        if (document.activeElement !== canvas) return;
+        if (GAME_KEYS.has(e.code) || QUICK_FIND_KEYS.has(e.key)) e.preventDefault();
     }
 
     // ------------------------------------------------------------ plugin
