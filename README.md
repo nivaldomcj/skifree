@@ -148,6 +148,8 @@ tools/test_wasi.sh   # the replay tests compiled to WebAssembly (wasmtime)
 tools/web/compare_frames.sh  # web frames vs native frames, pixel for pixel
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
+# the private web build, which CI can't lint (it embeds your assets/):
+cargo clippy --target wasm32-unknown-unknown --all-targets --features embed-assets -- -D warnings
 ```
 
 The `state_table` tests byte-compare against `originals/ski32.exe`, and the

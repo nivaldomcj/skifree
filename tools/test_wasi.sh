@@ -12,5 +12,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 command -v wasmtime >/dev/null || { echo "wasmtime not found (https://wasmtime.dev)" >&2; exit 1; }
 [ -f assets/meta.json ] || { echo "assets/ missing: run tools/extract_assets.py" >&2; exit 1; }
-export CARGO_TARGET_WASM32_WASIP1_RUNNER="wasmtime run --dir=. --dir=$PWD::$PWD"
-exec cargo test --target wasm32-wasip1 --test replay "$@"
+# The array form keeps a repo path with spaces in one argument (the env
+# var form would split it).
+exec cargo test --config "target.wasm32-wasip1.runner=[\"wasmtime\", \"run\", \"--dir=.\", \"--dir=$PWD::$PWD\"]" \
+    --target wasm32-wasip1 --test replay "$@"

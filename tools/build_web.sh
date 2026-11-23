@@ -40,7 +40,7 @@ else
     features=()
 fi
 
-cargo build --release --target wasm32-unknown-unknown ${features[@]+"${features[@]}"}
+cargo build --locked --release --target wasm32-unknown-unknown ${features[@]+"${features[@]}"}
 wasm=target/wasm32-unknown-unknown/release/skifree.wasm
 
 # gl.js from the miniquad version in Cargo.lock (its loader must match the

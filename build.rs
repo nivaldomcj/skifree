@@ -78,7 +78,9 @@ fn main() {
     // Sound is optional: with all nine extracted WAVs (from an exe that has
     // them, e.g. ski32sounds.exe) the build embeds them and compiles the
     // audio code; otherwise it has no sound at all, like the shipped game.
-    println!("cargo:rerun-if-changed=assets/sounds");
+    // Watch assets/ as a whole (Cargo scans a directory recursively): a
+    // missing assets/sounds would count as changed on every build.
+    println!("cargo:rerun-if-changed=assets");
     let sounds = sound_count();
     if sounds == 9 {
         println!("cargo:rustc-cfg=skifree_sound");
@@ -140,9 +142,8 @@ fn check_assets() {
 /// PNGs, the font and icon 3 when present, and the sounds when all nine
 /// are (`platform::assets` decodes them like the native build's files).
 fn embed_web_assets() {
-    for dir in ["assets/sprites", "assets/fonts", "assets/icons", "assets/sounds"] {
-        println!("cargo:rerun-if-changed={dir}");
-    }
+    // All of assets/: the optional fonts/ and sounds/ may not exist.
+    println!("cargo:rerun-if-changed=assets");
     let include = |rel: &str| -> String {
         let path = Path::new("assets").join(rel).canonicalize().expect("asset checked above");
         format!("include_bytes!({:?})", path.to_string_lossy().replace('\\', "/"))

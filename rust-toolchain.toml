@@ -1,6 +1,7 @@
 # The Rust release this project builds and lints with, here and in CI.
 # Pinned so a new Clippy can't fail CI by itself: bump it by hand, then fix
-# what the new Clippy finds (cargo clippy on every target, see ci.yml).
+# what the new Clippy finds (on every target ci.yml lints, plus the private
+# web build locally: see README.md, "Verify").
 [toolchain]
 channel = "1.100.0"
 profile = "minimal"

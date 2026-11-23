@@ -3,7 +3,8 @@
 
 Style follows the Big Sur+ app-icon conventions (see CuaDriver/ProtonVPN):
 a white squircle (824/1024 of the canvas, centered) with the game's
-colorful skier glyph (assets/icons/icon_5.png) centered inside it.
+colorful skier face (assets/icons/icon_3.png, the window icon) centered
+inside it.
 
 Everything here is computed at build time from assets extracted from the
 user's own ski32.exe — no derived icon file is ever committed to the repo.
