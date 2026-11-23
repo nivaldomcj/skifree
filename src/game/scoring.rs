@@ -77,24 +77,22 @@ impl Scoring {
         self.enabled = true;
     }
 
-    /// "%2u:%2.2u:%2.2u.%2.2u" — h:mm:ss.cc (FUN_00401d70).
-    pub fn format_time(&self, elapsed_ms: u64) -> String {
-        let total_secs = elapsed_ms / 1000;
-        let hours = total_secs / 3600;
-        let mins = (total_secs / 60) % 60;
-        let secs = total_secs % 60;
-        let hundredths = (elapsed_ms % 1000) / 10;
-        format!("{}:{:02}:{:02}.{:02}", hours, mins, secs, hundredths)
+    /// "%2u:%2.2u:%2.2u.%2.2u" — h:mm:ss.cc (FUN_00401d70). Each part is
+    /// computed with signed, truncating division and masked to 16 bits
+    /// before printing, exactly like the original (a negative clock prints
+    /// as large unsigned parts rather than being clamped).
+    pub fn format_time(&self, ms: i64) -> String {
+        format_clock(ms as i32)
     }
 
     /// "%5.2dm" — meters, at least 2 digits, field width 5 (FUN_00401b80).
     pub fn format_dist(&self, meters: i32) -> String {
-        format!("{:>5}m", format!("{:02}", meters))
+        format!("{}m", c_int(meters, 5, 2))
     }
 
     /// "%5.2dm/s" (FUN_00401b80).
     pub fn format_speed(&self, speed: i32) -> String {
-        format!("{:>5}m/s", format!("{:02}", speed))
+        format!("{}m/s", c_int(speed, 5, 2))
     }
 
     /// "%7ld" (FUN_00401b80).
@@ -153,5 +151,44 @@ mod high_score_tests {
         assert_eq!(hs.slalom_ms.len(), 1);
         assert_eq!(hs.giant_slalom_ms.len(), 1);
         assert_eq!(hs.freestyle_style, vec![-22]);
+    }
+}
+
+/// FUN_00401d70's clock string.
+pub fn format_clock(ms: i32) -> String {
+    let part = |v: i32| v as u32 & 0xffff;
+    let hundredths = part(ms % 1000) / 10;
+    let secs = ms / 1000;
+    let mins = secs / 60;
+    format!("{:>2}:{:02}:{:02}.{:02}", part(mins / 60), part(mins % 60), part(secs % 60), hundredths)
+}
+
+/// C's `%<width>.<prec>d`: at least `prec` digits, the sign in front, padded
+/// to `width` with spaces.
+pub fn c_int(v: i32, width: usize, prec: usize) -> String {
+    let digits = format!("{:0prec$}", v.unsigned_abs(), prec = prec);
+    let signed = if v < 0 { format!("-{}", digits) } else { digits };
+    format!("{:>width$}", signed, width = width)
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+
+    #[test]
+    fn clock_like_fun_00401d70() {
+        assert_eq!(format_clock(0), " 0:00:00.00");
+        assert_eq!(format_clock(83_456), " 0:01:23.45");
+        assert_eq!(format_clock(36_000_000), "10:00:00.00");
+        // Negative: signed parts masked to 16 bits, printed unsigned.
+        assert_eq!(format_clock(-1_500), " 0:00:65535.6503");
+    }
+
+    #[test]
+    fn c_int_precision_and_sign() {
+        assert_eq!(c_int(0, 5, 2), "   00");
+        assert_eq!(c_int(169, 5, 2), "  169");
+        assert_eq!(c_int(-5, 5, 2), "  -05");
+        assert_eq!(c_int(-123, 5, 2), " -123");
     }
 }

@@ -109,6 +109,11 @@ pub struct TickRecord {
     #[serde(default)]
     pub course_ms: i64,
     pub rng_calls: u64,
+    /// Status display values (Time, Dist, Speed, Style) when it was
+    /// repainted during this tick (FUN_00401b80); compared with
+    /// tools/vm/trace_status.js by status_align.py.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<[String; 4]>,
     /// FNV-1a hash of every record up to and including this one.
     pub hash: u64,
 }
@@ -124,6 +129,8 @@ impl TickRecord {
             score: i32,
             course_ms: i64,
             rng_calls: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            status: &'a Option<[String; 4]>,
         }
         serde_json::to_string(&Payload {
             tick: self.tick,
@@ -133,6 +140,7 @@ impl TickRecord {
             score: self.score,
             course_ms: self.course_ms,
             rng_calls: self.rng_calls,
+            status: &self.status,
         })
         .expect("tick record payload is always serializable")
     }
@@ -234,6 +242,7 @@ pub fn run_scenario_observed(
             score: game.scoring.score,
             course_ms: game.course_clock_ms,
             rng_calls: game.rng.call_count(),
+            status: game.status_painted.then(|| game.status_values.clone()),
             hash: 0,
         };
         hash = fnv1a_update(hash, record.payload_json().as_bytes());

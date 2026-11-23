@@ -52,6 +52,15 @@ pub struct GameState {
     /// compensated for pauses (FUN_00404ad0 shifts the course start), so the
     /// monster's meal keeps progressing during a pause.
     pub wall_ms: u32,
+    /// Status display values as last painted (FUN_00401b80): Time, Dist,
+    /// Speed, Style. Repainted only by `paint_status`.
+    pub status_values: [String; 4],
+    /// Wall time since the status display was last painted (the original's
+    /// `DAT_0040c698 - DAT_0040c5dc`). Never reset by a new game: F2
+    /// neither repaints the display nor restarts its schedule.
+    pub status_age_ms: u32,
+    /// The status display was painted during the last `tick` call.
+    pub status_painted: bool,
     pub last_tick_ms: u32,
     pub screen_w: i16,
     pub screen_h: i16,
@@ -105,6 +114,9 @@ impl GameState {
             last_finish: None,
             elapsed_ms: 0,
             wall_ms: 0,
+            status_values: Default::default(),
+            status_age_ms: 0,
+            status_painted: false,
             last_tick_ms: 0,
             screen_w,
             screen_h,
@@ -186,6 +198,26 @@ impl GameState {
 
         // Spawn initial actors from events
         self.consume_spawn_events();
+
+        // The status display is first painted when the window shows
+        // (WM_PAINT -> FUN_00406970 -> FUN_00401b80), after the first game
+        // is set up. Later new games (F2) leave it alone.
+        if self.status_values[0].is_empty() {
+            self.paint_status();
+        }
+    }
+
+    /// Repaint the status display (FUN_00401b80): take the current values
+    /// and restart the 327 ms repaint schedule.
+    pub fn paint_status(&mut self) {
+        self.status_values = [
+            self.scoring.format_time(self.hud_time_ms()),
+            self.scoring.format_dist(self.hud_dist_m()),
+            self.scoring.format_speed(self.hud_speed()),
+            self.scoring.format_style(),
+        ];
+        self.status_age_ms = 0;
+        self.status_painted = true;
     }
 
     /// Title splash actors (FUN_004051e0). Positions are derived from the
@@ -222,6 +254,8 @@ impl GameState {
         // Timer stopped (F3, or the window lost focus / was minimized):
         // nothing updates, but wall time still passes.
         self.wall_ms = self.wall_ms.wrapping_add(delta_ms);
+        self.status_age_ms = self.status_age_ms.saturating_add(delta_ms);
+        self.status_painted = false;
         if !self.timer_running {
             return;
         }
@@ -471,6 +505,13 @@ impl GameState {
             }
         }
         self.tick_count += 1;
+
+        // FUN_00401000: after the update and the repaint, the status display
+        // is repainted only if more than 327 ms have passed since its last
+        // paint (every 9th tick at 40 ms).
+        if self.status_age_ms > 0x147 {
+            self.paint_status();
+        }
     }
 
     /// Cull test for one actor right after its update (FUN_00401e50 first
@@ -581,6 +622,8 @@ impl GameState {
                         }
                     }
                 }
+                // ... and then repaints the status display at once.
+                self.paint_status();
             } else if py <= START_Y {
                 // Skied back above the start line: the run is abandoned.
                 self.courses[ci].active = false;
@@ -646,9 +689,9 @@ impl GameState {
             .map(|(i, _)| i);
     }
 
-    /// HUD Time value in ms (DAT_0040c944).
-    pub fn hud_time_ms(&self) -> u64 {
-        self.course_clock_ms.max(0) as u64
+    /// HUD Time value in ms (DAT_0040c944), signed like the original.
+    pub fn hud_time_ms(&self) -> i64 {
+        self.course_clock_ms
     }
 
     /// HUD Dist value in meters (FUN_00401b80): remaining inside a course,
@@ -656,15 +699,15 @@ impl GameState {
     pub fn hud_dist_m(&self) -> i32 {
         let Some(pi) = self.player_idx else { return 0 };
         let Some(p) = self.pool.get(pi) else { return 0 };
-        let y = p.y as i32;
+        // 16-bit arithmetic like the original (`movsx eax, di`).
         let units = if self.courses[0].active {
-            0x21c0 - y
+            0x21c0i16.wrapping_sub(p.y)
         } else if self.courses[1].active || self.courses[2].active {
-            0x4100 - y
+            0x4100i16.wrapping_sub(p.y)
         } else {
-            y
+            p.y
         };
-        units / 16
+        units as i32 / 16
     }
 
     /// HUD Speed value in m/s (FUN_00401b80): downhill velocity scaled by

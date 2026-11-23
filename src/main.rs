@@ -74,22 +74,12 @@ fn draw_frame(game: &GameState, renderer: &Renderer) {
         draw_text(text, x, y, 24.0, BLACK);
     }
 
-    // Status display (FUN_00401b80): stacked rows at the top-right.
-    let rows = [
-        ("Time:", game.scoring.format_time(game.hud_time_ms())),
-        ("Dist:", game.scoring.format_dist(game.hud_dist_m())),
-        ("Speed:", game.scoring.format_speed(game.hud_speed())),
-        ("Style:", game.scoring.format_style()),
-    ];
+    // Status display (child window SkiStatus, FUN_00406970/FUN_00401b80):
+    // the values as last painted, in the OEM fixed font, see
+    // renderer::draw_status.
+    let row_y = renderer.draw_status(&game.status_values, sw);
     let font_size = 15u16;
-    let value_x = sw - 62.0;
-    let label_x = value_x - 48.0;
-    let mut row_y = 16.0;
-    for (label, value) in rows {
-        draw_text(label, label_x, row_y, font_size as f32, DARKGRAY);
-        draw_text(&value, value_x, row_y, font_size as f32, BLACK);
-        row_y += 16.0;
-    }
+    let label_x = sw - 110.0;
 
     // High-score table after a course finish (FUN_00402ec0 display),
     // with " <-- that's you!" / " <-- try again!" markers.
@@ -111,7 +101,7 @@ fn draw_frame(game: &GameState, renderer: &Renderer) {
             } else {
                 &game.high_scores.giant_slalom_ms
             };
-            times.iter().map(|&ms| game.scoring.format_time(ms)).collect()
+            times.iter().map(|&ms| game.scoring.format_time(ms as i64)).collect()
         };
         let mut y = row_y + 24.0;
         draw_text(title, label_x, y, font_size as f32, DARKGRAY);
@@ -131,7 +121,7 @@ fn draw_frame(game: &GameState, renderer: &Renderer) {
             let own = if finish.course == 2 {
                 format!("{:>9}", finish.style)
             } else {
-                game.scoring.format_time(finish.ms)
+                game.scoring.format_time(finish.ms as i64)
             };
             draw_text(&format!("{} <-- try again!", own), label_x, y, font_size as f32, BLACK);
         }

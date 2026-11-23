@@ -4,6 +4,10 @@
 Stdlib only. Usage: python3 tools/extract_assets.py [path-to-exe]
 Default input: auto-discovers originals/*.exe (not committed — supply your own copy).
 Writes assets/{sprites,icons}/, assets/meta.json and assets/strings.json.
+If originals/vgaoem.fon (Windows' "Terminal" font, the stock OEM_FIXED_FONT
+the status display uses; copy it from C:\Windows\Fonts) is present, also
+writes assets/fonts/oem_fixed.png: printable ASCII in 8x12 cells. Without
+it the port draws the status display with a fallback font.
 Idempotent: same input produces identical output bytes.
 """
 
@@ -170,6 +174,75 @@ class Dib:
                 for y, row in enumerate(rows)]
 
 
+# ------------------------------------------------------------ FON (NE) fonts
+
+RT_FONT = 8
+
+
+def parse_fon_fonts(data):
+    """FNT resources of a Windows .fon (NE executable): list of bytes."""
+    u16 = lambda o: struct.unpack_from("<H", data, o)[0]
+    ne = struct.unpack_from("<I", data, 0x3C)[0]
+    if data[ne:ne + 2] != b"NE":
+        raise SystemExit("not an NE .fon file")
+    rt = ne + u16(ne + 0x24)
+    shift = u16(rt)
+    p = rt + 2
+    fonts = []
+    while u16(p):
+        rtype, count = u16(p), u16(p + 2)
+        p += 8
+        for _ in range(count):
+            off, length = u16(p) << shift, u16(p + 2) << shift
+            if rtype == 0x8000 | RT_FONT:
+                fonts.append(data[off:off + length])
+            p += 12
+    return fonts
+
+
+def fnt_glyph_rows(fnt):
+    """Decode a raster FNT (v2/v3): metrics and {char: rows of 0/1}."""
+    u16 = lambda o: struct.unpack_from("<H", fnt, o)[0]
+    version = u16(0)
+    height, first, last = u16(88), fnt[95], fnt[96]
+    ascent = u16(74)
+    table, entry = (148, 6) if version == 0x300 else (118, 4)
+    glyphs = {}
+    for i, code in enumerate(range(first, last + 1)):
+        e = table + i * entry
+        width = u16(e)
+        off = struct.unpack_from("<I" if entry == 6 else "<H", fnt, e + 2)[0]
+        rows = []
+        for y in range(height):
+            row = []
+            for x in range(width):
+                byte = fnt[off + (x // 8) * height + y]
+                row.append((byte >> (7 - x % 8)) & 1)
+            rows.append(row)
+        glyphs[code] = rows
+    return {"height": height, "ascent": ascent, "first": first, "last": last}, glyphs
+
+
+def extract_oem_font(fon_path):
+    """assets/fonts/oem_fixed.png from the 12-pixel face of vgaoem.fon."""
+    fonts = parse_fon_fonts(fon_path.read_bytes())
+    faces = [fnt_glyph_rows(f) for f in fonts]
+    face = next((f for f in faces if f[0]["height"] == 12), None)
+    if face is None:
+        print(f"{fon_path.name}: no 12-pixel face, font skipped")
+        return
+    info, glyphs = face
+    cells = [glyphs[c] for c in range(0x20, 0x7F)]
+    width = len(cells[0][0])
+    assert all(len(g[0]) == width for g in cells), "not a fixed-pitch face"
+    rows = [[(0, 0, 0, 255) if g[y][x] else (0, 0, 0, 0) for g in cells for x in range(width)]
+            for y in range(info["height"])]
+    (OUT / "fonts").mkdir(parents=True, exist_ok=True)
+    write_png(OUT / "fonts" / "oem_fixed.png", rows)
+    print(f"font:    {fon_path.name} -> fonts/oem_fixed.png ({len(cells)} glyphs "
+          f"{width}x{info['height']}, ascent {info['ascent']})")
+
+
 def write_png(path, rows):
     h, w = len(rows), len(rows[0])
     raw = b"".join(b"\0" + b"".join(bytes(px) for px in row) for row in rows)
@@ -301,6 +374,9 @@ def main():
     n_pairs = len(bitmaps)
     print(f"bitmaps: {len(bitmaps)} 4bpp sprites (white color key -> alpha)")
     print(f"icons:   {len(icons)} icons, {len(groups)} groups")
+    fon = ROOT / "originals" / "vgaoem.fon"
+    if fon.exists():
+        extract_oem_font(fon)
     print(f"output:  {OUT}")
 
 

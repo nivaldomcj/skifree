@@ -3,7 +3,19 @@ use std::collections::HashMap;
 
 pub struct Renderer {
     sprites: HashMap<u32, Texture2D>,
+    /// Stock OEM fixed font ("Terminal") as Windows renders it: printable
+    /// ASCII in 8x12 cells from 0x20 (assets/fonts/oem_fixed.png, exported
+    /// from the VM by tools/vm/export_font.js + make_font.py).
+    font: Option<Texture2D>,
 }
+
+/// Status display geometry, from the original's text metrics
+/// (FUN_00406a70): 8x12 cells, label column = widest label ("Speed:"),
+/// value column = widest value template ("00:00:00.00"), 2 px margins.
+const CELL_W: f32 = 8.0;
+const CELL_H: f32 = 12.0;
+const LABELS: [&str; 4] = ["Time:", "Dist:", "Speed:", "Style:"];
+const VALUE_TEMPLATE_CHARS: f32 = 11.0;
 
 impl Renderer {
     pub async fn new() -> Self {
@@ -21,7 +33,69 @@ impl Renderer {
                 }
             }
         }
-        Self { sprites }
+        let font_path = root.join("fonts/oem_fixed.png");
+        let font = match load_texture(&font_path.to_string_lossy()).await {
+            Ok(tex) => {
+                tex.set_filter(FilterMode::Nearest);
+                Some(tex)
+            }
+            Err(e) => {
+                eprintln!("warning: failed to load {}: {}", font_path.display(), e);
+                None
+            }
+        };
+        Self { sprites, font }
+    }
+
+    /// Draw `text` in the OEM fixed font with its top-left cell at (x, y),
+    /// black on an opaque white background (TextOutA's default OPAQUE mode).
+    pub fn draw_oem_text(&self, text: &str, x: f32, y: f32) {
+        let n = text.chars().count() as f32;
+        draw_rectangle(x, y, n * CELL_W, CELL_H, WHITE);
+        let Some(font) = &self.font else {
+            // No extracted font (originals/vgaoem.fon missing): readable,
+            // not faithful.
+            draw_text(text, x, y + 10.0, 14.0, BLACK);
+            return;
+        };
+        for (i, c) in text.chars().enumerate() {
+            let code = c as u32;
+            if !(0x20..0x7f).contains(&code) {
+                continue;
+            }
+            draw_texture_ex(
+                font,
+                x + i as f32 * CELL_W,
+                y,
+                WHITE,
+                DrawTextureParams {
+                    source: Some(Rect::new((code - 0x20) as f32 * CELL_W, 0.0, CELL_W, CELL_H)),
+                    ..Default::default()
+                },
+            );
+        }
+    }
+
+    /// The status display: a white box with a one-pixel black frame
+    /// (FrameRect, stock black brush) at the client's top-right corner,
+    /// labels at (2, 2 + 12 row), values at (label column + 2, ...).
+    /// Returns the box's bottom edge.
+    pub fn draw_status(&self, values: &[String; 4], client_w: f32) -> f32 {
+        let label_w = LABELS.iter().map(|l| l.len()).max().unwrap_or(0) as f32 * CELL_W;
+        let w = label_w + VALUE_TEMPLATE_CHARS * CELL_W + 4.0;
+        let h = LABELS.len() as f32 * CELL_H + 4.0;
+        let x0 = client_w - w;
+        draw_rectangle(x0, 0.0, w, h, WHITE);
+        draw_rectangle(x0, 0.0, w, 1.0, BLACK);
+        draw_rectangle(x0, h - 1.0, w, 1.0, BLACK);
+        draw_rectangle(x0, 0.0, 1.0, h, BLACK);
+        draw_rectangle(x0 + w - 1.0, 0.0, 1.0, h, BLACK);
+        for (row, (label, value)) in LABELS.iter().zip(values).enumerate() {
+            let y = 2.0 + row as f32 * CELL_H;
+            self.draw_oem_text(label, x0 + 2.0, y);
+            self.draw_oem_text(value, x0 + 2.0 + label_w, y);
+        }
+        h
     }
 
     pub fn draw_sprite(&self, id: u32, x: f32, y: f32) {

@@ -39,6 +39,14 @@ downloaded or committed.
    There are no placeholder assets: `build.rs` verifies the extraction and
    **fails the build** when `assets/` is missing or incomplete.
 
+3. Optional, for the original's status display (Time / Dist / Speed /
+   Style) pixel for pixel: SkiFree draws it in Windows' "Terminal" font
+   (the stock OEM fixed font), which is part of Windows, not of SkiFree.
+   Copy `C:\Windows\Fonts\vgaoem.fon` from a Windows installation you
+   own into `originals/` before step 2; the extractor then also writes
+   `assets/fonts/oem_fixed.png`. Without it the status display uses a
+   fallback font.
+
 ## Build & run
 
 ```bash
