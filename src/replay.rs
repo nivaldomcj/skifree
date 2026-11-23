@@ -70,7 +70,20 @@ pub enum InputKind {
     },
     Jump,
     Click,
+    /// Mouse moved to client position (x, y), like WM_MOUSEMOVE.
+    Mouse {
+        x: i16,
+        y: i16,
+    },
     FastForward,
+    /// F2: start a new game (re-seeds and rebuilds the world).
+    Restart,
+    /// F3: toggle pause. Paused ticks still advance the wall clock.
+    Pause,
+    /// Window activation change (focus gained/lost, minimize/restore).
+    Focus {
+        active: bool,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -92,6 +105,9 @@ pub struct TickRecord {
     pub player: Option<PlayerSnapshot>,
     pub actor_count: usize,
     pub score: i32,
+    /// Course clock (DAT_0040c944, ms).
+    #[serde(default)]
+    pub course_ms: i64,
     pub rng_calls: u64,
     /// FNV-1a hash of every record up to and including this one.
     pub hash: u64,
@@ -106,6 +122,7 @@ impl TickRecord {
             player: &'a Option<PlayerSnapshot>,
             actor_count: usize,
             score: i32,
+            course_ms: i64,
             rng_calls: u64,
         }
         serde_json::to_string(&Payload {
@@ -114,6 +131,7 @@ impl TickRecord {
             player: &self.player,
             actor_count: self.actor_count,
             score: self.score,
+            course_ms: self.course_ms,
             rng_calls: self.rng_calls,
         })
         .expect("tick record payload is always serializable")
@@ -153,6 +171,11 @@ pub fn run_scenario_with_size(
 
     for tick in 0..scenario.ticks {
         for input in scenario.inputs.iter().filter(|i| i.tick == tick) {
+            // The original's window procedure drops keyboard and mouse
+            // messages while the window is inactive (DAT_0040c67c).
+            if !game.input_enabled && !matches!(input.kind, InputKind::Focus { .. }) {
+                continue;
+            }
             match &input.kind {
                 InputKind::Steer {
                     left,
@@ -163,7 +186,11 @@ pub fn run_scenario_with_size(
                 InputKind::SteerAbsolute { state } => game.steer_absolute(*state),
                 InputKind::Jump => game.jump_keyboard(),
                 InputKind::Click => game.click(),
+                InputKind::Mouse { x, y } => game.mouse_move(*x, *y),
                 InputKind::FastForward => game.fast_forward = !game.fast_forward,
+                InputKind::Restart => game.new_game(),
+                InputKind::Pause => game.toggle_pause(),
+                InputKind::Focus { active } => game.set_active(*active),
             }
         }
 
@@ -188,6 +215,7 @@ pub fn run_scenario_with_size(
             player,
             actor_count: game.pool.active_count(),
             score: game.scoring.score,
+            course_ms: game.course_clock_ms,
             rng_calls: game.rng.call_count(),
             hash: 0,
         };

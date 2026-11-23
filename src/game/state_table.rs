@@ -126,8 +126,32 @@ pub fn mouse_direction(dx: i16, dy: i16) -> u16 {
         5
     } else if r > 0 {
         6
+    } else if dx >= 0 {
+        // ratio truncated to 0 (nearly horizontal): side by dx, like the
+        // dy <= 0 case (0x406655)
+        6
     } else {
         3
+    }
+}
+
+/// Airborne mouse steering (FUN_00406670): picks a jump pose 0xd-0x10 by
+/// the cursor's quadrant relative to the skier and which axis dominates.
+pub fn mouse_air_direction(dx: i16, dy: i16) -> u16 {
+    if dx < 0 {
+        if dy < 0 {
+            if dy >= dx { 0x0e } else { 0x10 }
+        } else if -dy >= dx {
+            0x0e
+        } else {
+            0x0d
+        }
+    } else if dy < 0 {
+        if -dy > dx { 0x10 } else { 0x0f }
+    } else if dy <= dx {
+        0x0e
+    } else {
+        0x0d
     }
 }
 
@@ -254,6 +278,25 @@ mod tests {
             assert_eq!(i16_at(&exe, off + 6), entry.friction_div, "sb state {i} friction_div");
             assert_eq!(i16_at(&exe, off + 8), entry.direction, "sb state {i} direction");
         }
+    }
+
+    #[test]
+    fn mouse_direction_nearly_horizontal_follows_dx() {
+        // dy * 4 / dx truncates to 0: right of the skier -> 6, left -> 3.
+        assert_eq!(mouse_direction(50, 10), 6);
+        assert_eq!(mouse_direction(-50, 10), 3);
+    }
+
+    #[test]
+    fn mouse_air_direction_quadrants() {
+        assert_eq!(mouse_air_direction(-10, -20), 0x10);
+        assert_eq!(mouse_air_direction(-20, -10), 0x0e);
+        assert_eq!(mouse_air_direction(-20, 10), 0x0e);
+        assert_eq!(mouse_air_direction(-5, 10), 0x0d); // -dy (-10) < dx (-5)
+        assert_eq!(mouse_air_direction(10, -20), 0x10);
+        assert_eq!(mouse_air_direction(20, -10), 0x0f);
+        assert_eq!(mouse_air_direction(20, 10), 0x0e);
+        assert_eq!(mouse_air_direction(10, 20), 0x0d);
     }
 
     #[test]

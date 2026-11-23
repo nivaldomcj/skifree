@@ -3,8 +3,11 @@ use super::state_table::*;
 use super::types::*;
 
 /// Skier state machine (FUN_004028e0)
-/// States 0x00-0x15: skiing, jumping, crashing
-pub fn update_skier(actor: &mut Actor, fast_forward: bool) {
+/// States 0x00-0x15: skiing, jumping, crashing.
+///
+/// Returns the style points earned this tick (the caller adds them through
+/// `Scoring::add`, which only counts inside freestyle, like FUN_00403420).
+pub fn update_skier(actor: &mut Actor, fast_forward: bool) -> i32 {
     let state = actor.state;
 
     if state == 0x0b {
@@ -16,14 +19,14 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool) {
         if actor.z == 0 && actor.vz == 0 {
             if actor.vx == 0 && actor.vy == 0 {
                 physics::change_state(actor, 0x0c);
-                return;
+                return 0;
             }
             actor.vx = decelerate(actor.vx);
             actor.vy = decelerate(actor.vy);
         } else {
             physics::integrate(actor, fast_forward);
         }
-        return;
+        return 0;
     }
 
     physics::integrate(actor, fast_forward);
@@ -42,6 +45,7 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool) {
     }
 
     // State transitions for skiing states
+    let mut points = 0;
     match state {
         7 | 9 => physics::change_state(actor, 3),
         8 | 10 => physics::change_state(actor, 6),
@@ -49,11 +53,25 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool) {
             // Jump states — check landing
             if actor.z == 0 {
                 let landing = CRASH_LANDING[(state - 0x0d) as usize];
+                if landing == 0x11 {
+                    points -= 64; // botched landing (0x402ad5)
+                }
                 physics::change_state(actor, landing);
             }
         }
         _ => {}
     }
+
+    // Style for the pose held this tick, by the new state (byte table at
+    // 0x402b88, verified via Frida): tricks score every tick in the air.
+    points += match actor.state {
+        7..=10 => -1,
+        0x10 => 2,
+        0x12 | 0x13 => 4,
+        0x14 | 0x15 => 8,
+        _ => 0,
+    };
+    points
 }
 
 /// Handle keyboard steering input (FUN_00406170, faithful port)
@@ -156,13 +174,20 @@ pub fn steer_absolute(actor: &mut Actor, target_state: u16) {
     }
 }
 
-/// Handle mouse steering input (FUN_00406550 + FUN_004065e0)
+/// Mouse steering (FUN_00406550): `dx`/`dy` are the cursor's offset from
+/// the skier's screen anchor (client w/2, h/3). Ignored while crashed (0xb)
+/// or crash-landing (0x11); on the ground the slope picks a skiing
+/// direction (FUN_004065e0), in the air a jump pose (FUN_00406670).
 pub fn steer_mouse(actor: &mut Actor, dx: i16, dy: i16) {
     if actor.state == 0x0b || actor.state == 0x11 {
         return;
     }
-    let dir = mouse_direction(dx, dy);
-    physics::change_state(actor, dir as u16);
+    let dir = if actor.z == 0 {
+        mouse_direction(dx, dy)
+    } else {
+        mouse_air_direction(dx, dy)
+    };
+    physics::change_state(actor, dir);
 }
 
 fn decelerate(v: i16) -> i16 {

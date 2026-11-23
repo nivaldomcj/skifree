@@ -260,7 +260,16 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
         // Case 2, snowboarder: hit by anything moving -> falls (state 0x1d);
         // +3 style when it was the player. Static obstacles don't count.
         ActorClass::Snowboarder => {
-            if a.state < 0x1d && (b.vx != 0 || b.vy != 0) {
+            // Mob-node actors (classes 4-8) carry no velocity in the original:
+            // FUN_004041c0 moves the node and only copies position and state
+            // to its actor, so a drifting chair or a monster reads as still.
+            let node_actor = matches!(
+                b.class,
+                ActorClass::AmbientMob | ActorClass::MonsterLeft | ActorClass::MonsterRight
+                    | ActorClass::MonsterTop | ActorClass::MonsterBottom
+            );
+            let moving = !node_actor && (b.vx != 0 || b.vy != 0);
+            if a.state < 0x1d && moving {
                 if b.class == ActorClass::Skier {
                     result.score_delta += 3;
                 }
@@ -305,6 +314,13 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
         _ => {}
     }
     result
+}
+
+/// `SKIFREE_LOG_PAIRS=1`: print every ordered collision-handler call (diff
+/// against tools/vm/trace_pairs.js).
+fn log_pairs() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("SKIFREE_LOG_PAIRS").is_some())
 }
 
 /// Collision pass (FUN_00401e50, after the mob nodes). Mirrors the original's
@@ -362,6 +378,13 @@ pub fn check_all_collisions(
                     (Some(f), Some(s)) => (f.clone(), s.clone()),
                     _ => break,
                 };
+                if log_pairs() {
+                    eprintln!(
+                        "pair a=({:?},spr{},st{},({},{},{})) b=({:?},spr{},st{},({},{},{}))",
+                        f.class, f.sprite_id, f.state, f.x, f.y, f.z,
+                        s.class, s.sprite_id, s.state, s.x, s.y, s.z
+                    );
+                }
                 let result = handle_collision(&mut f, &mut s, player_idx, first, second, fd, sd);
                 if let Some(m) = pool.get_mut(first) {
                     *m = f;

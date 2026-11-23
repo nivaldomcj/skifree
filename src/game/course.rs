@@ -237,3 +237,33 @@ fn generate_monster_spawns(events: &mut Vec<SpawnEvent>) {
         x: 0, y: 32060, z: 0, param: 0,
     });
 }
+
+/// FUN_00402e30: the value of a quantity at the moment the player crossed
+/// `line_y`, interpolated between its post-update value `a` (at `y_new`) and
+/// pre-update value `b` (at `y_old`): `a − (a − b)·(y_new − line)/(y_new −
+/// y_old)`, in 32-bit integer arithmetic with truncating division. Used for
+/// the crossing x (start strips, gates) and the crossing time (course clock).
+pub fn interpolate(a: i64, b: i64, y_new: i16, y_old: i16, line_y: i16) -> i64 {
+    let (a, b) = (a as i32, b as i32);
+    let num = (a.wrapping_sub(b)).wrapping_mul(y_new as i32 - line_y as i32);
+    let den = y_new as i32 - y_old as i32;
+    if den == 0 {
+        return a as i64;
+    }
+    a.wrapping_sub(num / den) as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interpolate_finds_the_crossing_point() {
+        // Moving from y 630 to 646 across 640: 6/16 of the way back.
+        assert_eq!(interpolate(100, 84, 646, 630, 640), 94);
+        // Time 1040 now, 1000 last tick: crossed at 1025.
+        assert_eq!(interpolate(1040, 1000, 646, 630, 640), 1025);
+        // Truncating division, like idiv.
+        assert_eq!(interpolate(10, 0, 3, 0, 1), 4);
+    }
+}
