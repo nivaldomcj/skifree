@@ -105,7 +105,13 @@ async fn main() {
     let mut capture = load_frame_capture();
     if let Some(cap) = &capture {
         let (w, h) = (cap.scenario.screen_w.unwrap_or(640), cap.scenario.screen_h.unwrap_or(480));
-        request_new_screen_size(w as f32, h as f32);
+        // On macOS miniquad's request_new_screen_size sets the window frame,
+        // title bar included, so the client would come out short (and
+        // screen_width/height report the requested size at once): set the
+        // client size directly there.
+        if !platform::os_window::set_client_size(w as f64, h as f64) {
+            request_new_screen_size(w as f32, h as f32);
+        }
         for _ in 0..120 {
             next_frame().await;
             if screen_width() as i16 == w && screen_height() as i16 == h {

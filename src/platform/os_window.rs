@@ -20,7 +20,7 @@
 #[cfg(target_os = "macos")]
 mod imp {
     use macroquad::miniquad::native::apple::apple_util::str_to_nsstring;
-    use macroquad::miniquad::native::apple::frameworks::{class, msg_send, sel, sel_impl, ObjcId};
+    use macroquad::miniquad::native::apple::frameworks::{class, msg_send, sel, sel_impl, NSSize, ObjcId};
 
     /// NSWindowStyleMaskFullScreen.
     const FULL_SCREEN: u64 = 1 << 14;
@@ -40,6 +40,17 @@ mod imp {
         let Some(window) = ns_window() else { return false };
         unsafe {
             let () = msg_send![window, setTitle: str_to_nsstring(title)];
+        }
+        true
+    }
+
+    /// Resize the client area itself. miniquad's request_new_screen_size
+    /// sets the window frame (setFrame), title bar included, which leaves
+    /// the client a title bar short.
+    pub fn set_client_size(w: f64, h: f64) -> bool {
+        let Some(window) = ns_window() else { return false };
+        unsafe {
+            let () = msg_send![window, setContentSize: NSSize { width: w, height: h }];
         }
         true
     }
@@ -339,3 +350,16 @@ mod imp {
 }
 
 pub use imp::{message_box, set_title, title_visible};
+
+/// Resize the client area to w x h; false where the platform has no
+/// direct way (callers then use request_new_screen_size, which sets the
+/// client size there).
+pub fn set_client_size(w: f64, h: f64) -> bool {
+    #[cfg(target_os = "macos")]
+    return imp::set_client_size(w, h);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (w, h);
+        false
+    }
+}
