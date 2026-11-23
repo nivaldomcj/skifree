@@ -3,7 +3,9 @@
 A multiplatform reimplementation of **SkiFree** in Rust, built by reverse
 engineering the original `ski32.exe` (the 2005 32-bit recompile of Chris
 Pirih's 1991 classic) with [REA](https://github.com/morluto/rea) + Ghidra and
-porting the recovered logic faithfully. Runs on macOS, Windows and Linux.
+porting the recovered logic faithfully. Runs on macOS, Windows and Linux,
+and in the browser: **[play it here](https://nivaldomcj.github.io/skifree/)**
+with your own copy of the game.
 
 <p align="center">
   <img src="https://github.com/nivaldomcj/skifree/raw/refs/heads/docs/media/screenshots/macos.png"
@@ -108,8 +110,11 @@ See `docs/skier-physics.md` for the full map.
 
 ## In the browser
 
-The same code also runs in a web page (WebAssembly through macroquad's web
-backend). `rustup target add wasm32-unknown-unknown`, then:
+Play at **<https://nivaldomcj.github.io/skifree/>**: the page asks for your
+`ski32.exe` or `ski32.zip` (see below). It is the same code as the native
+game, compiled to WebAssembly through macroquad's web backend.
+
+To build it yourself, `rustup target add wasm32-unknown-unknown`, then:
 
 ```bash
 tools/build_web.sh --public --serve   # dist/web/, no game data
