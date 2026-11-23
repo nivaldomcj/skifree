@@ -26,6 +26,11 @@ fn load_script() -> Option<Vec<ScriptEvent>> {
     serde_json::from_str(&data).ok()
 }
 
+/// The original's pause notice (string 2), shown in the window title.
+const PAUSE_TEXT: &str = "Ski Paused ... Press F3 to continue";
+/// Its normal title (string 1).
+const TITLE_TEXT: &str = "SkiFree";
+
 /// Frame-capture replay (SKIFREE_REPLAY): the real renderer plays a replay
 /// scenario at its fixed tick rate, ignoring live input and the clock, and
 /// saves the framebuffer after each tick in `ticks` to `dir` as raw RGBA
@@ -52,7 +57,7 @@ fn load_frame_capture() -> Option<FrameCapture> {
 
 /// Paint one frame of `game` at its client size (sw x sh): sprites, the
 /// pause notice, the status display and the high-score table.
-fn draw_frame(game: &GameState, renderer: &Renderer) {
+fn draw_frame(game: &GameState, renderer: &Renderer, pause_in_window: bool) {
     let (sw, sh) = (game.screen_w as f32, game.screen_h as f32);
     // Render
     clear_background(WHITE);
@@ -63,15 +68,11 @@ fn draw_frame(game: &GameState, renderer: &Renderer) {
         renderer.draw_sprite(item.sprite as u32, item.left as f32, item.top as f32);
     }
 
-    // Pause overlay
-    if game.paused {
-        let text = "Ski Paused ... Press F3 to continue";
-        let dims = measure_text(text, None, 24, 1.0);
-        let x = (sw - dims.width) / 2.0;
-        let y = sh / 2.0 + 40.0;
-        draw_rectangle(x - 8.0, y - 20.0, dims.width + 16.0, 28.0, WHITE);
-        draw_rectangle_lines(x - 8.0, y - 20.0, dims.width + 16.0, 28.0, 1.0, BLACK);
-        draw_text(text, x, y, 24.0, BLACK);
+    // Pause notice: the original shows it only in the window title. Drawn
+    // in the window (status-display style) when no title bar can show it:
+    // fullscreen, or a platform where the title can't be set.
+    if game.paused && pause_in_window {
+        renderer.draw_notice(PAUSE_TEXT, sw, sh);
     }
 
     // Status display (child window SkiStatus, FUN_00406970/FUN_00401b80):
@@ -168,6 +169,10 @@ async fn main() {
     let mut script_fired = 0usize;
 
     let mut running = true;
+    // Pause notice: the title follows `paused` (FUN_00405760's
+    // SetWindowTextA); `title_set` records whether the platform could set it.
+    let mut shown_paused = false;
+    let mut title_set = false;
 
     while running {
         window::enforce_min_size();
@@ -298,12 +303,19 @@ async fn main() {
             game.tick(delta);
         }
 
+        if game.paused != shown_paused {
+            shown_paused = game.paused;
+            let text = if game.paused { PAUSE_TEXT } else { TITLE_TEXT };
+            title_set = platform::title::set_title(text);
+        }
+        let pause_in_window = game.paused && !(title_set && platform::title::title_visible());
+
         if game.pending_score_save && capture.is_none() {
             persistence::save_scores(&game.high_scores);
             game.pending_score_save = false;
         }
 
-        draw_frame(&game, &renderer);
+        draw_frame(&game, &renderer, pause_in_window);
 
         if let Some(cap) = &mut capture {
             if cap.ticks.contains(&cap.tick) {
@@ -316,7 +328,7 @@ async fn main() {
                 ));
                 cam.render_target = Some(target.clone());
                 set_camera(&cam);
-                draw_frame(&game, &renderer);
+                draw_frame(&game, &renderer, pause_in_window);
                 set_default_camera();
                 let img = target.texture.get_texture_data();
                 // The render target's rows come out bottom-up: save top-down.

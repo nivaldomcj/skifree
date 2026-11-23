@@ -70,6 +70,21 @@ impl Renderer {
         }
     }
 
+    /// A one-line notice in the status display's style, centred in the
+    /// client area: white box, one-pixel black frame, 2 px margins.
+    pub fn draw_notice(&self, text: &str, client_w: f32, client_h: f32) {
+        let w = text.chars().count() as f32 * CELL_W + 4.0;
+        let h = CELL_H + 4.0;
+        let x0 = ((client_w - w) / 2.0).floor();
+        let y0 = ((client_h - h) / 2.0).floor();
+        draw_rectangle(x0, y0, w, 1.0, BLACK);
+        draw_rectangle(x0, y0 + h - 1.0, w, 1.0, BLACK);
+        draw_rectangle(x0, y0, 1.0, h, BLACK);
+        draw_rectangle(x0 + w - 1.0, y0, 1.0, h, BLACK);
+        draw_rectangle(x0 + 1.0, y0 + 1.0, w - 2.0, h - 2.0, WHITE);
+        self.draw_oem_text(text, x0 + 2.0, y0 + 2.0);
+    }
+
     /// The status display: a white box with a one-pixel black frame
     /// (FrameRect, stock black brush) at the client's top-right corner,
     /// labels at (2, 2 + 12 row), values at (label column + 2, ...).

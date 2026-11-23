@@ -132,7 +132,12 @@ timing) freezes while paused and a separate wall clock drives the meal.
 The two pauses differ (window procedure + `FUN_00405a10`):
 
 - **F3** (`FUN_00405760`) shows "Ski Paused ... Press F3 to continue" and
-  only another F3 (or F2) resumes.
+  only another F3 (or F2) resumes. The notice is the **window title**
+  (`SetWindowTextA`, string 2; string 1 "SkiFree" on resume); nothing is
+  drawn on the slope. The port sets the title too (`platform::title`:
+  macOS and Windows) and draws the notice in the window, in the status
+  display's style, only when no title bar can show it (fullscreen, or
+  Linux, where miniquad doesn't expose the window).
 - **Focus loss / minimize** (`WM_ACTIVATE` / `WM_SIZE`) stops the timer
   silently and **ignores every key, mouse move and click** until the window
   is active again; regaining focus resumes play — unless F3 had paused it,
