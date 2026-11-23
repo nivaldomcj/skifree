@@ -398,6 +398,7 @@ name = "skifree"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "libc",
  "macroquad",
  "serde",
  "serde_json",

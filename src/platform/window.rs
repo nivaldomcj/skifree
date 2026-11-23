@@ -29,6 +29,10 @@ pub fn conf() -> Conf {
         window_resizable: true,
         platform: miniquad::conf::Platform {
             linux_backend: linux_backend(),
+            // X11 WM_CLASS and Wayland app id: matches skifree.desktop
+            // (tools/install_linux_desktop.sh) for the icon, and lets
+            // platform::os_window find the window on X11.
+            linux_wm_class: "skifree",
             ..Default::default()
         },
         ..Default::default()

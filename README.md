@@ -68,6 +68,9 @@ Put `skifree.exe` next to an `assets/` folder.
 On Linux the game uses X11 by default (through XWayland in a Wayland
 session). `SKIFREE_LINUX_BACKEND=wayland` runs it on native Wayland
 (`wayland-first` / `x11-first` try one and fall back to the other).
+`tools/install_linux_desktop.sh` adds a menu entry and the SkiFree icon for
+your user (Wayland shows app icons from desktop entries);
+`--uninstall` removes them.
 
 Controls are faithful to the original (arrows/numpad steer, Insert/numpad0 or
 click to jump, F2 restart, F3 pause, F fast-forward, T step, X/Y teleport).

@@ -151,9 +151,15 @@ backends (default X11 through XWayland, and `SKIFREE_LINUX_BACKEND=wayland`):
   simulation is the same on every platform).
 - Rendering, the extracted Terminal font and the bundled IBM VGA fallback
   all display correctly.
-- **Pause:** the title can't be set on Linux yet (miniquad exposes neither
-  the X11 window nor the Wayland surface), so the notice box shows in the
-  window; it appears on F3 and disappears on resume in every session.
+- **Pause:** on X11 and XWayland the window title changes like the
+  original's. miniquad doesn't expose its X11 window, so a separate Xlib
+  connection (libX11 loaded at runtime) takes the window that has the
+  keyboard focus when F3 is pressed, climbs to the top-level window whose
+  `WM_CLASS` is `skifree`, and sets `WM_NAME`/`_NET_WM_NAME`
+  (`platform::os_window`). On native Wayland the title lives on miniquad's
+  private `xdg_toplevel`, so the notice box shows in the window there.
+  Verified in all four sessions: title on X11/XWayland, box on native
+  Wayland, both appearing on F3 and going away on resume.
 - **High-score box:** the drawn box appears at a finish and closes on
   Enter in every session.
 - **Title bar:** GNOME on Wayland leaves it to the app — miniquad draws it
@@ -161,9 +167,12 @@ backends (default X11 through XWayland, and `SKIFREE_LINUX_BACKEND=wayland`):
   draw their own.
 - **Icon:** X11 windows (and XWayland) show the SkiFree icon (Plasma shows
   it in the title bar and taskbar; GNOME shows no title-bar icons). Native
-  Wayland windows get the compositor's generic icon: Wayland takes icons
-  from an installed `.desktop` file matched by app id, not from the
-  program.
+  Wayland takes icons from an installed `.desktop` file matched by app id:
+  the port's app id / `WM_CLASS` is `skifree`, and
+  `tools/install_linux_desktop.sh` installs `skifree.desktop` plus the icon
+  (copied from your extracted assets) for the current user; with it, KWin's
+  title bar and taskbar and GNOME's overview and dash show the SkiFree
+  face.
 
 Driving the VM over VMware's VNC with `vncdotool`: Shift never reaches the
 guest (capitals arrive lowercase, `&` as `7`, `|` as `\`), so type commands

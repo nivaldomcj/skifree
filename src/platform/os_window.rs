@@ -140,10 +140,190 @@ mod imp {
     }
 }
 
-/// Linux (X11/Wayland) and others: miniquad doesn't expose the window, so
-/// the notice is drawn in the window. See TODO.md (Linux test, upstream
-/// `set_window_title`).
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+/// Linux: miniquad exposes neither its X11 window nor its Wayland surface.
+///
+/// X11 (and XWayland): the pause is toggled by a key press, so at that
+/// moment our window has the keyboard focus. A separate Xlib connection
+/// (libX11 loaded at runtime, as miniquad does) asks for the focused window,
+/// climbs to the top-level window whose WM_CLASS is "skifree" (set through
+/// `Conf::platform.linux_wm_class`), and sets WM_NAME and _NET_WM_NAME on
+/// it. The window is remembered for later calls.
+///
+/// Native Wayland: the title can only be set on miniquad's private
+/// xdg_toplevel, so `set_title` returns false there (the class check fails)
+/// and the game draws the notice in the window.
+#[cfg(target_os = "linux")]
+mod imp {
+    use std::cell::RefCell;
+    use std::ffi::{c_char, c_int, c_long, c_uchar, c_uint, c_ulong, c_void, CStr, CString};
+
+    type Display = c_void;
+    type Window = c_ulong;
+    type Atom = c_ulong;
+
+    #[repr(C)]
+    struct XClassHint {
+        res_name: *mut c_char,
+        res_class: *mut c_char,
+    }
+
+    /// The WM_CLASS the window is created with (platform::window).
+    pub const WM_CLASS: &str = "skifree";
+
+    struct X11 {
+        display: *mut Display,
+        window: Option<Window>,
+        get_input_focus: unsafe extern "C" fn(*mut Display, *mut Window, *mut c_int) -> c_int,
+        query_tree: unsafe extern "C" fn(*mut Display, Window, *mut Window, *mut Window, *mut *mut Window, *mut c_uint) -> c_int,
+        get_class_hint: unsafe extern "C" fn(*mut Display, Window, *mut XClassHint) -> c_int,
+        store_name: unsafe extern "C" fn(*mut Display, Window, *const c_char) -> c_int,
+        intern_atom: unsafe extern "C" fn(*mut Display, *const c_char, c_int) -> Atom,
+        change_property: unsafe extern "C" fn(*mut Display, Window, Atom, Atom, c_int, c_int, *const c_uchar, c_int) -> c_int,
+        get_window_property: unsafe extern "C" fn(*mut Display, Window, Atom, c_long, c_long, c_int, Atom, *mut Atom, *mut c_int, *mut c_ulong, *mut c_ulong, *mut *mut c_uchar) -> c_int,
+        free: unsafe extern "C" fn(*mut c_void) -> c_int,
+        flush: unsafe extern "C" fn(*mut Display) -> c_int,
+    }
+
+    thread_local! {
+        static X: RefCell<Option<X11>> = RefCell::new(unsafe { X11::open() });
+    }
+
+    impl X11 {
+        unsafe fn open() -> Option<X11> {
+            if std::env::var_os("DISPLAY").is_none() {
+                return None;
+            }
+            let lib = libc::dlopen(c"libX11.so.6".as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL);
+            if lib.is_null() {
+                return None;
+            }
+            macro_rules! sym {
+                ($name:literal) => {{
+                    let p = libc::dlsym(lib, concat!($name, "\0").as_ptr() as *const c_char);
+                    if p.is_null() {
+                        return None;
+                    }
+                    std::mem::transmute(p)
+                }};
+            }
+            let open_display: unsafe extern "C" fn(*const c_char) -> *mut Display = sym!("XOpenDisplay");
+            let display = open_display(std::ptr::null());
+            if display.is_null() {
+                return None;
+            }
+            Some(X11 {
+                display,
+                window: None,
+                get_input_focus: sym!("XGetInputFocus"),
+                query_tree: sym!("XQueryTree"),
+                get_class_hint: sym!("XGetClassHint"),
+                store_name: sym!("XStoreName"),
+                intern_atom: sym!("XInternAtom"),
+                change_property: sym!("XChangeProperty"),
+                get_window_property: sym!("XGetWindowProperty"),
+                free: sym!("XFree"),
+                flush: sym!("XFlush"),
+            })
+        }
+
+        unsafe fn has_our_class(&self, w: Window) -> bool {
+            let mut hint = XClassHint { res_name: std::ptr::null_mut(), res_class: std::ptr::null_mut() };
+            if (self.get_class_hint)(self.display, w, &mut hint) == 0 {
+                return false;
+            }
+            let ours = !hint.res_class.is_null() && CStr::from_ptr(hint.res_class).to_bytes() == WM_CLASS.as_bytes();
+            for p in [hint.res_name, hint.res_class] {
+                if !p.is_null() {
+                    (self.free)(p as *mut c_void);
+                }
+            }
+            ours
+        }
+
+        /// Our top-level window: the focused window or one of its ancestors
+        /// with our WM_CLASS.
+        unsafe fn find_window(&mut self) -> Option<Window> {
+            if self.window.is_some() {
+                return self.window;
+            }
+            let (mut w, mut revert) = (0, 0);
+            (self.get_input_focus)(self.display, &mut w, &mut revert);
+            for _ in 0..16 {
+                if w <= 1 {
+                    return None; // None / PointerRoot
+                }
+                if self.has_our_class(w) {
+                    self.window = Some(w);
+                    return self.window;
+                }
+                let (mut root, mut parent, mut children, mut n) = (0, 0, std::ptr::null_mut(), 0);
+                if (self.query_tree)(self.display, w, &mut root, &mut parent, &mut children, &mut n) == 0 {
+                    return None;
+                }
+                if !children.is_null() {
+                    (self.free)(children as *mut c_void);
+                }
+                if parent == 0 || parent == root {
+                    return None;
+                }
+                w = parent;
+            }
+            None
+        }
+
+        unsafe fn atom(&self, name: &CStr) -> Atom {
+            (self.intern_atom)(self.display, name.as_ptr(), 0)
+        }
+    }
+
+    pub fn set_title(title: &str) -> bool {
+        X.with(|x| {
+            let mut x = x.borrow_mut();
+            let Some(x) = x.as_mut() else { return false };
+            unsafe {
+                let Some(w) = x.find_window() else { return false };
+                let Ok(c_title) = CString::new(title) else { return false };
+                (x.store_name)(x.display, w, c_title.as_ptr());
+                let (net_wm_name, utf8) = (x.atom(c"_NET_WM_NAME"), x.atom(c"UTF8_STRING"));
+                (x.change_property)(x.display, w, net_wm_name, utf8, 8, 0, title.as_ptr(), title.len() as c_int);
+                (x.flush)(x.display);
+            }
+            true
+        })
+    }
+
+    /// False in fullscreen (_NET_WM_STATE_FULLSCREEN), where there is no
+    /// title bar.
+    pub fn title_visible() -> bool {
+        X.with(|x| {
+            let mut x = x.borrow_mut();
+            let Some(x) = x.as_mut() else { return false };
+            unsafe {
+                let Some(w) = x.find_window() else { return false };
+                let (state, fullscreen) = (x.atom(c"_NET_WM_STATE"), x.atom(c"_NET_WM_STATE_FULLSCREEN"));
+                let (mut ty, mut format, mut n, mut after, mut data) = (0, 0, 0, 0, std::ptr::null_mut());
+                const XA_ATOM: Atom = 4;
+                if (x.get_window_property)(x.display, w, state, 0, 64, 0, XA_ATOM, &mut ty, &mut format, &mut n, &mut after, &mut data) != 0 {
+                    return true;
+                }
+                let mut is_fullscreen = false;
+                if !data.is_null() {
+                    let atoms = std::slice::from_raw_parts(data as *const Atom, n as usize);
+                    is_fullscreen = atoms.contains(&fullscreen);
+                    (x.free)(data as *mut c_void);
+                }
+                !is_fullscreen
+            }
+        })
+    }
+
+    pub fn message_box(_caption: &str, _text: &str) -> bool {
+        false
+    }
+}
+
+/// Other platforms: no native title or message box.
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 mod imp {
     pub fn set_title(_title: &str) -> bool {
         false
