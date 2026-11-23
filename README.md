@@ -86,6 +86,9 @@ cargo run            # play (window opens)
 cargo build --release
 ```
 
+`rust-toolchain.toml` pins the Rust release (with Clippy, rustfmt and the
+wasm32 target); rustup installs it on the first `cargo` command.
+
 Windows build from macOS (`brew install mingw-w64`,
 `rustup target add x86_64-pc-windows-gnu`):
 
@@ -114,7 +117,7 @@ Play at **<https://nivaldomcj.github.io/skifree/>**: the page asks for your
 `ski32.exe` or `ski32.zip` (see below). It is the same code as the native
 game, compiled to WebAssembly through macroquad's web backend.
 
-To build it yourself, `rustup target add wasm32-unknown-unknown`, then:
+To build it yourself:
 
 ```bash
 tools/build_web.sh --public --serve   # dist/web/, no game data
@@ -143,6 +146,8 @@ and F3 need fn.
 cargo test           # unit + golden-replay regression tests
 tools/test_wasi.sh   # the replay tests compiled to WebAssembly (wasmtime)
 tools/web/compare_frames.sh  # web frames vs native frames, pixel for pixel
+cargo fmt --check
+cargo clippy --all-targets --all-features -- -D warnings
 ```
 
 The `state_table` tests byte-compare against `originals/ski32.exe`, and the
@@ -150,6 +155,14 @@ The `state_table` tests byte-compare against `originals/ski32.exe`, and the
 output. Both **skip gracefully** if your copies aren't present; everything
 else runs without them. `compare_frames.sh` needs a private web build, Node
 22+ and Chrome.
+
+CI (`.github/workflows/ci.yml`) runs rustfmt, Clippy on Linux, macOS,
+Windows and wasm32, and the tests that need no game files. It has none, so
+it sets `SKIFREE_NO_ASSETS=1`, which lets `build.rs` skip its asset check
+(the binary that builds then can't run the game). The replay tests need
+`assets/meta.json`: run `cargo test` before merging. The lint policy is in
+`Cargo.toml` (`[lints]`); a deliberate exception in the code takes
+`#[expect(lint, reason = "...")]`.
 
 ## Documentation
 
