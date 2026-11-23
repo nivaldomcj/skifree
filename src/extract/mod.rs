@@ -75,13 +75,23 @@ impl ExeAssets {
     }
 }
 
+/// Most decoded sprite bytes kept from one exe: the game's 89 sprites take
+/// 360 KB as RGBA, and sprite ids can all point at one huge bitmap.
+const MAX_SPRITE_BYTES: usize = 16 * 1024 * 1024;
+
 fn read_exe(data: &[u8]) -> bytes::Result<ExeAssets> {
     let mut found = ExeAssets { sprites: vec![None; SPRITE_COUNT + 1], icon: None, sounds: None };
     let mut wavs: Vec<Option<Vec<u8>>> = vec![None; SOUND_COUNT];
+    let mut sprite_bytes = 0usize;
     for r in pe::resources(data)? {
         match (&r.rtype, &r.name) {
             (Name::Id(RT_BITMAP), Name::Id(id)) if (1..=SPRITE_COUNT).contains(&(*id as usize)) => {
-                found.sprites[*id as usize] = Some(dib::decode_sprite(r.data)?);
+                let sprite = dib::decode_sprite(r.data)?;
+                sprite_bytes += sprite.data.len();
+                if sprite_bytes > MAX_SPRITE_BYTES {
+                    return Err("its pictures are far too large".to_owned());
+                }
+                found.sprites[*id as usize] = Some(sprite);
             }
             (Name::Id(RT_ICON), Name::Id(ICON_ID)) => found.icon = Some(dib::decode_icon(r.data)?),
             // FUN_004052d0 loads WAVE resources 1-9 (ski32sounds.exe has
@@ -116,10 +126,15 @@ pub fn from_files(files: &[(String, Vec<u8>)]) -> Result<AssetSet, String> {
         return Err("No files given.".to_owned());
     }
     let mut inputs: Vec<(String, std::borrow::Cow<[u8]>)> = Vec::new();
+    // A zip that can't be read is one more problem, not the end: the other
+    // files may still hold the game.
+    let mut problems = Vec::new();
     for (name, data) in files {
         if zip::is_zip(data) {
-            let members = zip::members(data).map_err(|e| format!("{name}: {e}."))?;
-            inputs.extend(members.into_iter().map(|(n, d)| (format!("{name}/{n}"), d.into())));
+            match zip::members(data) {
+                Ok(members) => inputs.extend(members.into_iter().map(|(n, d)| (format!("{name}/{n}"), d.into()))),
+                Err(e) => problems.push(format!("{name}: {e}.")),
+            }
         } else {
             inputs.push((name.clone(), data.as_slice().into()));
         }
@@ -127,7 +142,6 @@ pub fn from_files(files: &[(String, Vec<u8>)]) -> Result<AssetSet, String> {
 
     let mut exes: Vec<(String, ExeAssets)> = Vec::new();
     let mut font = None;
-    let mut problems = Vec::new();
     for (name, data) in &inputs {
         match pe::kind(data) {
             Kind::Pe => match read_exe(data) {
@@ -151,8 +165,13 @@ pub fn from_files(files: &[(String, Vec<u8>)]) -> Result<AssetSet, String> {
     // Sprites from ski32.exe when given (what tools/extract_assets.py
     // prefers), else from any exe that has all 89.
     let is_ski32 = |n: &str| n.rsplit('/').next().is_some_and(|b| b.eq_ignore_ascii_case("ski32.exe"));
-    let main =
-        exes.iter().filter(|(_, e)| e.has_all_sprites()).min_by_key(|(n, _)| !is_ski32(n)).map(|(n, _)| n.clone());
+    // By position, not name: two inputs can share a name.
+    let main = exes
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, e))| e.has_all_sprites())
+        .min_by_key(|(_, (n, _))| !is_ski32(n))
+        .map(|(i, _)| i);
     let Some(main) = main else {
         if let Some((n, _)) = exes.first() {
             problems.insert(0, format!("{n} is not SkiFree's ski32.exe (its pictures are missing)."));
@@ -166,11 +185,11 @@ pub fn from_files(files: &[(String, Vec<u8>)]) -> Result<AssetSet, String> {
 
     let mut set = AssetSet::new();
     let mut sounds = None;
-    for (name, found) in exes {
+    for (i, (_, found)) in exes.into_iter().enumerate() {
         if sounds.is_none() {
             sounds.clone_from(&found.sounds);
         }
-        if name == main {
+        if i == main {
             set.sprites = found.sprites;
             set.icon = found.icon;
         }

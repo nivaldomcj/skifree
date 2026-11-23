@@ -64,12 +64,15 @@
             if (tag(o) === "data") data = bytes.subarray(body, Math.min(body + len, bytes.length));
             o = body + len + (len & 1);
         }
-        if (fmt === null || data === null || dv.getUint16(fmt, true) !== 1) return null;
+        // A malformed WAV (the sounds come from the player's own exe) gives
+        // null, never an exception: one would trap the wasm caller.
+        if (fmt === null || data === null || fmt + 16 > bytes.length || dv.getUint16(fmt, true) !== 1) return null;
         const channels = dv.getUint16(fmt + 2, true);
         const rate = dv.getUint32(fmt + 4, true);
         const bits = dv.getUint16(fmt + 14, true);
-        if (bits !== 8 && bits !== 16) return null;
+        if ((bits !== 8 && bits !== 16) || channels < 1 || channels > 2 || rate < 3000 || rate > 192000) return null;
         const frames = Math.floor(data.length / (channels * bits / 8));
+        if (frames === 0) return null;
         const samples = [];
         for (let c = 0; c < channels; c++) samples.push(new Float32Array(frames));
         const ddv = new DataView(data.buffer, data.byteOffset, data.byteLength);
@@ -106,18 +109,23 @@
         stopSound();
         const w = wavs[index];
         if (!w || audio === null || audio.state !== "running") return;
-        if (w.buffer === null) {
-            w.buffer = audio.createBuffer(w.samples.length, w.frames, w.rate);
-            w.samples.forEach((s, c) => w.buffer.copyToChannel(s, c));
+        // Runs inside a game tick: a Web Audio error must not reach the wasm.
+        try {
+            if (w.buffer === null) {
+                w.buffer = audio.createBuffer(w.samples.length, w.frames, w.rate);
+                w.samples.forEach((s, c) => w.buffer.copyToChannel(s, c));
+            }
+            const src = audio.createBufferSource();
+            src.buffer = w.buffer;
+            src.connect(audio.destination);
+            src.onended = () => {
+                if (current === src) current = null;
+            };
+            src.start();
+            current = src;
+        } catch (e) {
+            console.warn("SkiFree: sound " + (index + 1) + " can't play:", e);
         }
-        const src = audio.createBufferSource();
-        src.buffer = w.buffer;
-        src.connect(audio.destination);
-        src.onended = () => {
-            if (current === src) current = null;
-        };
-        src.start();
-        current = src;
     }
 
     // ------------------------------------------------------------ files
@@ -130,6 +138,8 @@
     // change them, open the page with ?forget and drop them again.
 
     const MAX_FILE = 16 * 1024 * 1024;
+    const MAX_FILES = 8;
+    const MAX_TOTAL = 64 * 1024 * 1024;
     let offered = null; // { files: [{name, bytes}], cached: bool }
 
     function idb() {
@@ -175,6 +185,13 @@
     }
 
     async function readFiles(fileList) {
+        // Each file is read whole into memory: bound how many and how much.
+        let total = 0;
+        for (const f of fileList) total += f.size;
+        if (fileList.length > MAX_FILES || total > MAX_TOTAL) {
+            showDrop("That's more than SkiFree needs: drop just ski32.exe (or ski32.zip), and optionally ski32sounds.zip and vgaoem.fon.");
+            return null;
+        }
         const files = [];
         for (const f of fileList) {
             if (f.size > MAX_FILE) {

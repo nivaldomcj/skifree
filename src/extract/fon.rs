@@ -53,8 +53,10 @@ fn strip(fnt: &[u8], want_height: usize) -> Result<Option<Rgba>> {
         let off = if entry == 6 { u32_at(fnt, e + 2)? as usize } else { u16_at(fnt, e + 2)? as usize };
         Ok((width, off))
     };
+    // The status display draws 8-pixel cells (renderer.rs); any other
+    // width is not the Terminal font, and a huge one would allocate first.
     let cell = glyph(0x20)?.0;
-    if cell == 0 {
+    if cell != 8 {
         return Ok(None);
     }
     let codes = 0x20..0x7F;
