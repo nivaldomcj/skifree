@@ -120,6 +120,7 @@ mod imp {
     extern "system" {
         fn EnumThreadWindows(thread: u32, cb: extern "system" fn(Hwnd, isize) -> i32, param: isize) -> i32;
         fn GetParent(hwnd: Hwnd) -> Hwnd;
+        fn GetClassNameW(hwnd: Hwnd, name: *mut u16, len: i32) -> i32;
         fn SetWindowTextW(hwnd: Hwnd, text: *const u16) -> i32;
         fn GetWindowLongW(hwnd: Hwnd, index: i32) -> i32;
         fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, kind: u32) -> i32;
@@ -129,11 +130,21 @@ mod imp {
         fn GetCurrentThreadId() -> u32;
     }
 
-    /// `EnumThreadWindows` callback: stores the first top-level window in
-    /// `*out` (the `Hwnd` `hwnd()` passes) and stops.
-    extern "system" fn first_top_level(hwnd: Hwnd, out: isize) -> i32 {
-        // SAFETY: `hwnd` comes from EnumThreadWindows.
-        if unsafe { GetParent(hwnd) }.is_null() {
+    /// miniquad's game window class. The same thread also owns miniquad's
+    /// hidden top-level helper window (class `MINIQUADMSGWND`), so the first
+    /// top-level window is not necessarily the game's.
+    const GAME_CLASS: &str = "MINIQUADAPP";
+
+    /// `EnumThreadWindows` callback: stores the top-level window of class
+    /// `GAME_CLASS` in `*out` (the `Hwnd` `hwnd()` passes) and stops.
+    extern "system" fn game_window(hwnd: Hwnd, out: isize) -> i32 {
+        let mut class = [0u16; 32];
+        // SAFETY: `hwnd` comes from EnumThreadWindows, and GetClassNameW
+        // writes at most `class.len()` units, NUL included.
+        let len = unsafe { GetClassNameW(hwnd, class.as_mut_ptr(), class.len() as i32) };
+        let ours = String::from_utf16_lossy(&class[..len.max(0) as usize]) == GAME_CLASS;
+        // SAFETY: as above.
+        if ours && unsafe { GetParent(hwnd) }.is_null() {
             // SAFETY: `out` is the address of `hwnd()`'s local, which
             // outlives the synchronous EnumThreadWindows call.
             unsafe { *(out as *mut Hwnd) = hwnd };
@@ -142,13 +153,13 @@ mod imp {
         1
     }
 
-    /// The game's window: the top-level window of this (the main) thread.
+    /// The game's window: this (the main) thread's top-level game window.
     fn hwnd() -> Option<Hwnd> {
         let mut hwnd: Hwnd = std::ptr::null_mut();
         // SAFETY: the callback writes only through the pointer to `hwnd`,
         // and only during this call.
         unsafe {
-            EnumThreadWindows(GetCurrentThreadId(), first_top_level, &raw mut hwnd as isize);
+            EnumThreadWindows(GetCurrentThreadId(), game_window, &raw mut hwnd as isize);
         }
         (!hwnd.is_null()).then_some(hwnd)
     }
@@ -417,10 +428,15 @@ mod imp {
                     return true;
                 }
                 let mut is_fullscreen = false;
-                if !data.is_null() {
+                // Only an ATOM list in format 32 holds `n` longs: another
+                // client can set the property with format 8 or 16, which
+                // Xlib returns as `n` bytes or shorts.
+                if !data.is_null() && ty == XA_ATOM && format == 32 {
                     #[expect(clippy::cast_ptr_alignment, reason = "Xlib's buffer is malloc'd, aligned for long")]
                     let atoms = std::slice::from_raw_parts(data as *const Atom, n as usize);
                     is_fullscreen = atoms.contains(&fullscreen);
+                }
+                if !data.is_null() {
                     (x.free)(data.cast::<c_void>());
                 }
                 !is_fullscreen
