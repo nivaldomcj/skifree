@@ -168,7 +168,7 @@ async fn main() {
         if let Some((_, (bx, by, bw, bh))) = &dialog_in_window {
             // The drawn box is modal: only OK (Enter, Space, Esc, or a click
             // on the button) closes it; everything else is dropped.
-            let (mx, my) = mouse_position();
+            let (mx, my) = platform::input::client_mouse_position();
             let clicked = is_mouse_button_pressed(MouseButton::Left)
                 && mx >= *bx && mx < bx + bw && my >= *by && my < by + bh;
             let keyed = [KeyCode::Enter, KeyCode::KpEnter, KeyCode::Space, KeyCode::Escape]

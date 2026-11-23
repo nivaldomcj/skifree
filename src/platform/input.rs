@@ -146,7 +146,7 @@ impl Input {
         }
 
         // Mouse steering
-        let (mx, my) = mouse_position();
+        let (mx, my) = client_mouse_position();
         if (mx, my) != self.prev_mouse_pos {
             actions.push(GameAction::MouseSteer(mx, my));
             self.prev_mouse_pos = (mx, my);
@@ -160,3 +160,23 @@ impl Input {
         actions
     }
 }
+
+/// The mouse position in client pixels, as WM_MOUSEMOVE reports it
+/// (whole pixels, origin at the top-left).
+///
+/// miniquad's macOS backend converts Cocoa's bottom-up position with
+/// `height - y*scale - 1` in backing pixels, so after macroquad's division
+/// by the scale the pointer reads one backing pixel too high — measured
+/// with synthetic NSEvents: a pointer at client y 100.1 read 99.1, i.e. row
+/// 99. Undo that there; the Windows and X11/Wayland backends pass client
+/// coordinates through unchanged. Cocoa positions are fractional: floor.
+pub fn client_mouse_position() -> (f32, f32) {
+    let (x, y) = mouse_position();
+    let y = if cfg!(target_os = "macos") {
+        y + 1.0 / macroquad::miniquad::window::dpi_scale()
+    } else {
+        y
+    };
+    (x.floor(), y.floor())
+}
+

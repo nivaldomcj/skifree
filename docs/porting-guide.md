@@ -115,6 +115,31 @@ may be gone after a reboot. To regenerate: configure Ghidra 12.x
 - **Diagonal keys** map through the cardinal transitions rather than setting
   states entirely independently (Home/End/PgUp/PgDn now map to states 3/1/6/4).
 
+## Feel on real displays and input devices
+
+Checked on macOS (Retina, 2560×1080 points) beyond the VM comparisons:
+
+- **Pacing:** 21.3 ticks/s, the original's timer as Windows delivers it
+  (`platform::timer`, `docs/vm-ground-truth.md` item 24). On a 60 Hz
+  display a tick lands on every 3rd or 2nd frame, which the original on a
+  60 Hz monitor shows the same way (GDI paints at the tick, the screen
+  shows it at the next refresh).
+- **Sharp pixels:** `high_dpi` is off, so the game renders at 1× client
+  pixels and macOS scales the window 2× on Retina. The captured window is
+  nearest-neighbour (99.97 % of 2×2 blocks uniform, only the 16 sprite
+  colours): no blur.
+- **Mouse coordinates:** miniquad's macOS backend reads the pointer one
+  backing pixel too high (`height − y·scale − 1`): with synthetic NSEvents
+  at known positions the port saw row 99 for a pointer in row 100, which
+  shifts mouse steering's direction thresholds. `client_mouse_position()`
+  undoes it on macOS and floors Cocoa's fractional positions; verified
+  exact at 8 positions (both halves of a pixel row, top row included).
+  Windows and X11/Wayland pass client coordinates through unchanged.
+- **Key repeat:** the original steers one step per `WM_KEYDOWN`, auto-
+  repeats included, so holding an arrow depends on the OS repeat delay and
+  rate; the port does the same with the OS's repeats. Windows' defaults are
+  ~500 ms delay and ~33 ms rate; macOS uses its own keyboard settings.
+
 ## Copyrighted files (not in this repo)
 
 `SKI.EXE`, `ski.zip`, `ski32.exe`, `ski32.zip` and everything extracted from
