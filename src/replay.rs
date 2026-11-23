@@ -119,6 +119,11 @@ pub struct TickRecord {
     /// tools/vm/trace_status.js by status_align.py.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<[String; 4]>,
+    /// Sounds played during this tick (WAVE resource ids, in call order;
+    /// FUN_00402ba0); compared with tools/vm/trace_sounds.js by
+    /// sound_align.py.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sounds: Vec<u8>,
     /// FNV-1a hash of every record up to and including this one.
     pub hash: u64,
 }
@@ -136,6 +141,8 @@ impl TickRecord {
             rng_calls: u64,
             #[serde(skip_serializing_if = "Option::is_none")]
             status: &'a Option<[String; 4]>,
+            #[serde(skip_serializing_if = "<[u8]>::is_empty")]
+            sounds: &'a [u8],
         }
         serde_json::to_string(&Payload {
             tick: self.tick,
@@ -146,6 +153,7 @@ impl TickRecord {
             course_ms: self.course_ms,
             rng_calls: self.rng_calls,
             status: &self.status,
+            sounds: &self.sounds,
         })
         .expect("tick record payload is always serializable")
     }
@@ -251,6 +259,7 @@ pub fn run_scenario_observed(
             // Repaints since the last record: during this tick, or between
             // ticks before it (the first paint, a resize).
             status: std::mem::take(&mut game.status_painted).then(|| game.status_values.clone()),
+            sounds: std::mem::take(&mut game.sounds).into_iter().map(|s| s.id()).collect(),
             hash: 0,
         };
         hash = fnv1a_update(hash, record.payload_json().as_bytes());

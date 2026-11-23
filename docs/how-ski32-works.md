@@ -17,7 +17,7 @@ Reverse-engineered with [REA](https://github.com/morluto/rea) 6.10.1 + Ghidra 12
 
 - Single-instance check via `FindWindowA("SkiMain")` — a second launch just brings the existing window to front
 - Registers two window classes: `SkiMain` (game window, min size forced to 320×300 via `WM_GETMINMAXINFO`) and `SkiStatus` (child status bar: Time / Dist / Speed / Style)
-- Loads 9 sound resources with `FindResourceA`/`LoadResource`/`LockResource`, only if `sndPlaySoundA` resolves (`FUN_00405620`)
+- Loads 9 sound resources with `FindResourceA`/`LoadResource`/`LockResource`, only if `sndPlaySoundA` resolves (`FUN_00405620`); see "Sound" below
 
 ### Game loop — message loop + timer, no threads
 
@@ -56,6 +56,46 @@ Cheat keys (`WM_CHAR` handler):
 - Pure GDI. **89 bitmap resources** (skier poses, trees, rocks, jumps, lift poles, dogs, snowboarders, yeti frames) + 6 icons
 - Repaints only dirty rectangles: overlapping sprites are merged into a group, composed back to front (by world y) in a scratch `CreateCompatibleDC` buffer, then `BitBlt` to the window (`FUN_00401060` → `FUN_00401540`; full repaint on `WM_PAINT` → `FUN_004060b0`). Sprites are bottom-centre anchored. See `docs/vm-ground-truth.md` items 20–21
 - Status display text via `TextOutA` in the OEM fixed font ("Terminal") with format strings from the string table (`Time:`, `Dist:`, `Speed:`, `Style:`, ids 3–14), in a black frame at the top-right
+
+### Sound
+
+The 32-bit build has a complete sound system. Only the sounds themselves are
+missing: the shipped `ski32.exe` has no WAVE resources, so `FindResourceA`
+fails and the game has always been silent.
+
+- **Loading:** `FUN_004052d0` loads WAVE resources 1–9 into nine 8-byte
+  slots (`FUN_00405640`: handle, locked pointer). Ids 10 and 11 exist in
+  some builds but are never loaded.
+- **Playing:** `FUN_00402ba0(ecx = slot)` calls `sndPlaySoundA(data, 5)`,
+  where 5 = `SND_ASYNC | SND_MEMORY`. Only one sound plays at a time; a new
+  one cuts off whatever is playing.
+- **Missing resources:** the null check comes *inside* `FUN_00402ba0`, so the
+  routine is called at every event even when the resources are absent.
+  `tools/vm/trace_sounds.js` logs these calls on the shipped EXE.
+- **Muting:** the command line `nosound` (the whole command line, compared
+  with `lstrcmpiA` in `FUN_004047e0`) sets `DAT_0040c794`, which mutes
+  everything. On exit, `FUN_004056a0` calls `sndPlaySoundA(NULL, 0)` and
+  frees the resources.
+
+| Id | Slot | When it plays | Call site |
+|---|---|---|---|
+| 1 | `0x40c6c0` | A hit that costs 32 style; a crash landing (−64) | `0x403e48`, `0x402aeb` |
+| 2 | `0x40c768` | The ramp, the automatic hop over a large rock, an airborne bounce off a rock or a large rock | `0x403ccb`, `0x403be8` |
+| 3 | `0x40c5d0` | A snowboarder knocked down by anything moving | `0x403fa8` |
+| 4 | `0x40c718` | A clean landing (landing table result is not `0x11`) | `0x402aeb` |
+| 5 | `0x40c750` | A crossing skier (class 3) launched by a bump or a ramp | `0x403ef3` |
+| 6 | `0x40c628` | A dog knocked over, by anything | `0x403f5f` |
+| 7 | `0x40c6e0` | The monster catches the player | `0x403b1e` |
+| 8 | `0x40c608` | A snowboarder jumps | `0x40371a` |
+| 9 | `0x40c6f0` | The monster chases the player (each chase step) | `0x4045d3` |
+
+The chase sound plays on every chase step. Each step makes the monster hop
+(`vz = 1`), and it skips the chase while airborne, so a chasing monster
+steps, and plays sound 9, on every third tick (`docs/monster-mob-physics.md`).
+
+**A build with sounds:** foone's `ski32sounds.exe` (2005) has the same
+code, `.rdata` and `.data` as `ski32.exe`, plus WAVE resources 1–11
+(mono, 8-bit, 11025 Hz; ids 4, 10 and 11 at 22050 Hz).
 
 ### Persistence
 

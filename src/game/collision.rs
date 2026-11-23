@@ -1,3 +1,4 @@
+use super::sound::Sound;
 use super::types::*;
 
 /// AABB intersection test (FUN_00401290)
@@ -119,6 +120,7 @@ pub fn handle_collision(
                 } else if crossed(skier.y, skier.prev_y.unwrap_or(skier.y), other.y, other.prev_y.unwrap_or(other.y)) {
                     skier.vz = skier.vy / 2;
                     result.score_delta += 1;
+                    result.sound = Some(Sound::Launch);
                 }
             }
             ActorClass::RockLarge => {
@@ -127,12 +129,14 @@ pub fn handle_collision(
                     skier.vz = 4;
                     result.score_delta += 1;
                     result.skier_state = Some(0x0d);
+                    result.sound = Some(Sound::Launch);
                 } else if skier.z < other.z + other_dims.1 {
                     // FUN_00403a00 case 0xf: airborne but still below the
                     // rock's top (z + sprite height) — bounce off it. Above
                     // the top the skier clears it untouched.
                     skier.vz = skier.vy / 2;
                     result.score_delta += 1;
+                    result.sound = Some(Sound::Launch);
                 }
             }
             ActorClass::Banner => {
@@ -145,6 +149,7 @@ pub fn handle_collision(
                     skier.vz = skier.vy;
                     result.score_delta += 1;
                     result.skier_state = Some(0x0d);
+                    result.sound = Some(Sound::Launch);
                 }
             }
             ActorClass::Snowboarder | ActorClass::Gate | ActorClass::Effect => {
@@ -181,6 +186,8 @@ pub struct CollisionResult {
     pub skier_eaten: bool,
     pub eaten_by: Option<usize>,
     pub free_actor: Option<usize>,
+    /// The sound this handler call played (FUN_00402ba0; at most one).
+    pub sound: Option<Sound>,
 }
 
 /// FUN_00403a00's shared solid-obstacle path (skier first; inner cases
@@ -235,6 +242,7 @@ fn solid_hit(
         other.sprite_id = 0x56;
     } else {
         result.score_delta += -0x20;
+        result.sound = Some(Sound::Crash);
     }
 }
 
@@ -254,6 +262,7 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
                 if b.class == ActorClass::Skier {
                     result.score_delta += 20;
                 }
+                result.sound = Some(Sound::Dog);
                 super::physics::change_state(a, if b.z > 0 { 0x1a } else { 0x19 });
             }
         }
@@ -273,6 +282,7 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
                 if b.class == ActorClass::Skier {
                     result.score_delta += 3;
                 }
+                result.sound = Some(Sound::SnowboarderHit);
                 super::physics::change_state(a, 0x1d);
             }
         }
@@ -293,6 +303,7 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
                 // Bump/ramp: launched at half its speed (state 0x21).
                 if a.z < top {
                     a.vz = a.vy / 2;
+                    result.sound = Some(Sound::SkierLaunch);
                     super::physics::change_state(a, 0x21);
                 }
             }
@@ -304,6 +315,7 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
             if b.class == ActorClass::Skier {
                 result.skier_eaten = true;
                 result.eaten_by = Some(a_idx);
+                result.sound = Some(Sound::Eaten);
             }
         }
         // Case 10, lift chair: stops (vx = 0, state 0x3c).
@@ -401,7 +413,8 @@ pub fn check_all_collisions(
                     }
                 }
                 if result.score_delta != 0 || result.skier_crash || result.skier_eaten
-                    || result.skier_state.is_some() || result.free_actor.is_some() {
+                    || result.skier_state.is_some() || result.free_actor.is_some()
+                    || result.sound.is_some() {
                     results.push(result);
                 }
             }

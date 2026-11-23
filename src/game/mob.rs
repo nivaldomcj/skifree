@@ -1,5 +1,6 @@
 use super::physics;
 use super::rng::Rng;
+use super::sound::Sound;
 use super::state_table::*;
 use super::types::*;
 
@@ -31,10 +32,13 @@ pub fn update_dog(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
 ///
 /// State 0x1e can trigger the jump: a class-0x11 effect actor (sprite 0x52)
 /// is spawned at (x-4, y-2, z) from the pre-integration position, and the
-/// snowboarder continues in state 0x1b. (The original also fires a sound via
-/// FUN_00402ba0, but the WAVE resource is absent from the shipped binary, so
-/// faithful behavior is silence.)
-pub fn update_snowboarder(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) -> Option<SpawnRequest> {
+/// snowboarder continues in state 0x1b, with the jump sound (FUN_00402ba0).
+pub fn update_snowboarder(
+    actor: &mut Actor,
+    rng: &mut Rng,
+    fast_forward: bool,
+    sounds: &mut Vec<Sound>,
+) -> Option<SpawnRequest> {
     match actor.state {
         0x1b => {
             actor.vy = (rng.rand_range(3) as i16).wrapping_sub(1);
@@ -68,6 +72,7 @@ pub fn update_snowboarder(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) 
                 y: actor.y.wrapping_sub(2),
                 z: actor.z,
             };
+            sounds.push(Sound::SnowboarderJump);
             physics::integrate(actor, fast_forward);
             physics::change_state(actor, 0x1b);
             return Some(req);
@@ -322,7 +327,7 @@ mod tests {
         let seed = seed_with_first_roll_zero(100);
         let mut rng = Rng::new(seed);
         let mut a = snowboarder(200, 300, 6, 0x1e);
-        let req = update_snowboarder(&mut a, &mut rng, false).expect("jump effect");
+        let req = update_snowboarder(&mut a, &mut rng, false, &mut Vec::new()).expect("jump effect");
         assert_eq!(req.class, ActorClass::Effect);
         assert_eq!(req.sprite, Some(0x52));
         assert_eq!(req.state, None);
@@ -337,7 +342,7 @@ mod tests {
         // Seed 1: first rand_range(100) is 41 != 0.
         let mut rng = Rng::new(1);
         let mut a = snowboarder(200, 300, 0, 0x1e);
-        assert_eq!(update_snowboarder(&mut a, &mut rng, false), None);
+        assert_eq!(update_snowboarder(&mut a, &mut rng, false, &mut Vec::new()), None);
         assert_eq!(a.state, 0x1d);
     }
 }

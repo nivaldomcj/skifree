@@ -26,6 +26,8 @@ pub mod scoring;
 #[allow(dead_code)]
 pub mod skier;
 #[allow(dead_code)]
+pub mod sound;
+#[allow(dead_code)]
 pub mod state;
 #[allow(dead_code)]
 pub mod state_table;

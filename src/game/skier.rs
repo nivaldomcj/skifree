@@ -1,4 +1,5 @@
 use super::physics;
+use super::sound::Sound;
 use super::state_table::*;
 use super::types::*;
 
@@ -7,7 +8,8 @@ use super::types::*;
 ///
 /// Returns the style points earned this tick (the caller adds them through
 /// `Scoring::add`, which only counts inside freestyle, like FUN_00403420).
-pub fn update_skier(actor: &mut Actor, fast_forward: bool) -> i32 {
+/// A landing pushes its sound to `sounds`.
+pub fn update_skier(actor: &mut Actor, fast_forward: bool, sounds: &mut Vec<Sound>) -> i32 {
     let state = actor.state;
 
     if state == 0x0b {
@@ -55,6 +57,9 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool) -> i32 {
                 let landing = CRASH_LANDING[(state - 0x0d) as usize];
                 if landing == 0x11 {
                     points -= 64; // botched landing (0x402ad5)
+                    sounds.push(Sound::Crash);
+                } else {
+                    sounds.push(Sound::Land);
                 }
                 physics::change_state(actor, landing);
             }
@@ -207,11 +212,11 @@ mod tests {
     #[test]
     fn crashed_skier_decelerates_in_place_then_sits() {
         let mut a = Actor { active: true, state: 0x0b, x: 5, y: 100, vx: 1, vy: 2, ..Default::default() };
-        update_skier(&mut a, false);
+        update_skier(&mut a, false, &mut Vec::new());
         assert_eq!((a.x, a.y, a.vx, a.vy, a.state), (5, 100, 0, 1, 0x0b));
-        update_skier(&mut a, false);
+        update_skier(&mut a, false, &mut Vec::new());
         assert_eq!((a.x, a.y, a.vx, a.vy, a.state), (5, 100, 0, 0, 0x0b));
-        update_skier(&mut a, false);
+        update_skier(&mut a, false, &mut Vec::new());
         assert_eq!((a.y, a.state), (100, 0x0c));
     }
 }

@@ -184,3 +184,12 @@ fn verified_focus_matches() {
 fn verified_resize_matches() {
     check("compare_resize");
 }
+
+/// Sound coverage: a snowboarder jumps (sound 8) and is knocked down (3) in
+/// the same tick, plus take-off, landing and crashes. Every sound call
+/// matches the original (tools/vm/trace_sounds.js); the other scenarios
+/// cover the rest of the nine sounds.
+#[test]
+fn verified_sounds_matches() {
+    check("compare_sounds");
+}

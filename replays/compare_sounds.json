@@ -1,0 +1,25 @@
+{
+  "seed": 0,
+  "course": "freestyle",
+  "ticks": 450,
+  "delta_ms": 40,
+  "screen_w": 704,
+  "screen_h": 681,
+  "inputs": [
+    { "tick": 0, "type": "steer", "down": true },
+    { "tick": 30, "type": "steer", "down": true },
+    { "tick": 60, "type": "steer", "down": true },
+    { "tick": 90, "type": "steer", "right": true },
+    { "tick": 120, "type": "steer", "down": true },
+    { "tick": 150, "type": "steer", "down": true },
+    { "tick": 180, "type": "steer", "right": true },
+    { "tick": 210, "type": "steer", "left": true },
+    { "tick": 240, "type": "steer", "left": true },
+    { "tick": 270, "type": "steer", "left": true },
+    { "tick": 300, "type": "steer", "left": true },
+    { "tick": 330, "type": "steer", "down": true },
+    { "tick": 360, "type": "steer", "right": true },
+    { "tick": 390, "type": "steer", "left": true },
+    { "tick": 420, "type": "steer", "left": true }
+  ]
+}

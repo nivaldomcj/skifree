@@ -10,6 +10,7 @@ use super::physics;
 use super::populator;
 use super::rng::Rng;
 use super::scoring::Scoring;
+use super::sound::Sound;
 use super::skier;
 use super::types::*;
 
@@ -84,6 +85,11 @@ pub struct GameState {
     pub mouse_last: Option<(i16, i16)>,
     /// Main-tick counter (port tick N = the original's FUN_00401e50 call N).
     pub tick_count: u32,
+    /// Sounds played since the platform layer (or the replay runner) last
+    /// took them, in the original's call order (FUN_00402ba0). Each one
+    /// cuts off the one before, so of one tick's sounds only the last is
+    /// heard.
+    pub sounds: Vec<Sound>,
 }
 
 impl GameState {
@@ -130,6 +136,7 @@ impl GameState {
             log_updates: std::env::var_os("SKIFREE_LOG_UPDATES").is_some(),
             mouse_last: None,
             tick_count: 0,
+            sounds: Vec::new(),
         }
     }
 
@@ -340,7 +347,7 @@ impl GameState {
             match class {
                 ActorClass::Skier => {
                     if let Some(actor) = self.pool.get_mut(idx) {
-                        let points = skier::update_skier(actor, self.fast_forward);
+                        let points = skier::update_skier(actor, self.fast_forward, &mut self.sounds);
                         if points != 0 {
                             self.scoring.add(points);
                         }
@@ -362,7 +369,7 @@ impl GameState {
                 }
                 ActorClass::Snowboarder => {
                     if let Some(actor) = self.pool.get_mut(idx) {
-                        if let Some(req) = mob::update_snowboarder(actor, &mut self.rng, self.fast_forward) {
+                        if let Some(req) = mob::update_snowboarder(actor, &mut self.rng, self.fast_forward, &mut self.sounds) {
                             spawn_requests.push(req);
                         }
                     }
@@ -442,6 +449,9 @@ impl GameState {
         );
 
         for result in results {
+            if let Some(sound) = result.sound {
+                self.sounds.push(sound);
+            }
             if result.score_delta != 0 {
                 self.scoring.add(result.score_delta);
             }
@@ -857,6 +867,7 @@ impl GameState {
                             self.wall_ms,
                             self.screen_w,
                             self.screen_h,
+                            &mut self.sounds,
                         );
                     }
                     _ => continue,

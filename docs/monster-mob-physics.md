@@ -82,6 +82,18 @@ slope ratio as earlier docs said):
 "Toggle" means `state = (current == base) ? base + 1 : base`, producing a
 two-frame walk cycle.
 
+### The step hop
+
+Whenever the monster moves (chasing or drifting back to its region), the
+shared tail (`0x4045d8`–`0x40461d`) sets **`vz = 1`**. It rescales vx or vy
+first, but both are overwritten right after, so only the hop survives. The
+monster is then airborne (z = 1) for two ticks, and an airborne monster skips
+its whole logic (step 1 above). So it only steers, rubber-bands and plays its
+chase sound (`docs/how-ski32-works.md`, "Sound") on every third tick. In
+between, it coasts at its last velocity. (Found in Frida while tracing sounds,
+2026-11-23: in `compare_monster` the chase at tick 803 is followed by z = 1 at
+ticks 804 and 805.)
+
 ### Eating (collision `FUN_00403a00` case 5–8)
 
 When a monster actor touches the player, the skier actor is freed and the
