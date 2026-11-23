@@ -10,7 +10,7 @@ The crate is split so the game logic runs headless (no window) for testing.
 
 ```
 src/
-  lib.rs            # exposes `game` + `replay` (no macroquad)
+  lib.rs            # exposes `game`, `replay` + `extract` (no macroquad)
   main.rs           # the playable game (macroquad window, input, render)
   bin/replay.rs     # CLI: run a scenario, print/check/update golden logs
   game/             # pure game logic — macroquad-free, fully deterministic
@@ -27,11 +27,16 @@ src/
     state_table.rs  # byte-verified data tables from the binary
     scoring.rs      # HUD scoring/formatting
     sound.rs        # the nine sound events (FUN_00402ba0), recorded per tick
+  extract/          # AssetSet + reading it from the player's exe/zip/fon (web)
   platform/         # macroquad-specific: window, input, renderer, audio, persistence
+    assets.rs       # loads the AssetSet (assets/, embedded, or extracted)
+    web.rs          # bindings for web/skifree.js (wasm32 only)
   replay.rs         # Scenario/InputEvent/TickRecord + run_scenario
 tests/
   replay.rs         # golden-file regression tests
+  extract.rs        # Rust extractor vs tools/extract_assets.py output
 replays/            # scenario JSON + golden/*.jsonl
+web/                # the page (index.html) and its miniquad plugin (skifree.js)
 ```
 
 `main.rs` owns the only macroquad dependency (`platform/`). Everything under
@@ -188,6 +193,61 @@ backends (default X11 through XWayland, and `SKIFREE_LINUX_BACKEND=wayland`):
 Driving the VM over VMware's VNC with `vncdotool`: Shift never reaches the
 guest (capitals arrive lowercase, `&` as `7`, `|` as `\`), so type commands
 without shifted characters (`;` instead of `&&`) or use SSH.
+
+## Web platform layer
+
+The browser build is the same crate compiled to `wasm32-unknown-unknown`;
+`game/` is untouched. `tools/build_web.sh` puts the `.wasm` next to
+`web/index.html`, `web/skifree.js` and the `gl.js` loader of the miniquad
+version in `Cargo.lock`.
+
+- **Assets.** `platform::assets` loads one in-memory `AssetSet` on every
+  platform: from `assets/` natively, embedded by build.rs in the private
+  web build (`--features embed-assets`), or, in the public build, extracted
+  in the page by `skifree::extract` from the files the player drops (cached
+  in IndexedDB as dropped, re-extracted on each visit). `tests/extract.rs`
+  checks the extractor against the Python script: same pixels, sizes and
+  WAV bytes.
+- **Game hooks.** wasm32-unknown-unknown has no file system and no
+  `SystemTime`, so the platform layer installs the sprite sizes
+  (`game::assets::install_sprite_dims`) and the clock that seeds new games
+  (`game::state::set_clock_source`). Both fall back to `meta.json` and
+  `SystemTime` for the replay tools and tests.
+- **Glue.** `web/skifree.js` is a miniquad plugin; `platform::web` holds
+  its Rust bindings. The pause notice goes in the tab title (in fullscreen
+  the game draws it, as natively without a title bar). High scores live in
+  `localStorage` under `skifree.scores`, the same JSON as
+  `~/.skifree/scores.json`. Sound goes through Web Audio, one at a time
+  with a new one cutting off the old, decoded from the WAVs' own PCM;
+  browsers allow audio only after the first key press or click. The plugin
+  also runs the drop box, sets the favicon from the player's icon 3 (16×16
+  reduced like the title-bar icon) and calls `preventDefault` for the game
+  keys gl.js leaves to the browser (Home, End, PgUp, PgDn, Insert, Enter,
+  the numpad), and for `'` and `/`, which gl.js means to block but doesn't
+  (it maps them to key codes 222 and 189 and checks 39 and 47), so
+  Firefox's Quick Find would take the keyboard.
+- **Files.** Only the drop box takes files. Over the running game a drop
+  does nothing (the cursor shows "not allowed"); `?forget` clears the saved
+  files so the box comes back.
+- **Timer, focus, size.** The 46.875 ms timer runs on `get_time()` as
+  natively. gl.js reports focus loss and hidden tabs through the same
+  events as a native window, so the game deactivates the same way. The
+  canvas fills the page at one game pixel per CSS pixel (nearest-neighbour
+  on high-DPI screens) with the 304×261 minimum client size set in CSS.
+- **Deviations:** Esc does nothing (a tab can't minimize like the
+  original, nor quit like the native port). The high-score box is the one
+  the game draws.
+- **Additions:** the file drop and its cache (`?forget` clears it), the
+  favicon, and `?nosound` for the original's `nosound` argument.
+- **Checks.** `tools/test_wasi.sh` runs the replay tests compiled to
+  `wasm32-wasip1` under wasmtime (cargo builds the game binary for WASI
+  too, which is why build.rs treats every wasm32 target as the web build).
+  `tools/web/compare_frames.sh` draws replay frames in headless Chrome
+  (`?replay=<scenario>&ticks=...`) and natively and compares them byte for
+  byte: 26 frames from 8 scenarios are identical.
+- **Browsers.** Played on macOS in Chrome, Firefox and Safari: keys (F2
+  and F3 included), sound, the drop box with `ski32.zip`, and high scores
+  that survive a reload.
 
 ## Copyrighted files (not in this repo)
 

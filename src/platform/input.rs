@@ -15,6 +15,8 @@ pub enum GameAction {
     /// Enter: restart only once the skier is gone (eaten / game over).
     RestartIfDead,
     PauseToggle,
+    /// Esc, natively (nothing on the web).
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     Quit,
     FastForward,
     StepTick,
@@ -87,6 +89,9 @@ fn key_action(key: KeyCode) -> Option<GameAction> {
         Enter | KpEnter => GameAction::RestartIfDead,
         F2 => GameAction::Restart,
         F3 => GameAction::PauseToggle,
+        // The original minimizes; natively the port quits (see
+        // docs/porting-guide.md). A browser tab can do neither: nothing.
+        #[cfg(not(target_arch = "wasm32"))]
         Escape => GameAction::Quit,
         _ => return None,
     })

@@ -141,6 +141,9 @@ impl GameState {
     }
 
     fn load_sprite_dims() -> Vec<(i16, i16)> {
+        if let Some(dims) = super::assets::installed_sprite_dims() {
+            return dims.to_vec();
+        }
         let meta_path = super::assets::asset_root().join("meta.json");
         let mut dims = vec![(16i16, 16i16); 90]; // default
         if let Ok(data) = std::fs::read_to_string(meta_path) {
@@ -1044,9 +1047,21 @@ impl GameState {
     }
 }
 
+static CLOCK_SOURCE: std::sync::OnceLock<fn() -> u32> = std::sync::OnceLock::new();
+
+/// The clock `clock_seed` reads, installed once by the platform layer
+/// (wasm32-unknown-unknown has no `SystemTime`). Without one it reads
+/// `SystemTime`, as the replay tools and tests do.
+pub fn set_clock_source(clock_ms: fn() -> u32) {
+    let _ = CLOCK_SOURCE.set(clock_ms);
+}
+
 /// Clock-derived seed for unseeded games (the original seeds with
-/// GetTickCount()).
+/// GetTickCount()): milliseconds since the Unix epoch, truncated to 32 bits.
 fn clock_seed() -> u32 {
+    if let Some(clock_ms) = CLOCK_SOURCE.get() {
+        return clock_ms();
+    }
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

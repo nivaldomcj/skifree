@@ -1,4 +1,5 @@
 use macroquad::prelude::*;
+use skifree::extract::{AssetSet, Rgba};
 use std::collections::HashMap;
 
 pub struct Renderer {
@@ -21,27 +22,22 @@ const LABELS: [&str; 4] = ["Time:", "Dist:", "Speed:", "Style:"];
 const VALUE_TEMPLATE_CHARS: f32 = 11.0;
 
 impl Renderer {
-    pub async fn new() -> Self {
-        let mut sprites = HashMap::new();
-        let root = skifree::game::assets::asset_root();
-        for id in 1..=89u32 {
-            let path = root.join(format!("sprites/bitmap_{:02}.png", id));
-            let path_str = path.to_string_lossy().into_owned();
-            match load_texture(&path_str).await {
-                Ok(tex) => {
-                    sprites.insert(id, tex);
-                }
-                Err(e) => {
-                    eprintln!("warning: failed to load sprite {}: {}", path_str, e);
-                }
-            }
-        }
+    /// Textures for the sprites and the status font in `assets` (see
+    /// `platform::assets`), with macroquad's default filter as
+    /// `load_texture` gave them.
+    pub fn new(assets: &AssetSet) -> Self {
+        let texture = |img: &Rgba| Texture2D::from_rgba8(img.width as u16, img.height as u16, &img.data);
+        let sprites = assets
+            .sprites
+            .iter()
+            .enumerate()
+            .filter_map(|(id, sprite)| Some((id as u32, texture(sprite.as_ref()?))))
+            .collect();
         // Terminal extracted from the user's vgaoem.fon if present, else the
         // bundled IBM VGA fallback (resources/fonts, CC BY-SA 4.0).
-        let font_path = root.join("fonts/oem_fixed.png");
-        let font = match load_texture(&font_path.to_string_lossy()).await {
-            Ok(tex) => tex,
-            Err(_) => Texture2D::from_file_with_format(FALLBACK_FONT, Some(ImageFormat::Png)),
+        let font = match &assets.font {
+            Some(img) => texture(img),
+            None => Texture2D::from_file_with_format(FALLBACK_FONT, Some(ImageFormat::Png)),
         };
         font.set_filter(FilterMode::Nearest);
         Self { sprites, font }

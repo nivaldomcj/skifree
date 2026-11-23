@@ -12,24 +12,33 @@
 //! - macOS: one `NSSound` per WAV; `stop` then `play`.
 //! - Linux: libasound loaded at runtime (like libX11 in os_window), fed by
 //!   a player thread; `snd_pcm_drop` cuts.
+//! - Web: Web Audio through `web/skifree.js`. The WAVs come with the
+//!   `AssetSet` (embedded in the private build, extracted from the
+//!   player's `ski32sounds.exe` in the public one), so build.rs's
+//!   `cfg(skifree_sound)` is not used there.
 //!
 //! Muting (the port's M key; the original's `nosound` argument starts the
 //! game muted) stops the current sound and drops later ones.
 
+use skifree::extract::AssetSet;
 use skifree::game::sound::Sound;
 
 pub struct Audio {
     muted: bool,
-    #[cfg(skifree_sound)]
+    #[cfg(any(skifree_sound, target_arch = "wasm32"))]
     player: Option<imp::Player>,
 }
 
 impl Audio {
-    pub fn new(muted: bool) -> Self {
+    pub fn new(muted: bool, assets: &AssetSet) -> Self {
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = assets;
         Self {
             muted,
             #[cfg(skifree_sound)]
             player: imp::Player::open(),
+            #[cfg(target_arch = "wasm32")]
+            player: imp::Player::open(assets),
         }
     }
 
@@ -45,18 +54,18 @@ impl Audio {
         if self.muted {
             return;
         }
-        #[cfg(skifree_sound)]
+        #[cfg(any(skifree_sound, target_arch = "wasm32"))]
         if let Some(p) = self.player.as_mut() {
             p.play(sound);
         }
-        #[cfg(not(skifree_sound))]
+        #[cfg(not(any(skifree_sound, target_arch = "wasm32")))]
         let _ = sound;
     }
 
     /// Stop whatever is playing (`sndPlaySoundA(NULL, 0)`, as the original
     /// does on exit).
     pub fn stop(&mut self) {
-        #[cfg(skifree_sound)]
+        #[cfg(any(skifree_sound, target_arch = "wasm32"))]
         if let Some(p) = self.player.as_mut() {
             p.stop();
         }
@@ -344,7 +353,38 @@ mod imp {
     }
 }
 
-#[cfg(all(skifree_sound, not(any(target_os = "windows", target_os = "macos", target_os = "linux"))))]
+#[cfg(target_arch = "wasm32")]
+mod imp {
+    use crate::platform::web;
+    use skifree::extract::AssetSet;
+    use skifree::game::sound::Sound;
+
+    /// The page holds the nine sounds (as Web Audio buffers, see
+    /// web/skifree.js); a new one stops the one playing, like
+    /// sndPlaySoundA. Browsers start audio only after the player's first key
+    /// press or click: the page drops sounds before that.
+    pub struct Player;
+
+    impl Player {
+        pub fn open(assets: &AssetSet) -> Option<Self> {
+            let wavs = assets.sounds.as_ref()?;
+            for (i, wav) in wavs.iter().enumerate() {
+                web::audio_load(i as u32, wav);
+            }
+            Some(Player)
+        }
+
+        pub fn play(&mut self, sound: Sound) {
+            web::audio_play(sound.id() as u32 - 1);
+        }
+
+        pub fn stop(&mut self) {
+            web::audio_stop();
+        }
+    }
+}
+
+#[cfg(all(skifree_sound, not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_arch = "wasm32"))))]
 mod imp {
     use skifree::game::sound::Sound;
 

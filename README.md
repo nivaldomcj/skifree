@@ -106,14 +106,45 @@ click to jump, F2 restart, F3 pause, F fast-forward, T step, X/Y teleport),
 plus M to mute in builds with sound.
 See `docs/skier-physics.md` for the full map.
 
+## In the browser
+
+The same code also runs in a web page (WebAssembly through macroquad's web
+backend). `rustup target add wasm32-unknown-unknown`, then:
+
+```bash
+tools/build_web.sh --public --serve   # dist/web/, no game data
+tools/build_web.sh --private --serve  # dist/web-private/, your assets/ embedded
+```
+
+`--serve` serves the page on port 8000 on every network interface, so other
+machines on your network can open it too. The public page asks for your own
+`ski32.exe` or `ski32.zip` (optionally `ski32sounds.zip` for sound and
+`vgaoem.fon` for the font): drop them on the page or pick them. They are read
+in the browser, never uploaded, and kept in the browser's storage for the
+next visit. To change them (to add the sounds later, say), open the page
+with `?forget` and drop them all again. `?nosound` starts muted.
+
+The private build carries copyrighted data: keep it to yourself, never
+publish or commit it.
+
+In the browser Esc does nothing (a tab can neither minimize, as the original
+does, nor quit), the pause notice goes in the tab title, and high scores are
+kept in the page's local storage. On a Mac whose F keys are media keys, F2
+and F3 need fn.
+
 ## Verify
 
 ```bash
 cargo test           # unit + golden-replay regression tests
+tools/test_wasi.sh   # the replay tests compiled to WebAssembly (wasmtime)
+tools/web/compare_frames.sh  # web frames vs native frames, pixel for pixel
 ```
 
-The `state_table` tests byte-compare against `originals/ski32.exe` and **skip
-gracefully** if it isn't present; everything else runs without it.
+The `state_table` tests byte-compare against `originals/ski32.exe`, and the
+`extract` tests compare the Rust extractor with `tools/extract_assets.py`'s
+output. Both **skip gracefully** if your copies aren't present; everything
+else runs without them. `compare_frames.sh` needs a private web build, Node
+22+ and Chrome.
 
 ## Documentation
 

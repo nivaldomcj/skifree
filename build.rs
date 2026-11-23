@@ -4,6 +4,11 @@
 //! tables are extracted from a `ski32.exe` the user owns (see README.md,
 //! "Getting the assets"). If `assets/` is missing or incomplete, fail the
 //! build with instructions instead of producing a broken binary.
+//!
+//! Web builds (wasm32) don't read `assets/` at run time:
+//! the public one needs no assets at all (players supply their own exe in
+//! the page), and the private one (`--features embed-assets`) embeds them,
+//! through `$OUT_DIR/web_assets.rs`.
 
 use std::path::Path;
 
@@ -16,6 +21,58 @@ Place a ski32.exe you own in originals/ and run:
 See README.md, \"Getting the assets\".";
 
 fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rustc-check-cfg=cfg(skifree_sound)");
+    // Any wasm32 target builds the web platform layer: wasm32-unknown-unknown
+    // is the browser; wasm32-wasip1 only runs the replay tests
+    // (tools/test_wasi.sh), for which cargo builds, but never runs, the game.
+    let web = std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("wasm32");
+    let embed = std::env::var_os("CARGO_FEATURE_EMBED_ASSETS").is_some();
+    if web && !embed {
+        println!("cargo:warning=public web build: no game data embedded (players supply their own ski32.exe)");
+        return;
+    }
+    if embed && !web {
+        println!("cargo:warning=embed-assets only applies to the web build (wasm32)");
+    }
+
+    check_assets();
+    if web {
+        embed_web_assets();
+        return;
+    }
+
+    // Windows: embed the original's ICONSKI group (assets/icons/app_1.ico,
+    // extracted from the user's exe) as the exe's icon resource, so
+    // Explorer shows the SkiFree face on skifree.exe like on ski32.exe.
+    // The window icon is set at runtime (platform::window).
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        embed_windows_icon();
+    }
+
+    // Sound is optional: with all nine extracted WAVs (from an exe that has
+    // them, e.g. ski32sounds.exe) the build embeds them and compiles the
+    // audio code; otherwise it has no sound at all, like the shipped game.
+    println!("cargo:rerun-if-changed=assets/sounds");
+    let sounds = sound_count();
+    if sounds == 9 {
+        println!("cargo:rustc-cfg=skifree_sound");
+        println!("cargo:warning=sounds OK: 9 WAVs embedded, sound enabled");
+    } else if sounds > 0 {
+        println!(
+            "cargo:warning=only {sounds} of 9 sounds in assets/sounds/: building without sound \
+             (re-run tools/extract_assets.py with ski32sounds.exe in originals/)"
+        );
+    }
+}
+
+fn sound_count() -> usize {
+    (1..=9)
+        .filter(|i| Path::new(&format!("assets/sounds/sound_{i}.wav")).exists())
+        .count()
+}
+
+fn check_assets() {
     let meta_path = Path::new("assets/meta.json");
     println!("cargo:rerun-if-changed=assets/meta.json");
     println!("cargo:rerun-if-changed=assets/strings.json");
@@ -58,32 +115,49 @@ fn main() {
     }
 
     println!("cargo:warning=assets OK: {} sprite files verified", sprite_files);
+}
 
-    // Windows: embed the original's ICONSKI group (assets/icons/app_1.ico,
-    // extracted from the user's exe) as the exe's icon resource, so
-    // Explorer shows the SkiFree face on skifree.exe like on ski32.exe.
-    // The window icon is set at runtime (platform::window).
-    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
-        embed_windows_icon();
+/// The private web build: `$OUT_DIR/web_assets.rs` embeds the 89 sprite
+/// PNGs, the font and icon 3 when present, and the sounds when all nine
+/// are (platform::assets decodes them like the native build's files).
+fn embed_web_assets() {
+    for dir in ["assets/sprites", "assets/fonts", "assets/icons", "assets/sounds"] {
+        println!("cargo:rerun-if-changed={dir}");
     }
-
-    // Sound is optional: with all nine extracted WAVs (from an exe that has
-    // them, e.g. ski32sounds.exe) the build embeds them and compiles the
-    // audio code; otherwise it has no sound at all, like the shipped game.
-    println!("cargo:rustc-check-cfg=cfg(skifree_sound)");
-    println!("cargo:rerun-if-changed=assets/sounds");
-    let sounds = (1..=9)
-        .filter(|i| Path::new(&format!("assets/sounds/sound_{i}.wav")).exists())
-        .count();
-    if sounds == 9 {
-        println!("cargo:rustc-cfg=skifree_sound");
-        println!("cargo:warning=sounds OK: 9 WAVs embedded, sound enabled");
-    } else if sounds > 0 {
-        println!(
-            "cargo:warning=only {sounds} of 9 sounds in assets/sounds/: building without sound \
-             (re-run tools/extract_assets.py with ski32sounds.exe in originals/)"
-        );
-    }
+    let include = |rel: &str| -> String {
+        let path = Path::new("assets").join(rel).canonicalize().expect("asset checked above");
+        format!("include_bytes!({:?})", path.to_string_lossy().replace('\\', "/"))
+    };
+    let optional = |rel: &str| -> String {
+        if Path::new("assets").join(rel).exists() {
+            format!("Some({})", include(rel))
+        } else {
+            "None".to_owned()
+        }
+    };
+    let sprites: Vec<String> = (1..=89).map(|id| include(&format!("sprites/bitmap_{id:02}.png"))).collect();
+    let sounds = if sound_count() == 9 {
+        let wavs: Vec<String> = (1..=9).map(|i| include(&format!("sounds/sound_{i}.wav"))).collect();
+        format!("Some([{}])", wavs.join(", "))
+    } else {
+        "None".to_owned()
+    };
+    let code = format!(
+        "pub static SPRITES: [&[u8]; 89] = [{}];\n\
+         pub static FONT: Option<&[u8]> = {};\n\
+         pub static ICON: Option<&[u8]> = {};\n\
+         pub static SOUNDS: Option<[&[u8]; 9]> = {};\n",
+        sprites.join(", "),
+        optional("fonts/oem_fixed.png"),
+        optional("icons/icon_3.png"),
+        sounds,
+    );
+    let out = Path::new(&std::env::var("OUT_DIR").expect("OUT_DIR")).join("web_assets.rs");
+    std::fs::write(out, code).expect("write web_assets.rs");
+    println!(
+        "cargo:warning=private web build: assets embedded{} (never publish this build)",
+        if sound_count() == 9 { ", sound included" } else { "" }
+    );
 }
 
 fn embed_windows_icon() {
