@@ -223,7 +223,12 @@ version in `Cargo.lock`.
   also runs the drop box, sets the favicon from the player's icon 3 (16×16
   reduced like the title-bar icon) and calls `preventDefault` for the game
   keys gl.js leaves to the browser (Home, End, PgUp, PgDn, Insert, Enter,
-  the numpad).
+  the numpad), and for `'` and `/`, which gl.js means to block but doesn't
+  (it maps them to key codes 222 and 189 and checks 39 and 47), so
+  Firefox's Quick Find would take the keyboard.
+- **Files.** Only the drop box takes files. Over the running game a drop
+  does nothing (the cursor shows "not allowed"); `?forget` clears the saved
+  files so the box comes back.
 - **Timer, focus, size.** The 46.875 ms timer runs on `get_time()` as
   natively. gl.js reports focus loss and hidden tabs through the same
   events as a native window, so the game deactivates the same way. The
@@ -240,6 +245,9 @@ version in `Cargo.lock`.
   `tools/web/compare_frames.sh` draws replay frames in headless Chrome
   (`?replay=<scenario>&ticks=...`) and natively and compares them byte for
   byte: 26 frames from 8 scenarios are identical.
+- **Browsers.** Played on macOS in Chrome, Firefox and Safari: keys (F2
+  and F3 included), sound, the drop box with `ski32.zip`, and high scores
+  that survive a reload.
 
 ## Copyrighted files (not in this repo)
 
