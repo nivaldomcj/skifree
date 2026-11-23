@@ -8,6 +8,12 @@ pub struct ActorPool {
     pub head: Option<usize>, // active linked list head
 }
 
+impl Default for ActorPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ActorPool {
     pub fn new() -> Self {
         let actors = vec![Actor::default(); 100];

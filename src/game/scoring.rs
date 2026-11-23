@@ -90,6 +90,12 @@ pub struct Scoring {
     pub enabled: bool, // mirrors DAT_0040c954
 }
 
+impl Default for Scoring {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Scoring {
     pub fn new() -> Self {
         Self { score: 0, enabled: false }

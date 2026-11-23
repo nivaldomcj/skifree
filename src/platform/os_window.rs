@@ -235,10 +235,12 @@ mod imp {
     }
 
     impl X11 {
+        #[expect(
+            clippy::missing_transmute_annotations,
+            reason = "each sym! lands in a field or binding with an explicit fn-pointer type"
+        )]
         unsafe fn open() -> Option<X11> {
-            if std::env::var_os("DISPLAY").is_none() {
-                return None;
-            }
+            std::env::var_os("DISPLAY")?; // no X server (Wayland only, or headless)
             let lib = libc::dlopen(c"libX11.so.6".as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL);
             if lib.is_null() {
                 return None;

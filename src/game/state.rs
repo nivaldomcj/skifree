@@ -1280,7 +1280,7 @@ mod tests {
         let a = g.pool.get(g.pool.head.unwrap()).unwrap();
         assert_eq!(a.class, ActorClass::Obstacle);
         assert_eq!(a.state, 0x21);
-        assert_eq!(a.sprite_id, crate::game::state_table::STATE_TO_SPRITE[0x21 as usize]);
+        assert_eq!(a.sprite_id, crate::game::state_table::STATE_TO_SPRITE[0x21]);
         assert_eq!((a.x, a.y, a.z), (-112, 498, 0x20));
     }
 

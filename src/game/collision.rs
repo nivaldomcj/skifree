@@ -2,6 +2,7 @@ use super::sound::Sound;
 use super::types::*;
 
 /// AABB intersection test (FUN_00401290)
+#[expect(clippy::too_many_arguments, reason = "two RECTs, as FUN_00401290 takes them")]
 pub fn intersects(l1: i16, t1: i16, r1: i16, b1: i16, l2: i16, t2: i16, r2: i16, b2: i16) -> bool {
     l1 < r2 && l2 < r1 && t1 < b2 && t2 < b1
 }
@@ -29,6 +30,7 @@ pub const VIEW_PAD: i16 = 0x78;
 /// FUN_004014b0 draw box strictly overlaps the padded viewport DAT_0040c680
 /// (FUN_00401290). Gates materialization (FUN_00404130), culling and the
 /// populator's density sum.
+#[expect(clippy::too_many_arguments, reason = "the position, size and view FUN_004014b0 reads")]
 pub fn in_padded_view(
     x: i16,
     y: i16,
@@ -330,13 +332,11 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
                     super::physics::change_state(a, 0x22);
                 }
             }
-            ActorClass::RockLarge | ActorClass::Banner => {
-                // Bump/ramp: launched at half its speed (state 0x21).
-                if a.z < top {
-                    a.vz = a.vy / 2;
-                    result.sound = Some(Sound::SkierLaunch);
-                    super::physics::change_state(a, 0x21);
-                }
+            // Bump/ramp: launched at half its speed (state 0x21).
+            ActorClass::RockLarge | ActorClass::Banner if a.z < top => {
+                a.vz = a.vy / 2;
+                result.sound = Some(Sound::SkierLaunch);
+                super::physics::change_state(a, 0x21);
             }
             _ => {}
         },
@@ -373,6 +373,7 @@ fn log_pairs() -> bool {
 /// their boxes intersect; then run the handler for (later, earlier) and, if
 /// neither got removed, for (earlier, later). `collidable` excludes actors the
 /// original wouldn't have in its list (mob nodes without a live actor).
+#[expect(clippy::too_many_arguments, reason = "the game state the original reads from globals")]
 pub fn check_all_collisions(
     pool: &mut super::actor::ActorPool,
     player_idx: Option<usize>,

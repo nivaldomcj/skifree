@@ -178,7 +178,7 @@ pub fn update_lift(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
 /// Obstacle behavior (FUN_00403910, class 3)
 pub fn update_obstacle(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
     let state = actor.state;
-    if state < 0x1f || state > 0x26 {
+    if !(0x1f..=0x26).contains(&state) {
         return;
     }
 
@@ -202,7 +202,7 @@ pub fn update_obstacle(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
         if actor.z == 0 {
             physics::change_state(actor, 0x20);
         }
-    } else if state >= 0x22 && state <= 0x26 {
+    } else if (0x22..=0x26).contains(&state) {
         let next = state + 1;
         if next == 0x27 {
             physics::change_state(actor, 0x20);

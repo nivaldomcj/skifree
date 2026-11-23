@@ -218,6 +218,10 @@ mod imp {
     }
 
     impl Alsa {
+        #[expect(
+            clippy::missing_transmute_annotations,
+            reason = "each sym! lands in a field or binding with an explicit fn-pointer type"
+        )]
         unsafe fn load() -> Option<Alsa> {
             let lib = libc::dlopen(c"libasound.so.2".as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL);
             if lib.is_null() {

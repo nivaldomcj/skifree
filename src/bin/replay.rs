@@ -82,7 +82,7 @@ fn main() -> ExitCode {
     let jsonl = records_to_jsonl(&records);
 
     if let Some(ref path) = update_golden {
-        if let Err(e) = std::fs::write(&path, &jsonl) {
+        if let Err(e) = std::fs::write(path, &jsonl) {
             eprintln!("replay: cannot write golden {}: {}", path, e);
             return ExitCode::FAILURE;
         }
@@ -90,7 +90,7 @@ fn main() -> ExitCode {
     }
 
     if let Some(ref path) = check {
-        let golden_text = match std::fs::read_to_string(&path) {
+        let golden_text = match std::fs::read_to_string(path) {
             Ok(t) => t,
             Err(e) => {
                 eprintln!("replay: cannot read golden {}: {}", path, e);

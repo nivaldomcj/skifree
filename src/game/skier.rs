@@ -44,18 +44,16 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool, sounds: &mut Vec<Soun
     match state {
         7 | 9 => physics::change_state(actor, 3),
         8 | 10 => physics::change_state(actor, 6),
-        0x0d..=0x15 => {
-            // Jump states — check landing
-            if actor.z == 0 {
-                let landing = CRASH_LANDING[(state - 0x0d) as usize];
-                if landing == 0x11 {
-                    points -= 64; // botched landing (0x402ad5)
-                    sounds.push(Sound::Crash);
-                } else {
-                    sounds.push(Sound::Land);
-                }
-                physics::change_state(actor, landing);
+        // Jump states — check landing
+        0x0d..=0x15 if actor.z == 0 => {
+            let landing = CRASH_LANDING[(state - 0x0d) as usize];
+            if landing == 0x11 {
+                points -= 64; // botched landing (0x402ad5)
+                sounds.push(Sound::Crash);
+            } else {
+                sounds.push(Sound::Land);
             }
+            physics::change_state(actor, landing);
         }
         _ => {}
     }

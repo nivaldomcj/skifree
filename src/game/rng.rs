@@ -46,7 +46,10 @@ pub mod rng_sites {
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
 
-    static SITES: OnceLock<Mutex<HashMap<(u16, &'static str, u32), u64>>> = OnceLock::new();
+    /// (range `n`, file, line) of a `rand_range` call site.
+    type Site = (u16, &'static str, u32);
+
+    static SITES: OnceLock<Mutex<HashMap<Site, u64>>> = OnceLock::new();
     static LOG_CALLS: OnceLock<bool> = OnceLock::new();
 
     /// `SKIFREE_LOG_RNG=1`: print every call in order as
