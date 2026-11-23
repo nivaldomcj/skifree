@@ -382,7 +382,10 @@ impl GameState {
                 }
                 // Proxies run in their own pass below (FUN_004040a0), in
                 // mob-node order, after the actor loop.
-                #[expect(clippy::match_same_arms, reason = "kept apart from the classes >= 0xb: another reason")]
+                #[expect(
+                    clippy::match_same_arms,
+                    reason = "proxies update in their own pass below; classes >= 0xb never do"
+                )]
                 ActorClass::AmbientMob
                 | ActorClass::MonsterLeft
                 | ActorClass::MonsterRight

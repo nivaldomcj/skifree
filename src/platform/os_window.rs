@@ -260,12 +260,13 @@ mod imp {
             reason = "each sym! lands in a field or binding with an explicit fn-pointer type"
         )]
         fn open() -> Option<X11> {
-            std::env::var_os("DISPLAY")?; // no X server (Wayland only, or headless)
-                                          // SAFETY: dlopen and dlsym take NUL-terminated names. Each symbol
-                                          // is checked for null, then transmuted to its binding's or
-                                          // field's type, its prototype in Xlib.h. The library and the
-                                          // display are never closed, so both stay valid; XOpenDisplay's
-                                          // null name means $DISPLAY.
+            // No X server: Wayland only, or headless.
+            std::env::var_os("DISPLAY")?;
+            // SAFETY: dlopen and dlsym take NUL-terminated names. Each symbol
+            // is checked for null, then transmuted to its binding's or
+            // field's type, its prototype in Xlib.h. The library and the
+            // display are never closed, so both stay valid; XOpenDisplay's
+            // null name means $DISPLAY.
             unsafe {
                 let lib = libc::dlopen(c"libX11.so.6".as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL);
                 if lib.is_null() {
