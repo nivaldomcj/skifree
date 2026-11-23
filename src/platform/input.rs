@@ -25,16 +25,75 @@ pub enum GameAction {
     TeleportDown,
     MouseSteer(f32, f32),
     Click(f32, f32),
+    /// The window gained (`true`) or lost (`false`) focus, or was minimized
+    /// (WM_ACTIVATE / WM_SIZE in the original). Always delivered first.
+    Focus(bool),
 }
 
 pub struct Input {
     prev_mouse_pos: (f32, f32),
+    /// macroquad input-event subscriber, for the window focus events.
+    subscriber: usize,
+}
+
+/// One window event, in arrival order.
+enum WindowEvent {
+    /// Activation change: miniquad reports focus loss as
+    /// `window_minimized_event` and focus gain as `window_restored_event` on
+    /// Windows, macOS and X11 — the transitions the original's WM_ACTIVATE /
+    /// WM_SIZE handlers react to.
+    Focus(bool),
+    /// A key-down from the OS, auto-repeats included — the original reacts
+    /// to each WM_KEYDOWN, so holding a key steps once on the press and then
+    /// at the OS repeat rate.
+    KeyDown(KeyCode),
+}
+
+struct WindowEvents(Vec<WindowEvent>);
+
+impl macroquad::miniquad::EventHandler for WindowEvents {
+    fn update(&mut self) {}
+    fn draw(&mut self) {}
+    fn window_minimized_event(&mut self) {
+        self.0.push(WindowEvent::Focus(false));
+    }
+    fn window_restored_event(&mut self) {
+        self.0.push(WindowEvent::Focus(true));
+    }
+    fn key_down_event(&mut self, keycode: KeyCode, _mods: macroquad::miniquad::KeyMods, _repeat: bool) {
+        self.0.push(WindowEvent::KeyDown(keycode));
+    }
+}
+
+/// WM_KEYDOWN handling (FUN_00406170): the action for one key-down.
+fn key_action(key: KeyCode) -> Option<GameAction> {
+    use KeyCode::*;
+    Some(match key {
+        Left | Kp4 => GameAction::SteerLeft,
+        Right | Kp6 => GameAction::SteerRight,
+        Up | Kp8 => GameAction::SteerUp,
+        Down | Kp2 => GameAction::SteerDown,
+        // Diagonals set a skiing state directly (numpad + nav cluster).
+        // Top row = hard turns (3 left / 6 right), bottom row = slight (1 / 4).
+        Kp7 | Home => GameAction::SteerAbsolute(3),
+        Kp9 | PageUp => GameAction::SteerAbsolute(6),
+        Kp1 | End => GameAction::SteerAbsolute(1),
+        Kp3 | PageDown => GameAction::SteerAbsolute(4),
+        // Keyboard jump (Insert / numpad0)
+        Insert | Kp0 => GameAction::Jump,
+        Enter | KpEnter => GameAction::RestartIfDead,
+        F2 => GameAction::Restart,
+        F3 => GameAction::PauseToggle,
+        Escape => GameAction::Quit,
+        _ => return None,
+    })
 }
 
 impl Input {
     pub fn new() -> Self {
         Self {
             prev_mouse_pos: (0.0, 0.0),
+            subscriber: macroquad::input::utils::register_input_subscriber(),
         }
     }
 
@@ -42,52 +101,23 @@ impl Input {
     pub fn poll(&mut self) -> Vec<GameAction> {
         let mut actions = Vec::new();
 
-        // Steering — arrows and numpad
-        if is_key_down(KeyCode::Left) || is_key_down(KeyCode::Kp4) {
-            actions.push(GameAction::SteerLeft);
-        }
-        if is_key_down(KeyCode::Right) || is_key_down(KeyCode::Kp6) {
-            actions.push(GameAction::SteerRight);
-        }
-        if is_key_down(KeyCode::Up) || is_key_down(KeyCode::Kp8) {
-            actions.push(GameAction::SteerUp);
-        }
-        if is_key_down(KeyCode::Down) || is_key_down(KeyCode::Kp2) {
-            actions.push(GameAction::SteerDown);
-        }
-
-        // Diagonals set a skiing state directly (numpad + nav cluster).
-        // Top row = hard turns (3 left / 6 right), bottom row = slight (1 / 4).
-        if is_key_down(KeyCode::Kp7) || is_key_down(KeyCode::Home) {
-            actions.push(GameAction::SteerAbsolute(3));
-        }
-        if is_key_down(KeyCode::Kp9) || is_key_down(KeyCode::PageUp) {
-            actions.push(GameAction::SteerAbsolute(6));
-        }
-        if is_key_down(KeyCode::Kp1) || is_key_down(KeyCode::End) {
-            actions.push(GameAction::SteerAbsolute(1));
-        }
-        if is_key_down(KeyCode::Kp3) || is_key_down(KeyCode::PageDown) {
-            actions.push(GameAction::SteerAbsolute(4));
-        }
-
-        // Keyboard jump (Insert / numpad0)
-        if is_key_pressed(KeyCode::Insert) || is_key_pressed(KeyCode::Kp0) {
-            actions.push(GameAction::Jump);
-        }
-
-        // System keys
-        if is_key_pressed(KeyCode::Enter) {
-            actions.push(GameAction::RestartIfDead);
-        }
-        if is_key_pressed(KeyCode::F2) {
-            actions.push(GameAction::Restart);
-        }
-        if is_key_pressed(KeyCode::F3) {
-            actions.push(GameAction::PauseToggle);
-        }
-        if is_key_pressed(KeyCode::Escape) {
-            actions.push(GameAction::Quit);
+        // Window events in arrival order: activation changes and every OS
+        // key-down (repeats included), like the original's message queue.
+        let mut events = WindowEvents(Vec::new());
+        macroquad::input::utils::repeat_all_miniquad_input(&mut events, self.subscriber);
+        let mut activated = false;
+        for event in events.0 {
+            match event {
+                WindowEvent::Focus(active) => {
+                    activated |= active;
+                    actions.push(GameAction::Focus(active));
+                }
+                WindowEvent::KeyDown(key) => {
+                    if let Some(action) = key_action(key) {
+                        actions.push(action);
+                    }
+                }
+            }
         }
 
         // Cheat keys (WM_CHAR in the original)
@@ -121,7 +151,9 @@ impl Input {
             actions.push(GameAction::MouseSteer(mx, my));
             self.prev_mouse_pos = (mx, my);
         }
-        if is_mouse_button_pressed(MouseButton::Left) {
+        // The click that activates the window is swallowed, like the
+        // original's WM_MOUSEACTIVATE -> MA_ACTIVATEANDEAT.
+        if is_mouse_button_pressed(MouseButton::Left) && !activated {
             actions.push(GameAction::Click(mx, my));
         }
 

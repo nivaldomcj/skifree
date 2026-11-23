@@ -62,16 +62,18 @@ async fn main() {
         game.screen_w = view_w;
         game.screen_h = view_h;
 
-        let mut steer_left = false;
-        let mut steer_right = false;
-        let mut steer_up = false;
-        let mut steer_down = false;
 
         for action in input.poll() {
+            // While the window is inactive or minimized the original's window
+            // procedure drops every key and mouse message (DAT_0040c67c).
+            if !game.input_enabled && !matches!(action, GameAction::Focus(_)) {
+                continue;
+            }
             match action {
+                GameAction::Focus(active) => game.set_active(active),
                 GameAction::Quit => running = false,
                 GameAction::PauseToggle => {
-                    game.paused = !game.paused;
+                    game.toggle_pause();
                 }
                 GameAction::Restart => {
                     game.new_game();
@@ -87,17 +89,19 @@ async fn main() {
                 GameAction::Jump => {
                     game.jump_keyboard();
                 }
-                GameAction::SteerLeft => steer_left = true,
-                GameAction::SteerRight => steer_right = true,
-                GameAction::SteerUp => steer_up = true,
-                GameAction::SteerDown => steer_down = true,
+                // One state step per key-down (WM_KEYDOWN), auto-repeats
+                // included.
+                GameAction::SteerLeft => game.steer_keyboard(true, false, false, false),
+                GameAction::SteerRight => game.steer_keyboard(false, true, false, false),
+                GameAction::SteerUp => game.steer_keyboard(false, false, true, false),
+                GameAction::SteerDown => game.steer_keyboard(false, false, false, true),
                 GameAction::FastForward => {
                     game.fast_forward = !game.fast_forward;
                 }
                 GameAction::StepTick => {
                     // Single-step one tick even when paused
                     let delta = (timer.frame_delta() * 1000.0) as u32;
-                    game.tick(delta);
+                    game.step_tick(delta);
                 }
                 GameAction::Repaint => {
                     // Force repaint — no-op in macroquad (always repaints)
@@ -131,12 +135,7 @@ async fn main() {
                     }
                 }
                 GameAction::MouseSteer(mx, my) => {
-                    let center_x = screen_width() / 2.0;
-                    let center_y = screen_height() / 3.0;
-                    game.steer_mouse(
-                        (mx - center_x) as i16,
-                        (my - center_y) as i16,
-                    );
+                    game.mouse_move(mx as i16, my as i16);
                 }
                 GameAction::Click(_, _) => {
                     game.click();
@@ -148,6 +147,10 @@ async fn main() {
         if let Some(events) = &script {
             let now_ms = script_start.elapsed().as_millis() as u64;
             while script_fired < events.len() && events[script_fired].at_ms <= now_ms {
+                if !game.input_enabled {
+                    script_fired += 1;
+                    continue;
+                }
                 match events[script_fired].key.as_str() {
                     "down" => game.steer_keyboard(false, false, false, true),
                     "up" => game.steer_keyboard(false, false, true, false),
@@ -161,11 +164,10 @@ async fn main() {
             }
         }
 
-        if steer_left || steer_right || steer_up || steer_down {
-            game.steer_keyboard(steer_left, steer_right, steer_up, steer_down);
-        }
 
-        if !game.paused && timer.should_tick() {
+        // Ticks keep arriving while paused: the game state stays frozen but
+        // the wall clock advances (see GameState::wall_ms).
+        if timer.should_tick() {
             let delta = (timer.frame_delta() * 1000.0) as u32;
             game.tick(delta);
         }
