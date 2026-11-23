@@ -85,6 +85,39 @@ impl Renderer {
         self.draw_oem_text(text, x0 + 2.0, y0 + 2.0);
     }
 
+    /// The high-score message box where the platform has no native one:
+    /// in the status display's style (OEM font, white box, one-pixel black
+    /// frames), centred: the caption, a rule, the text lines and an OK
+    /// button. Returns the button's rectangle (x, y, w, h).
+    pub fn draw_message_box(&self, caption: &str, text: &str, client_w: f32, client_h: f32) -> (f32, f32, f32, f32) {
+        let lines: Vec<&str> = text.split('\n').collect();
+        let cols = lines.iter().chain([&caption]).map(|l| l.chars().count()).max().unwrap_or(0) as f32;
+        let (pad, btn_w, btn_h) = (8.0, 8.0 * CELL_W, CELL_H + 8.0);
+        let w = (cols * CELL_W + 2.0 * pad).max(btn_w + 2.0 * pad);
+        let h = CELL_H + 6.0 + lines.len() as f32 * CELL_H + 2.0 * pad + btn_h + pad;
+        let x0 = ((client_w - w) / 2.0).floor();
+        let y0 = ((client_h - h) / 2.0).floor();
+        let frame = |x: f32, y: f32, w: f32, h: f32| {
+            draw_rectangle(x, y, w, h, WHITE);
+            draw_rectangle(x, y, w, 1.0, BLACK);
+            draw_rectangle(x, y + h - 1.0, w, 1.0, BLACK);
+            draw_rectangle(x, y, 1.0, h, BLACK);
+            draw_rectangle(x + w - 1.0, y, 1.0, h, BLACK);
+        };
+        frame(x0, y0, w, h);
+        self.draw_oem_text(caption, x0 + pad, y0 + 3.0);
+        draw_rectangle(x0, y0 + CELL_H + 5.0, w, 1.0, BLACK);
+        let mut y = y0 + CELL_H + 6.0 + pad;
+        for line in &lines {
+            self.draw_oem_text(line, x0 + pad, y);
+            y += CELL_H;
+        }
+        let (bx, by) = ((x0 + (w - btn_w) / 2.0).floor(), y + pad);
+        frame(bx, by, btn_w, btn_h);
+        self.draw_oem_text("OK", bx + (btn_w - 2.0 * CELL_W) / 2.0, by + 4.0);
+        (bx, by, btn_w, btn_h)
+    }
+
     /// The status display: a white box with a one-pixel black frame
     /// (FrameRect, stock black brush) at the client's top-right corner,
     /// labels at (2, 2 + 12 row), values at (label column + 2, ...).

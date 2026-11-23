@@ -14,10 +14,49 @@ pub struct HighScores {
 }
 
 pub const HIGH_SCORE_LEN: usize = 10;
+/// Caption of the high-score message box (string 15).
+pub const HIGH_SCORES_CAPTION: &str = "High Scores";
+/// String 16.
+pub const THATS_YOU: &str = " <-- that's you!";
+/// String 17.
+pub const TRY_AGAIN: &str = " <-- try again!";
 
 impl HighScores {
+    /// The message box text FUN_00402ec0 shows after a finish (caption
+    /// "High Scores"): one line per entry — a clock string (FUN_00401d70)
+    /// for the timed courses, `%9ld` for freestyle — with " <-- that's
+    /// you!" on the new entry; when it didn't place, a blank line and the
+    /// result with " <-- try again!".
+    pub fn finish_text(&self, course: usize, ms: u64, style: i32, rank: Option<usize>) -> String {
+        let fmt_time = |ms: u64| format_clock(ms as i32);
+        let fmt_style = |s: i32| format!("{:>9}", s);
+        let lines: Vec<String> = match course {
+            0 => self.slalom_ms.iter().map(|&t| fmt_time(t)).collect(),
+            1 => self.giant_slalom_ms.iter().map(|&t| fmt_time(t)).collect(),
+            _ => self.freestyle_style.iter().map(|&s| fmt_style(s)).collect(),
+        };
+        let mut text = String::new();
+        for (i, line) in lines.iter().enumerate() {
+            if i > 0 {
+                text.push('\n');
+            }
+            text.push_str(line);
+            if rank == Some(i) {
+                text.push_str(THATS_YOU);
+            }
+        }
+        if rank.is_none() {
+            text.push_str("\n\n");
+            text.push_str(&if course == 2 { fmt_style(style) } else { fmt_time(ms) });
+            text.push_str(TRY_AGAIN);
+        }
+        text
+    }
+
     fn insert_time_into(list: &mut Vec<u64>, ms: u64) -> Option<usize> {
-        let rank = list.iter().position(|&t| t >= ms).unwrap_or(list.len());
+        // FUN_00402ec0 inserts before the first entry the new result is
+        // strictly better than, so a tie ranks after the existing score.
+        let rank = list.iter().position(|&t| t > ms).unwrap_or(list.len());
         if rank >= HIGH_SCORE_LEN {
             return None;
         }
@@ -42,7 +81,7 @@ impl HighScores {
         let rank = self
             .freestyle_style
             .iter()
-            .position(|&s| s <= score)
+            .position(|&s| s < score)
             .unwrap_or(self.freestyle_style.len());
         if rank >= HIGH_SCORE_LEN {
             return None;
@@ -182,6 +221,27 @@ mod format_tests {
         assert_eq!(format_clock(36_000_000), "10:00:00.00");
         // Negative: signed parts masked to 16 bits, printed unsigned.
         assert_eq!(format_clock(-1_500), " 0:00:65535.6503");
+    }
+
+    #[test]
+    fn finish_text_like_fun_00402ec0() {
+        let mut hs = HighScores::default();
+        for _ in 0..6 {
+            hs.insert_style(209);
+        }
+        let rank = hs.insert_style(209);
+        assert_eq!(rank, Some(6), "a tie ranks after the existing scores");
+        let text = hs.finish_text(2, 0, 209, rank);
+        // As captured from the original's MessageBoxA in the VM.
+        assert_eq!(text, "      209\n      209\n      209\n      209\n      209\n      209\n      209 <-- that's you!");
+        for _ in 0..3 {
+            hs.insert_style(209);
+        }
+        assert_eq!(hs.insert_style(209), None, "a full list keeps the earlier ties");
+        assert!(hs.finish_text(2, 0, 209, None).ends_with("      209\n\n      209 <-- try again!"));
+        let mut t = HighScores::default();
+        let r = t.insert_time(0, 83_456);
+        assert_eq!(t.finish_text(0, 83_456, 0, r), " 0:01:23.45 <-- that's you!");
     }
 
     #[test]

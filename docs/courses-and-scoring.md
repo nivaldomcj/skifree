@@ -61,9 +61,18 @@ Each detector runs after the skier update with the pre-update position:
   into the course's sorted list — `entpack.ini` section `Ski`, keys
   **SS** (slalom), **GS** (giant slalom), **FS** (freestyle style). The
   display marks your entry with ` <-- that's you!`, or shows it below the
-  table with ` <-- try again!` when it doesn't place. The port persists
-  the same three lists in `~/.skifree/scores.json`. (The original shows the
-  table in a modal message box.)
+  table with ` <-- try again!` when it doesn't place. A result goes
+  before the first entry it strictly beats, so **a tie ranks after** the
+  existing score (times are stored negated, so "bigger is better" for all
+  three lists). The table is a modal `MessageBoxA` captioned
+  "High Scores" — one line per entry (clock string or `%9ld`), no course
+  name — which freezes the game until OK (the box takes the focus, so the
+  focus-loss pause applies). The port persists the same three lists in
+  `~/.skifree/scores.json` and shows the same text in the platform's own
+  modal box (`MessageBoxW` on Windows, `NSAlert` on macOS), or a drawn box
+  in the status display's style where there is none (Linux); the game is
+  frozen and the window inactive until OK, and the time it stays open
+  still counts on the wall clock.
 - **Gates**: each gate has a flag sprite. When the player's y passes the
   next gate's y, the crossing x (interpolated at the gate's y) decides:
   sprite **0x17** is missed when that x is **right of** the gate's x

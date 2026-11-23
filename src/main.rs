@@ -1,6 +1,7 @@
 mod platform;
 
-use skifree::game::draw::draw_list;
+use skifree::game::draw::{draw_list, DrawItem};
+use skifree::game::scoring::HIGH_SCORES_CAPTION;
 use skifree::game::state::GameState;
 use macroquad::prelude::*;
 use platform::audio::Audio;
@@ -57,14 +58,14 @@ fn load_frame_capture() -> Option<FrameCapture> {
 
 /// Paint one frame of `game` at its client size (sw x sh): sprites, the
 /// pause notice, the status display and the high-score table.
-fn draw_frame(game: &GameState, renderer: &Renderer, pause_in_window: bool) {
+fn draw_frame(game: &GameState, renderer: &Renderer, items: &[DrawItem], pause_in_window: bool) {
     let (sw, sh) = (game.screen_w as f32, game.screen_h as f32);
     // Render
     clear_background(WHITE);
 
     // Sprites in the original's painting order and placement
     // (FUN_00401540 / FUN_004014b0, see game::draw).
-    for item in draw_list(&game) {
+    for item in items {
         renderer.draw_sprite(item.sprite as u32, item.left as f32, item.top as f32);
     }
 
@@ -78,55 +79,8 @@ fn draw_frame(game: &GameState, renderer: &Renderer, pause_in_window: bool) {
     // Status display (child window SkiStatus, FUN_00406970/FUN_00401b80):
     // the values as last painted, in the OEM fixed font, see
     // renderer::draw_status.
-    let row_y = renderer.draw_status(&game.status_values, sw);
-    let font_size = 15u16;
-    let label_x = sw - 110.0;
+    renderer.draw_status(&game.status_values, sw);
 
-    // High-score table after a course finish (FUN_00402ec0 display),
-    // with " <-- that's you!" / " <-- try again!" markers.
-    if let Some(finish) = game.last_finish {
-        let title = match finish.course {
-            0 => "Slalom High Scores",
-            1 => "Giant Slalom High Scores",
-            _ => "Freestyle High Scores",
-        };
-        let entries: Vec<String> = if finish.course == 2 {
-            game.high_scores
-                .freestyle_style
-                .iter()
-                .map(|s| format!("{:>9}", s))
-                .collect()
-        } else {
-            let times = if finish.course == 0 {
-                &game.high_scores.slalom_ms
-            } else {
-                &game.high_scores.giant_slalom_ms
-            };
-            times.iter().map(|&ms| game.scoring.format_time(ms as i64)).collect()
-        };
-        let mut y = row_y + 24.0;
-        draw_text(title, label_x, y, font_size as f32, DARKGRAY);
-        y += 16.0;
-        for (i, entry) in entries.iter().enumerate() {
-            let marker = if finish.rank == Some(i) {
-                " <-- that's you!"
-            } else {
-                ""
-            };
-            draw_text(&format!("{}{}", entry, marker), label_x, y, font_size as f32, BLACK);
-            y += 16.0;
-        }
-        if finish.rank.is_none() {
-            // Didn't place: show the own result below with try-again.
-            y += 16.0;
-            let own = if finish.course == 2 {
-                format!("{:>9}", finish.style)
-            } else {
-                game.scoring.format_time(finish.ms as i64)
-            };
-            draw_text(&format!("{} <-- try again!", own), label_x, y, font_size as f32, BLACK);
-        }
-    }
 }
 
 #[macroquad::main(window_conf)]
@@ -173,8 +127,30 @@ async fn main() {
     // SetWindowTextA); `title_set` records whether the platform could set it.
     let mut shown_paused = false;
     let mut title_set = false;
+    // High-score message box (FUN_00402ec0's MessageBoxA): `dialog_due`
+    // holds its text for the frame after the finish (so the finish frame is
+    // on screen behind it); `dialog_in_window` is the drawn fallback while
+    // it is open, with its OK button's rectangle.
+    let mut dialog_due: Option<String> = None;
+    let mut dialog_in_window: Option<(String, (f32, f32, f32, f32))> = None;
+    // The sprites of the frame on screen: the original shows the box before
+    // the finish tick's repaint, so the previous frame stays behind it.
+    let mut shown_items: Vec<DrawItem> = Vec::new();
 
     while running {
+        if let Some(text) = dialog_due.take() {
+            // The box takes the focus: the window goes inactive (timer
+            // stopped, input dropped) until OK, like the original.
+            game.set_active(false);
+            let opened = std::time::Instant::now();
+            if platform::os_window::message_box(HIGH_SCORES_CAPTION, &text) {
+                game.add_wall_time(opened.elapsed().as_millis() as u32);
+                game.set_active(true);
+                timer.reset();
+            } else {
+                dialog_in_window = Some((text, (0.0, 0.0, 0.0, 0.0)));
+            }
+        }
         window::enforce_min_size();
 
         // Track the live window size (the original recomputes its client
@@ -189,6 +165,24 @@ async fn main() {
 
 
         let live_input = if capture.is_some() { Vec::new() } else { input.poll() };
+        if let Some((_, (bx, by, bw, bh))) = &dialog_in_window {
+            // The drawn box is modal: only OK (Enter, Space, Esc, or a click
+            // on the button) closes it; everything else is dropped.
+            let (mx, my) = mouse_position();
+            let clicked = is_mouse_button_pressed(MouseButton::Left)
+                && mx >= *bx && mx < bx + bw && my >= *by && my < by + bh;
+            let keyed = [KeyCode::Enter, KeyCode::KpEnter, KeyCode::Space, KeyCode::Escape]
+                .iter()
+                .any(|&k| is_key_pressed(k));
+            if live_input.iter().any(|a| matches!(a, GameAction::Quit)) && !keyed {
+                running = false;
+            }
+            if clicked || keyed {
+                dialog_in_window = None;
+                game.set_active(true);
+            }
+        }
+        let live_input = if dialog_in_window.is_some() { Vec::new() } else { live_input };
         for action in live_input {
             // While the window is inactive or minimized the original's window
             // procedure drops every key and mouse message (DAT_0040c67c).
@@ -306,16 +300,33 @@ async fn main() {
         if game.paused != shown_paused {
             shown_paused = game.paused;
             let text = if game.paused { PAUSE_TEXT } else { TITLE_TEXT };
-            title_set = platform::title::set_title(text);
+            title_set = platform::os_window::set_title(text);
         }
-        let pause_in_window = game.paused && !(title_set && platform::title::title_visible());
+        let pause_in_window = game.paused && !(title_set && platform::os_window::title_visible());
 
         if game.pending_score_save && capture.is_none() {
             persistence::save_scores(&game.high_scores);
             game.pending_score_save = false;
         }
 
-        draw_frame(&game, &renderer, pause_in_window);
+        // A finish this tick: the box opens at the start of the next frame,
+        // over this frame drawn with the previous sprites and the status
+        // display as repainted at the finish. No box in frame-capture runs
+        // (like tools/vm/no_dialogs.js) unless SKIFREE_REPLAY_DIALOGS is set,
+        // to check the box itself.
+        if game.show_high_scores {
+            game.show_high_scores = false;
+            if capture.is_none() || std::env::var_os("SKIFREE_REPLAY_DIALOGS").is_some() {
+                dialog_due = game.high_score_text();
+            }
+        }
+        if dialog_due.is_none() && dialog_in_window.is_none() {
+            shown_items = draw_list(&game);
+        }
+        draw_frame(&game, &renderer, &shown_items, pause_in_window);
+        if let Some((text, button)) = &mut dialog_in_window {
+            *button = renderer.draw_message_box(HIGH_SCORES_CAPTION, text, game.screen_w as f32, game.screen_h as f32);
+        }
 
         if let Some(cap) = &mut capture {
             if cap.ticks.contains(&cap.tick) {
@@ -328,7 +339,7 @@ async fn main() {
                 ));
                 cam.render_target = Some(target.clone());
                 set_camera(&cam);
-                draw_frame(&game, &renderer, pause_in_window);
+                draw_frame(&game, &renderer, &shown_items, pause_in_window);
                 set_default_camera();
                 let img = target.texture.get_texture_data();
                 // The render target's rows come out bottom-up: save top-down.

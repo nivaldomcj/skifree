@@ -288,6 +288,22 @@ Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
     original's pixel for pixel (icon and paused title). On macOS the icon
     is only the Dock image, so the `.app` keeps its bundle icon.
 
+23. **High-score box** (`FUN_00402ec0(key, value, is_time)`): reads
+    `[Ski] SS|GS|FS` from `entpack.ini` (up to 10 numbers; times stored
+    negated), inserts the result before the first entry it is *strictly*
+    greater than (ties rank after; verified: a seventh 209 lands after six
+    209s), drops the 11th, writes `"%ld "` values back, and calls
+    `MessageBoxA(main window, text, "High Scores", MB_OK)` with one line
+    per entry (`FUN_00401d70` clock or `%9ld`), `" <-- that's you!"` on the
+    new one, or `"\n\n"` + result + `" <-- try again!"`. Measured in the
+    VM without `no_dialogs.js`: the box freezes the game (ticks stop at the
+    finish tick), the main window turns inactive (timer stopped, input
+    off), and it sits centred on the screen. A Frida hook on the
+    `call [MessageBoxA]` instruction itself made the call fail (returned 0
+    at once) — hook the function entry instead. To close it from a script,
+    `BM_CLICK` its OK button; a posted `WM_COMMAND IDOK` didn't. The port's
+    Windows build shows the same native box over the same frame.
+
 ## Verified scenarios
 
 All run with seed 0, from a fresh process, world built at the scenario's

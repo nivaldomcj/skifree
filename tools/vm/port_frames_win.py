@@ -9,7 +9,8 @@ the EXE in the console session (so the window gets an OpenGL desktop)
 through a one-shot interactive scheduled task running a .cmd that sets
 SKIFREE_REPLAY / SKIFREE_FRAMES / SKIFREE_FRAME_TICKS (the VM's x86
 frida-server can't spawn x64 programs), waits for it to exit and copies
-the frames back to <out-dir>. Compare with `frames.py <frames-out> --window <out-dir>`.
+the frames back to <out-dir>. PORT_EXTRA_ENV="NAME=value ..." adds
+variables (e.g. SKIFREE_REPLAY_DIALOGS=1 to show the high-score box). Compare with `frames.py <frames-out> --window <out-dir>`.
 """
 import os
 import subprocess
@@ -36,6 +37,8 @@ def main():
            f'set SKIFREE_REPLAY={win_dir}\\{name}\r\n'
            f'set SKIFREE_FRAMES={win_dir}\\frames\r\n'
            f'set SKIFREE_FRAME_TICKS={ticks}\r\n'
+           + ''.join(f'set {kv}\r\n' for kv in os.environ.get("PORT_EXTRA_ENV", "").split())
+           +
            f'skifree.exe > run.log 2>&1\r\necho done >> run.log\r\n')
     local_cmd = os.path.join(out + ".run.cmd")
     os.makedirs(os.path.dirname(os.path.abspath(local_cmd)), exist_ok=True)

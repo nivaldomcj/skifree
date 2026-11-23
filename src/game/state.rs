@@ -46,6 +46,9 @@ pub struct GameState {
     pub high_scores: crate::game::scoring::HighScores,
     /// The most recent finish, for the high-score display.
     pub last_finish: Option<FinishRecord>,
+    /// A finish just happened: the platform shows the high-score message
+    /// box (FUN_00402ec0's MessageBoxA) and clears this.
+    pub show_high_scores: bool,
     pub elapsed_ms: u32,
     /// Wall clock: like `elapsed_ms` but keeps running while paused. The
     /// original's DAT_0040c698 is wall time; only the course clock is
@@ -112,6 +115,7 @@ impl GameState {
             pending_score_save: false,
             high_scores: crate::game::scoring::HighScores::default(),
             last_finish: None,
+            show_high_scores: false,
             elapsed_ms: 0,
             wall_ms: 0,
             status_values: Default::default(),
@@ -176,6 +180,7 @@ impl GameState {
         self.course_clock_ms = 0;
         self.pending_score_save = false;
         self.last_finish = None;
+        self.show_high_scores = false;
         self.camera = Camera::default();
 
         // Spawn skier at origin (FUN_00404a80: class 0, state 3, at 0,0,0)
@@ -205,6 +210,21 @@ impl GameState {
         if self.status_values[0].is_empty() {
             self.paint_status();
         }
+    }
+
+    /// The high-score message box text for the last finish (caption
+    /// `scoring::HIGH_SCORES_CAPTION`).
+    pub fn high_score_text(&self) -> Option<String> {
+        let f = self.last_finish?;
+        Some(self.high_scores.finish_text(f.course, f.ms, f.style, f.rank))
+    }
+
+    /// Wall time that passed while the game was blocked (a modal message
+    /// box): the original's GetTickCount keeps running, so the monster's
+    /// meal and the status display's repaint schedule see it.
+    pub fn add_wall_time(&mut self, ms: u32) {
+        self.wall_ms = self.wall_ms.wrapping_add(ms);
+        self.status_age_ms = self.status_age_ms.saturating_add(ms);
     }
 
     /// Repaint the status display (FUN_00401b80): take the current values
@@ -612,6 +632,7 @@ impl GameState {
                     rank,
                 });
                 self.pending_score_save = true;
+                self.show_high_scores = true;
                 // The skier stands after finishing (FUN_00402e80), unless
                 // crashed or mid-crash-landing.
                 if let Some(pi) = self.player_idx {

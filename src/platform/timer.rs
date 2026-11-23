@@ -33,6 +33,13 @@ impl GameTimer {
         }
     }
 
+    /// Forget time that passed while the game loop was blocked (a modal
+    /// dialog): the original restarts its timer then, it doesn't catch up.
+    pub fn reset(&mut self) {
+        self.accumulator = 0.0;
+        self.last_frame_time = get_time();
+    }
+
     #[allow(dead_code)] // Phase 3
     pub fn frame_delta(&self) -> f32 {
         self.frame_delta

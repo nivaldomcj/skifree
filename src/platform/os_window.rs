@@ -1,4 +1,7 @@
-//! Runtime window title. The original shows its pause notice in the title
+//! Native window calls miniquad 0.4 doesn't offer: the runtime title and
+//! the high-score message box.
+//!
+//! Title: the original shows its pause notice in the title
 //! bar: F3 calls `SetWindowTextA` with string 2, "Ski Paused ... Press F3
 //! to continue", and resuming puts back string 1, "SkiFree"
 //! (`FUN_00405760`). miniquad 0.4 sets the title only at window creation,
@@ -7,11 +10,17 @@
 //! `set_title` returns whether the title could be set; `title_visible`
 //! whether a title bar is on screen (not in fullscreen). Where either is
 //! false the game draws the notice in the window instead.
+//!
+//! Message box: after a course finish the original calls
+//! `MessageBoxA(main window, text, "High Scores", MB_OK)` (FUN_00402ec0),
+//! a modal box that blocks the game until OK. `message_box` shows the
+//! platform's own modal box and returns false where there is none (the
+//! game then draws one in the window).
 
 #[cfg(target_os = "macos")]
 mod imp {
     use macroquad::miniquad::native::apple::apple_util::str_to_nsstring;
-    use macroquad::miniquad::native::apple::frameworks::{msg_send, sel, sel_impl, ObjcId};
+    use macroquad::miniquad::native::apple::frameworks::{class, msg_send, sel, sel_impl, ObjcId};
 
     /// NSWindowStyleMaskFullScreen.
     const FULL_SCREEN: u64 = 1 << 14;
@@ -40,6 +49,30 @@ mod imp {
         let mask: u64 = unsafe { msg_send![window, styleMask] };
         mask & FULL_SCREEN == 0
     }
+
+    /// NSAlert, run modally. miniquad's frame timer only runs in the
+    /// event-tracking run loop mode, so the game isn't re-entered while the
+    /// alert's modal loop runs.
+    pub fn message_box(caption: &str, text: &str) -> bool {
+        unsafe {
+            let alert: ObjcId = msg_send![class!(NSAlert), new];
+            if alert.is_null() {
+                return false;
+            }
+            // The app's icon (the SkiFree face, or the .app bundle's).
+            let app: ObjcId = msg_send![class!(NSApplication), sharedApplication];
+            let icon: ObjcId = msg_send![app, applicationIconImage];
+            if !icon.is_null() {
+                let () = msg_send![alert, setIcon: icon];
+            }
+            let () = msg_send![alert, setMessageText: str_to_nsstring(caption)];
+            let () = msg_send![alert, setInformativeText: str_to_nsstring(text)];
+            let _: ObjcId = msg_send![alert, addButtonWithTitle: str_to_nsstring("OK")];
+            let _: isize = msg_send![alert, runModal];
+            let () = msg_send![alert, release];
+        }
+        true
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -56,6 +89,7 @@ mod imp {
         fn GetParent(hwnd: Hwnd) -> Hwnd;
         fn SetWindowTextW(hwnd: Hwnd, text: *const u16) -> i32;
         fn GetWindowLongW(hwnd: Hwnd, index: i32) -> i32;
+        fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, kind: u32) -> i32;
     }
     #[link(name = "kernel32")]
     extern "system" {
@@ -83,8 +117,19 @@ mod imp {
 
     pub fn set_title(title: &str) -> bool {
         let Some(hwnd) = hwnd() else { return false };
-        let wide: Vec<u16> = title.encode_utf16().chain(Some(0)).collect();
-        unsafe { SetWindowTextW(hwnd, wide.as_ptr()) != 0 }
+        let title = wide(title);
+        unsafe { SetWindowTextW(hwnd, title.as_ptr()) != 0 }
+    }
+
+    fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(Some(0)).collect()
+    }
+
+    /// The same call as the original: MessageBox(main window, ..., MB_OK).
+    pub fn message_box(caption: &str, text: &str) -> bool {
+        let owner = hwnd().unwrap_or(std::ptr::null_mut());
+        let (text, caption) = (wide(text), wide(caption));
+        unsafe { MessageBoxW(owner, text.as_ptr(), caption.as_ptr(), 0) != 0 }
     }
 
     /// miniquad's fullscreen drops the caption (title bar) style.
@@ -107,6 +152,10 @@ mod imp {
     pub fn title_visible() -> bool {
         false
     }
+
+    pub fn message_box(_caption: &str, _text: &str) -> bool {
+        false
+    }
 }
 
-pub use imp::{set_title, title_visible};
+pub use imp::{message_box, set_title, title_visible};
