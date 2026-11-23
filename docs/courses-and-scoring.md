@@ -43,26 +43,37 @@ Course identity is settled by the entrance banner sprites: 61 "Slalom ↙"
 
 Each detector runs after the skier update with the pre-update position:
 
-- **Start**: crossing y=0x280 downward with x inside a strip activates that
-  course. Slalom/tree slalom start the clock (`DAT_0040c948 = crossing
-  tick`; the HUD clock `DAT_0040c944` is now − start). Freestyle (center)
-  has **no clock** — it is scored on style points only.
+- **Start**: crossing y=0x280 downward activates the course whose strip
+  contains the **crossing x** — interpolated between the pre- and
+  post-update positions (`FUN_00402e30`). Slalom/tree slalom start the
+  clock at the interpolated **crossing time** between the previous tick and
+  this one (`DAT_0040c948`); the HUD clock `DAT_0040c944` is updated to
+  now − start at the start of every check (on the start tick itself it is
+  start − now, slightly negative). Freestyle (center, `FUN_00403180`) has
+  **no clock** — it is scored on style points only. The flags are
+  `DAT_0040c95c` (slalom, `FUN_00402c60`), `DAT_0040c958` (tree slalom,
+  `FUN_00403250`) and `DAT_0040c954` (freestyle).
 - **Abandon**: moving back above y=0x280 deactivates the course.
-- **Finish**: crossing the finish y stops the clock, records the time
-  (slalom/tree slalom) or the style score (freestyle), and enters the
+- **Finish**: crossing the finish y stops the clock at the interpolated
+  crossing time, records the time (slalom/tree slalom) or the style score
+  (freestyle), and enters the
   top-10 high-score table (`FUN_00402e80` / `FUN_00402ec0`): the skier
   stands (state 3, unless crashing/airborne), and the result is inserted
   into the course's sorted list — `entpack.ini` section `Ski`, keys
   **SS** (slalom), **GS** (giant slalom), **FS** (freestyle style). The
   display marks your entry with ` <-- that's you!`, or shows it below the
   table with ` <-- try again!` when it doesn't place. The port persists
-  the same three lists in `~/.skifree/scores.json`.
-- **Gates**: each gate has a flag sprite — 0x17 means *pass on its right*,
-  0x18 *pass on its left*. When the player crosses a gate's y, the flag
-  turns sprite **0x19** (correct side) or **0x1a** (wrong side, plus a
-  **5-second clock penalty**: `DAT_0040c948 -= 5000`, which can take the
-  start time negative). The gate cursor (`DAT_0040c6f8`) advances through
-  the course's gate records.
+  the same three lists in `~/.skifree/scores.json`. (The original shows the
+  table in a modal message box.)
+- **Gates**: each gate has a flag sprite. When the player's y passes the
+  next gate's y, the crossing x (interpolated at the gate's y) decides:
+  sprite **0x17** is missed when that x is **right of** the gate's x
+  (`x > gate.x`), sprite **0x18** when it is **left of** it (`x < gate.x`)
+  (`0x403350`). The flag turns sprite **0x19** (passed) or **0x1a**
+  (missed, plus a **5-second clock penalty**: `DAT_0040c948 -= 5000`,
+  which can take the start time negative; it shows on the clock from the
+  next tick, since the clock is refreshed before the gate check). One gate
+  is checked per tick; the gate cursor (`DAT_0040c6f8`) then advances.
 
 ## Status display (FUN_00401b80)
 
@@ -85,7 +96,7 @@ they are world objects you simply ski away from:
 | Sprite | Content | Position |
 |--------|---------|----------|
 | 53 (93×57) | SkiFree logo incl. copyright/version block | (-40 - w/2, 0) |
-| 54 (52×10) | divider line | (-40 - w/2, h53 + 4) |
+| 54 (52×10) | divider line | (-40 - w53/2, h54 + 4) — its own height (verified: (−86, 14)) |
 | 55 (92×30) | "Use NumPad [0-9] for better control" sign | (max(w55, w56), 30) |
 | 56 (63×32) | "F2 = Restart / F3 = Pause" sign | (max(w55, w56), 66) |
 
@@ -103,12 +114,46 @@ in freestyle stay on the display after the run ends, which is why the HUD
 can show a nonzero Style while the Dist row reads "free-skiing". The port
 mirrors this by gating `Scoring.add` on the freestyle course flag.
 
+Sources of style points: tricks held in the air (+2/+4/+8 per tick by pose,
+see `docs/skier-physics.md`), a botched landing (−64), hopping bumps and
+rocks (+1), flying over obstacles (+6, +1000 over the eating yeti), breaking
+the dead tree (+16), collecting a flipped rock (+100), knocking into a dog
+(+20), snowboarder (+3) or crossing skier (+20), and crashes (−32); the
+snowboarder's jump puff costs −16.
+
+## Pause
+
+F3 and **losing focus or minimizing the window** both stop the game timer:
+nothing moves. When play resumes, the original pushes the course start
+reference forward by the paused time, so **course times exclude pauses** —
+but its wall clock keeps running, so a yeti that is eating you finishes its
+meal during the pause. The port matches both: its game clock (course
+timing) freezes while paused and a separate wall clock drives the meal.
+
+The two pauses differ (window procedure + `FUN_00405a10`):
+
+- **F3** (`FUN_00405760`) shows "Ski Paused ... Press F3 to continue" and
+  only another F3 (or F2) resumes.
+- **Focus loss / minimize** (`WM_ACTIVATE` / `WM_SIZE`) stops the timer
+  silently and **ignores every key, mouse move and click** until the window
+  is active again; regaining focus resumes play — unless F3 had paused it,
+  which survives the focus change. The click that re-activates the window
+  is swallowed (`WM_MOUSEACTIVATE` → `MA_ACTIVATEANDEAT`), so clicking back
+  into the game doesn't make the skier jump.
+- The **T** cheat steps one tick even while paused (it calls the timer
+  callback directly).
+
+The port reproduces all of this: miniquad's focus events (it reports focus
+loss as "minimized" on Windows, macOS and X11) drive
+`GameState::set_active`, which mirrors `FUN_00405a10`.
+
 ## Port notes
 
-- The original interpolates the exact y=0x280 / finish crossing point
-  (`FUN_00402e30`); the port uses the post-tick position.
-- Gate pass/miss uses the post-tick player x rather than the interpolated
-  crossing x.
+- Start, finish and gate checks use the original's interpolated crossing x
+  and crossing time (`course::interpolate` = `FUN_00402e30`), run at the end
+  of the player's update like the original, and the gate rule follows
+  `0x403350` (an earlier port had 0x17/0x18 the wrong way round and used the
+  post-tick x and time).
 - The 5 s gate-miss penalty keeps `start_ms` signed so the penalty applies
   even seconds after the start line (the original's `DAT_0040c948` is a
   plain signed int).

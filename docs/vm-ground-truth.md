@@ -2,10 +2,13 @@
 
 How we verify the port against the original game itself, and what we learned.
 The port is checked **call for call** against a fresh `ski32-autoplay.exe`:
-every `rand()` call (stream position and modulus) and the player's full state
-on every tick must be identical. Seven scenarios covering steering, all three
-courses, a monster encounter and three window sizes pass this test, and are
-locked in as golden replays (`tests/replay.rs`, `verified_*`).
+every `rand()` call (stream position and modulus), the player's full state,
+the style score and the course clock on every tick must be identical.
+Fourteen scenarios — keyboard and mouse steering, freestyle tricks, all three
+courses (timed runs included), a monster encounter, F2 restarts, window
+focus changes, three window sizes and a long run to the 2000 m yeti — pass
+this test and are locked in as golden replays (`tests/replay.rs`,
+`verified_*`).
 
 ## Setup
 
@@ -40,6 +43,10 @@ locked in as golden replays (`tests/replay.rs`, `verified_*`).
 | `0x004040a0` / `0x004046e0` | mob-node pass / course spawn-event scan |
 | `0x00406170` | keyboard handler (ecx = virtual-key code) |
 | `0x004066d0` | mouse-click (jump) handler, no arguments |
+| `0x00406550` | mouse-move handler (ecx = x, edx = y, client coordinates) |
+| `0x00403420` | add style points (ecx) to `DAT_0040c6a8` when `DAT_0040c954` (freestyle running) |
+| `0x00404970` | new game (re-seeds, resets camera/scroll/score/course globals) |
+| `0x004057c0` / `0x00404ad0` | pause (kill timer) / resume (restart timer, shift course clock) |
 | `0x0040c618` | actor list head (newest first; next pointer at `+0`) |
 | `0x0040c72c` | player actor |
 | `0x0040c6c8` | main window handle |
@@ -165,6 +172,58 @@ Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
 13. **Time**: `GetTickCount` is read only by the timer callback (before
     every main tick), new game and timer setup. Everything wall-clock based
     (monster meal, course timers) derives from `DAT_0040c698`.
+14. **Trick scoring** (`FUN_004028e0`, after the state update): style points
+    by the skier's *new* state every tick (byte table at `0x402b88`): 0x10
+    → +2, 0x12/0x13 → +4, 0x14/0x15 → +8, 7–10 → −1 (unreachable there:
+    the same update already turns 7–10 into 3/6). A landing whose
+    `CRASH_LANDING` result is 0x11 costs −64. Points only count while the
+    freestyle course runs (`DAT_0040c954`). The port had no per-tick trick
+    scoring.
+15. **Mouse** (`FUN_00406550(x, y)`): the very first mouse message only
+    records the position (`DAT_0040c760`), a message at the unchanged
+    position is ignored, and nothing happens while the skier is in 0xb/0x11.
+    The offset is from the skier's anchor (`x − w/2`, `y − h/3`). On the
+    ground `FUN_004065e0` picks a direction 0–6 from `dy·4/dx` (a ratio
+    truncated to 0 goes by the sign of dx: 6 or 3 — the port returned 3);
+    in the air `FUN_00406670` picks a jump pose 0xd–0x10 by quadrant and the
+    dominant axis (the port used the ground picker in the air too).
+16. **F2 restart** (key handler → `FUN_00406500`): new game
+    (`FUN_00404970`: **re-seeds** with `GetTickCount`, resets camera, both
+    scroll accumulators, score, course globals), unpause if paused, then
+    `FUN_00404a80` builds the world and spawns the skier — the same as a
+    fresh launch apart from creating the window. The port did not re-seed
+    on a new game. (The note that an F2 world differs from a fresh one came
+    from posting F2 at an arbitrary moment mid-tick.)
+17. **Pause** (F3 → `FUN_00405760`; also on focus loss / minimize via the
+    activation handler `FUN_00405a10`): `FUN_004057c0` kills the timer —
+    no ticks at all — and remembers the last tick time; `FUN_00404ad0`
+    resumes, sets `DAT_0040c698` to now and, while a course runs, pushes
+    the course start reference (`DAT_0040c948`) forward by the paused
+    time. So course times exclude pauses, but wall-clock logic does not:
+    the monster's meal keeps progressing while paused. The port froze its
+    only clock; it now keeps a separate wall clock for the meal.
+    Activation (window procedure): `WM_SIZE` stores "minimized"
+    (`DAT_0040c770`), `WM_ACTIVATE` stores "active" (`DAT_0040c694`, then
+    `SetFocus`), and both call `FUN_00405a10`: active and not minimized →
+    input enabled (`DAT_0040c67c` = 1) and `FUN_00404ad0` (which never
+    overrides an F3 pause, `DAT_0040c650`); otherwise input disabled and
+    `FUN_004057c0`. With input disabled `WM_KEYDOWN`, `WM_CHAR`,
+    `WM_MOUSEMOVE` and `WM_LBUTTONDOWN` are dropped. `WM_MOUSEACTIVATE`
+    returns `MA_ACTIVATEANDEAT` for client clicks (the activating click is
+    eaten); `WM_GETMINMAXINFO` sets the 320×300 minimum. The port mirrors
+    this in `GameState::set_active` / `toggle_pause` / `timer_running`.
+18. **Course finish**: `FUN_00402e80` stands the skier up (state 3 on the
+    ground, 0xe airborne, unless 0xb/0x11), then `FUN_00402ec0` updates the
+    high scores in `entpack.ini` and shows a **modal `MessageBoxA`**, which
+    blocks the game thread (and a capture) until dismissed. Course time is
+    `DAT_0040c944 = now − DAT_0040c948`; a missed gate subtracts 5000 from
+    the start reference (+5 s).
+19. **Mob-node actors carry no velocity**: `FUN_004041c0` moves the node by
+    the node's velocity and copies only position and state to its actor.
+    Collision cases that test whether the *other* actor moves (the
+    snowboarder's, case 2) therefore see drifting chairs and monsters as
+    still. The port's merged actors carry the node velocity, so that test
+    now ignores it for classes 4–8.
 
 ## Verified scenarios
 
@@ -181,6 +240,13 @@ time, the port for the scenario's ticks; the shorter side bounds the check).
 | `compare_slalom.json` | 704×681 | slalom strip: gates, rocks, repeated crash/recovery | 1250 | 6566 | identical |
 | `compare_tree_slalom.json` | 704×681 | tree-slalom strip (populator zone B trees) | 1250 | 6414 | identical |
 | `compare_monster.json` | 704×681 | uphill walk past y −2000: monster chase, meal, departure | 1350 | 5339 | identical |
+| `compare_freestyle.json` | 704×681 | freestyle tricks: click jumps, air poses, trick scoring | 1250 | 5766 | identical, score included |
+| `compare_mouse.json` | 704×681 | mouse steering on the ground and in the air, first/unchanged messages | 1250 | 6268 | identical, score included |
+| `compare_restart.json` | 704×681 | two F2 restarts mid-run | 700 | 3752 (+234) | identical; the rebuilds' calls verified by stream position |
+| `compare_slalom_timed.json` | 704×681 | slalom course run: interpolated start, every gate missed (+5 s each), course clock | 1250 | 6560 | identical, clock included |
+| `compare_tree_slalom_timed.json` | 704×681 | tree-slalom course run, course clock | 1250 | 5452 | identical, clock included |
+| `compare_focus.json` | 704×681 | focus loss/gain via real `WM_ACTIVATE`, keys/clicks/mouse dropped while inactive, F3 surviving a focus change | 700 | 3528 | identical (a control run that accepts the dropped key diverges at tick 100) |
+| `compare_long.json` | 704×681 | freestyle top to bottom: finish line (high-score box auto-dismissed), then caught by the 2000 m yeti | 4500 | 20384 | identical |
 
 Each scenario has a golden log in `replays/golden/`; `cargo test` replays
 them (`verified_*` in `tests/replay.rs`), so a port change that would break
@@ -194,15 +260,16 @@ above). Pieces:
 | File | Role |
 |---|---|
 | `spawn_locked.py` | spawns a fresh game under Frida; `--size WxH` resizes the window **on entry to the world build** (`FUN_00404b50`), on the game thread, so `MoveWindow`'s synchronous WM_SIZE updates the client-rect globals before the build reads them; tears down with a timeout (Frida's detach can hang) |
-| `scenario_inputs.py` | turns a replay scenario's inputs into a Frida script that calls `FUN_00406170` / `FUN_004066d0` on entry to main-tick call N (steer: down/up/left/right in the port's order; `steer_absolute` 1/3/4/6 → End/Home/PgDn/PgUp; `jump` → Insert; `click` → the click handler) |
+| `scenario_inputs.py` | turns a replay scenario's inputs into a Frida script that calls the game's own handlers on entry to main-tick call N (steer: down/up/left/right in the port's order; `steer_absolute` 1/3/4/6 → End/Home/PgDn/PgUp; `jump` → Insert; `restart` → F2; `click` → `FUN_004066d0`; `mouse {x, y}` → `FUN_00406550`). A tick containing a `focus` input is instead delivered as real window messages (`SendMessageA`: `WM_ACTIVATE`, `WM_KEYDOWN` — `pause` = F3 —, `WM_LBUTTONDOWN`, `WM_MOUSEMOVE`) right after main-tick call N−1, so the original's window procedure and its input gating handle them |
+| `no_dialogs.js` | patches the three `call [MessageBoxA]` sites to return IDOK (`push 1; pop eax; add esp, 0x10`), so the course-finish high-score box doesn't block the run |
 | `fixed_clock.js` | makes the clock deterministic: after each of the three `GetTickCount` call sites in the game module, sets `eax = T0 + 40 · timer callbacks`, matching the replay's 40 ms ticks (hooking the kernel32 export does not take effect under the VM's emulation) |
-| `trace_player.js` | player state at the end of every main-tick call (a player flagged 0x08 is reported as gone) |
-| `trace_rand.js` | every `rand_range` call: caller, modulus, post-call LCG state, main-tick index |
+| `trace_player.js` | player state, style score, course clock (`DAT_0040c944`) and the three course flags at the end of every main-tick call (a player flagged 0x08 is reported as gone) |
+| `trace_rand.js` | every `rand_range` call: caller, modulus, post-call LCG state, main-tick index — batched into one message per tick |
 | `trace_ticks.js` | player per *integrated* tick plus skier collisions (legacy view; defines `tick2`) |
 | `trace_updates.js` | each `FUN_004028e0` update (class/state/position) per tick — diff with the port's `SKIFREE_LOG_UPDATES=1` |
 | `trace_pairs.js` | each collision-handler call (both actors, both orders) per tick |
-| `rng_align.py` | maps LCG states to stream indices and prints the first call where original and port differ, with call sites on both sides |
-| `player_align.py` | first tick where the player's x/y/z/vx/vy/vz/state differ |
+| `rng_align.py` | maps LCG states to stream indices and prints the first call where original and port differ, with call sites on both sides. Calls the original makes *inside* an injected input (an F2 world rebuild) are invisible to Frida — it doesn't fire hooks for calls made from a hook callback — so a port re-seed whose calls the original's log skips is accepted when the original resumes at exactly the same stream index |
+| `player_align.py` | first tick where the player's x/y/z/vx/vy/vz/state, the style score or the course clock differ |
 
 ```bash
 export SKIFREE_VM_HOST=<vm-ip>             # frida-server :27042
@@ -214,7 +281,8 @@ tools/vm/compare.sh --suite /tmp/suite     # all verified scenarios (~6 min)
 
 New scenarios need a duration that covers their ticks at ~19 ticks/s.
 `fast_forward` (the F cheat) has no deterministic mapping and is rejected
-by `scenario_inputs.py`.
+by `scenario_inputs.py`. Pause can't be injected per tick (a paused original
+runs no ticks at all); its behavior is covered by item 17 and a unit test.
 
 ## Debugging a divergence
 
@@ -244,6 +312,10 @@ Pitfalls met along the way:
 - `DAT_0040c72c` lags one tick behind a removal; check flag 0x08.
 - Each actor appears twice when walking memory around it: its live record
   and its previous-position copy.
+- A "slow" capture that stops advancing is usually blocked in a modal
+  dialog (course finish); load `no_dialogs.js`.
+- One Frida message per event throttles the game several times in busy
+  scenes; batch per tick.
 
 Port-side RNG call-site histogram: `cargo run --features rng_sites --bin
 replay -- replays/compare_vm.json` (via `#[track_caller]` in

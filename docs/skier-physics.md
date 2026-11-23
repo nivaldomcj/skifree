@@ -85,9 +85,42 @@ The two jump triggers differ, and both are ported:
 So the mouse gives a higher hop that keeps your speed, the keyboard a smaller
 hop that also slows you down. Both are mapped in the port.
 
+## Mouse steering (`FUN_00406550`, `GameState::mouse_move`)
+
+Moving the mouse sets the skier's state directly from where the cursor is
+relative to the skier's screen anchor (`dx = x − w/2`, `dy = y − h/3`):
+
+- The very first mouse message only records the position; a message at the
+  unchanged position is ignored; nothing happens while crashed (`0xb`) or
+  crash-landing (`0x11`).
+- **On the ground** (`FUN_004065e0`): cursor above the skier (`dy ≤ 0`) →
+  hard right `6` / hard left `3` by the side; straight below (`dx = 0`) →
+  `0`; otherwise `r = dy·4/dx` (truncated) picks `0` (|r| ≥ 12), `1`/`4`
+  (≥ 6), `2`/`5` (≥ 3), `3`/`6` (≥ 1) for left/right; a ratio truncated to
+  0 goes by the side like `dy ≤ 0`.
+- **In the air** (`FUN_00406670`): a jump pose by quadrant and dominant
+  axis — left: above → `0xe` (more sideways) or `0x10` (more upward), below
+  → `0xe` or `0xd`; right: above → `0xf` or `0x10`, below → `0xe` (more
+  sideways) or `0xd`.
+
+## Trick scoring (`FUN_004028e0`)
+
+Every tick, after the skier's state update, the new state earns style points
+(byte table at `0x402b88`): pose `0x10` → +2, `0x12`/`0x13` → +4,
+`0x14`/`0x15` → +8. A landing that turns into a crash-landing (`0x11`, from
+the landing table) costs −64. Like all style points they only count while
+the freestyle course runs (`DAT_0040c954`). Holding a trick pose through a
+long jump is therefore worth a lot — and landing it badly costs a lot.
+
 ## Controls parity
 
-The port implements the original's full control set:
+The port implements the original's full control set. Keys act per
+**key-down message**, like the original's `WM_KEYDOWN` handling: one step
+when a key is pressed, then one per OS auto-repeat while it is held (the
+port used to step the state every frame a key was down). While the window
+is inactive or minimized all keys, mouse moves and clicks are ignored, and
+the click that re-activates the window is swallowed (see
+`docs/courses-and-scoring.md`, Pause).
 
 | Input | Original | Port |
 |-------|----------|------|

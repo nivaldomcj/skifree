@@ -48,10 +48,22 @@ table of scenarios and how they were verified.
 - `compare_size_640x480.json`, `compare_size_1024x700.json` — the steering inputs at other window sizes.
 - `compare_slalom.json`, `compare_tree_slalom.json` — down the two gated strips, with crashes and recoveries.
 - `compare_monster.json` — walking uphill past y −2000: the monster's chase, meal and departure.
+- `compare_freestyle.json` — click jumps and air poses in the freestyle strip (trick scoring).
+- `compare_mouse.json` — mouse steering on the ground and in the air.
+- `compare_restart.json` — two F2 restarts mid-run.
+- `compare_long.json` — the whole freestyle strip, past its finish line.
 
 Their inputs use only what the original's handlers accept (`steer`,
-`steer_absolute` 1/3/4/6, `jump`, `click`), and the scenario's
-`screen_w`/`screen_h` is the client size the original's world is built at.
+`steer_absolute` 1/3/4/6, `jump`, `click`, `mouse`, `restart`), and the
+scenario's `screen_w`/`screen_h` is the client size the original's world is
+built at.
+
+Input types: `steer {left,right,up,down}`, `steer_absolute {state}`, `jump`
+(keyboard), `click` (mouse button), `mouse {x, y}` (cursor moved to client
+coordinates), `restart` (F2), `pause` (F3 toggle), `focus {active}` (window
+activation; while inactive every other input is dropped, like the
+original's window procedure), `fast_forward` (F cheat).
+Records include the style score.
 
 ## Determinism
 
