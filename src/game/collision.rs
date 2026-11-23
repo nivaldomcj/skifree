@@ -83,7 +83,6 @@ pub fn crossed(y: i16, pre_y: i16, other_y: i16, other_pre_y: i16) -> bool {
 pub fn handle_collision(
     a: &mut Actor,
     b: &mut Actor,
-    _player_idx: Option<usize>,
     a_idx: usize,
     b_idx: usize,
     a_dims: (i16, i16),
@@ -98,7 +97,7 @@ pub fn handle_collision(
 
     // Skier first (outer case 0).
     {
-        if std::env::var_os("SKIFREE_LOG_COLLISIONS").is_some() {
+        if log_collisions() {
             eprintln!(
                 "collision skier=({},{}) vy={} other=({:?},spr{},({},{})",
                 a.x, a.y, a.vy, b.class, b.sprite_id, b.x, b.y
@@ -134,7 +133,7 @@ pub fn handle_collision(
             }
             ActorClass::Tree
             | ActorClass::Dog
-            | ActorClass::Obstacle
+            | ActorClass::CrossingSkier
             | ActorClass::AmbientMob
             | ActorClass::Lift
             | ActorClass::Eating => {
@@ -203,11 +202,6 @@ pub fn handle_collision(
                     result.score_delta += -0x10;
                 }
             }
-        }
-
-        // Check for gate pass (event_type 0x0c = slalom gate)
-        if other.class == ActorClass::Obstacle && other.event_idx.is_some() {
-            result.score_delta = 100; // gate bonus
         }
     }
 
@@ -308,14 +302,7 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
             // Mob-node actors (classes 4-8) carry no velocity in the original:
             // FUN_004041c0 moves the node and only copies position and state
             // to its actor, so a drifting chair or a monster reads as still.
-            let node_actor = matches!(
-                b.class,
-                ActorClass::AmbientMob
-                    | ActorClass::MonsterLeft
-                    | ActorClass::MonsterRight
-                    | ActorClass::MonsterTop
-                    | ActorClass::MonsterBottom
-            );
+            let node_actor = b.class.is_mob_node();
             let moving = !node_actor && (b.vx != 0 || b.vy != 0);
             if a.state < 0x1d && moving {
                 if b.class == ActorClass::Skier {
@@ -327,8 +314,8 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
         }
         // Case 3, crossing skier: sub-case by the other's class (byte table
         // at 0x404054).
-        ActorClass::Obstacle => match b.class {
-            ActorClass::Skier | ActorClass::Dog | ActorClass::Obstacle | ActorClass::Tree | ActorClass::Rock => {
+        ActorClass::CrossingSkier => match b.class {
+            ActorClass::Skier | ActorClass::Dog | ActorClass::CrossingSkier | ActorClass::Tree | ActorClass::Rock => {
                 if b.class == ActorClass::Skier {
                     result.score_delta += 20;
                 }
@@ -365,9 +352,15 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
 
 /// `SKIFREE_LOG_PAIRS=1`: print every ordered collision-handler call (diff
 /// against `tools/vm/trace_pairs.js`).
-fn log_pairs() -> bool {
+pub(crate) fn log_pairs() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("SKIFREE_LOG_PAIRS").is_some())
+}
+
+/// `SKIFREE_LOG_COLLISIONS=1`: print each skier-first collision.
+fn log_collisions() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("SKIFREE_LOG_COLLISIONS").is_some())
 }
 
 /// Collision pass (`FUN_00401e50`, after the mob nodes). Mirrors the original's
@@ -403,7 +396,7 @@ pub fn check_all_collisions(
                 (Some(a), Some(b)) => (a.clone(), b.clone()),
                 _ => continue,
             };
-            if a.flags.dead || b.flags.dead || !collidable(&a) || !collidable(&b) {
+            if !collidable(&a) || !collidable(&b) {
                 continue;
             }
             if !moved(later, &a) && !moved(earlier, &b) {
@@ -433,7 +426,7 @@ pub fn check_all_collisions(
                         f.class, f.sprite_id, f.state, f.x, f.y, f.z, s.class, s.sprite_id, s.state, s.x, s.y, s.z
                     );
                 }
-                let result = handle_collision(&mut f, &mut s, player_idx, first, second, fd, sd);
+                let result = handle_collision(&mut f, &mut s, first, second, fd, sd);
                 if let Some(m) = pool.get_mut(first) {
                     *m = f;
                 }
@@ -481,7 +474,7 @@ mod tests {
         if s.prev_y.is_none() {
             s.prev_y = Some(s.y - s.vy);
         }
-        let r = handle_collision(s, o, Some(0), 0, 1, sd, od);
+        let r = handle_collision(s, o, 0, 1, sd, od);
         s.prev_y = None;
         r
     }

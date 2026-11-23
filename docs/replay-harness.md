@@ -8,7 +8,6 @@ Level 2 fidelity adds a deterministic replay harness to the SkiFree port. It let
 
 - **Scenarios** are JSON files under `replays/` describing a deterministic run:
   - `seed`: the MSVC LCG seed.
-  - `course`: `freestyle`, `slalom`, or `tree_slalom`.
   - `ticks`: number of 40 ms ticks to simulate.
   - `delta_ms`: frame duration (defaults to 40, matching the original 25 fps timer).
   - `inputs`: a list of `{tick, type, ...}` events mapping to the same `GameState` methods the real game uses.

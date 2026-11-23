@@ -1,3 +1,5 @@
+use super::course::Course;
+
 /// Top-10 high-score tables (`FUN_00402ec0`): one per course, persisted by the
 /// platform layer. The original packs them as space-separated numbers in
 /// entpack.ini (section "Ski", keys "SS"/"GS"/"FS"); times are stored
@@ -27,13 +29,13 @@ impl HighScores {
     /// for the timed courses, `%9ld` for freestyle — with " <-- that's
     /// you!" on the new entry; when it didn't place, a blank line and the
     /// result with " <-- try again!".
-    pub fn finish_text(&self, course: usize, ms: u64, style: i32, rank: Option<usize>) -> String {
+    pub fn finish_text(&self, course: Course, ms: u64, style: i32, rank: Option<usize>) -> String {
         let fmt_time = |ms: u64| format_clock(ms as i32);
         let fmt_style = |s: i32| format!("{s:>9}");
         let lines: Vec<String> = match course {
-            0 => self.slalom_ms.iter().map(|&t| fmt_time(t)).collect(),
-            1 => self.giant_slalom_ms.iter().map(|&t| fmt_time(t)).collect(),
-            _ => self.freestyle_style.iter().map(|&s| fmt_style(s)).collect(),
+            Course::Slalom => self.slalom_ms.iter().map(|&t| fmt_time(t)).collect(),
+            Course::TreeSlalom => self.giant_slalom_ms.iter().map(|&t| fmt_time(t)).collect(),
+            Course::Freestyle => self.freestyle_style.iter().map(|&s| fmt_style(s)).collect(),
         };
         let mut text = String::new();
         for (i, line) in lines.iter().enumerate() {
@@ -47,7 +49,7 @@ impl HighScores {
         }
         if rank.is_none() {
             text.push_str("\n\n");
-            text.push_str(&if course == 2 { fmt_style(style) } else { fmt_time(ms) });
+            text.push_str(&if course.is_timed() { fmt_time(ms) } else { fmt_style(style) });
             text.push_str(TRY_AGAIN);
         }
         text
@@ -65,10 +67,15 @@ impl HighScores {
         Some(rank)
     }
 
-    /// Record a course time; returns the 0-based rank, or None when the time
-    /// doesn't make the top 10 ("try again").
-    pub fn insert_time(&mut self, course: usize, ms: u64) -> Option<usize> {
-        let list = if course == 0 { &mut self.slalom_ms } else { &mut self.giant_slalom_ms };
+    /// Record a timed course's time; returns the 0-based rank, or None when
+    /// the time doesn't make the top 10 ("try again"). Freestyle has no
+    /// time list: see `insert_style`.
+    pub fn insert_time(&mut self, course: Course, ms: u64) -> Option<usize> {
+        let list = match course {
+            Course::Slalom => &mut self.slalom_ms,
+            Course::TreeSlalom => &mut self.giant_slalom_ms,
+            Course::Freestyle => return None,
+        };
         Self::insert_time_into(list, ms)
     }
 
@@ -107,10 +114,6 @@ impl Scoring {
         }
     }
 
-    pub fn enable(&mut self) {
-        self.enabled = true;
-    }
-
     /// "%2u:%2.2u:%2.2u.%2.2u" — h:mm:ss.cc (`FUN_00401d70`). Each part is
     /// computed with signed, truncating division and masked to 16 bits
     /// before printing, exactly like the original (a negative clock prints
@@ -143,7 +146,7 @@ mod high_score_tests {
     fn times_sort_ascending_and_truncate() {
         let mut hs = HighScores::default();
         for ms in [5000, 3000, 9000, 1000] {
-            hs.insert_time(0, ms);
+            hs.insert_time(Course::Slalom, ms);
         }
         assert_eq!(hs.slalom_ms, vec![1000, 3000, 5000, 9000]);
     }
@@ -160,27 +163,27 @@ mod high_score_tests {
     #[test]
     fn rank_is_returned_for_placed_entries() {
         let mut hs = HighScores::default();
-        assert_eq!(hs.insert_time(0, 5000), Some(0));
-        assert_eq!(hs.insert_time(0, 3000), Some(0));
-        assert_eq!(hs.insert_time(0, 4000), Some(1));
+        assert_eq!(hs.insert_time(Course::Slalom, 5000), Some(0));
+        assert_eq!(hs.insert_time(Course::Slalom, 3000), Some(0));
+        assert_eq!(hs.insert_time(Course::Slalom, 4000), Some(1));
     }
 
     #[test]
     fn eleventh_best_does_not_place() {
         let mut hs = HighScores::default();
         for i in 0..10 {
-            hs.insert_time(1, (i + 1) * 1000);
+            hs.insert_time(Course::TreeSlalom, (i + 1) * 1000);
         }
-        assert_eq!(hs.insert_time(1, 99999), None);
-        assert_eq!(hs.insert_time(1, 500), Some(0));
+        assert_eq!(hs.insert_time(Course::TreeSlalom, 99999), None);
+        assert_eq!(hs.insert_time(Course::TreeSlalom, 500), Some(0));
         assert_eq!(hs.giant_slalom_ms.len(), 10);
     }
 
     #[test]
     fn style_and_time_lists_are_independent() {
         let mut hs = HighScores::default();
-        hs.insert_time(0, 5000);
-        hs.insert_time(1, 6000);
+        hs.insert_time(Course::Slalom, 5000);
+        hs.insert_time(Course::TreeSlalom, 6000);
         hs.insert_style(-22);
         assert_eq!(hs.slalom_ms.len(), 1);
         assert_eq!(hs.giant_slalom_ms.len(), 1);
@@ -226,17 +229,17 @@ mod format_tests {
         }
         let rank = hs.insert_style(209);
         assert_eq!(rank, Some(6), "a tie ranks after the existing scores");
-        let text = hs.finish_text(2, 0, 209, rank);
+        let text = hs.finish_text(Course::Freestyle, 0, 209, rank);
         // As captured from the original's MessageBoxA in the VM.
         assert_eq!(text, "      209\n      209\n      209\n      209\n      209\n      209\n      209 <-- that's you!");
         for _ in 0..3 {
             hs.insert_style(209);
         }
         assert_eq!(hs.insert_style(209), None, "a full list keeps the earlier ties");
-        assert!(hs.finish_text(2, 0, 209, None).ends_with("      209\n\n      209 <-- try again!"));
+        assert!(hs.finish_text(Course::Freestyle, 0, 209, None).ends_with("      209\n\n      209 <-- try again!"));
         let mut t = HighScores::default();
-        let r = t.insert_time(0, 83_456);
-        assert_eq!(t.finish_text(0, 83_456, 0, r), " 0:01:23.45 <-- that's you!");
+        let r = t.insert_time(Course::Slalom, 83_456);
+        assert_eq!(t.finish_text(Course::Slalom, 83_456, 0, r), " 0:01:23.45 <-- that's you!");
     }
 
     #[test]

@@ -158,9 +158,9 @@ window-frame offsets it subtracts (`DAT_0040c704`/`DAT_0040c5fc`) have no
 equivalent in the port's camera model and are 0. (The port previously spawned
 the wrong class — ambient mob — at `(0,0,0)`; fixed.)
 
-### Obstacle / tree (`FUN_00403910`, class 3)
+### Crossing skier (`FUN_00403910`, class 3)
 
-Integrates, applies `SNOWBOARDER_PHYSICS[state - 0x1f]`, then:
+Integrates, applies `CROSSING_SKIER_PHYSICS[state - 0x1f]`, then:
 `0x1f →(rand 10) 0x20`, `0x20 →(rand 10) 0x1f`, `0x21 →(z==0) 0x20`,
 `0x22–0x26 → +1` (wrapping `0x27 → 0x20`). Already faithful.
 

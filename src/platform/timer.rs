@@ -4,8 +4,8 @@
 //! default, so a 40 ms timer fires on the first interrupt at or after 40 ms:
 //! every **3 × 15.625 = 46.875 ms** (≈ 21.3 ticks/s), not 40. The tick
 //! callback reads `GetTickCount`, which also advances by 15.625 ms steps
-//! truncated to whole ms, so the frame delta the game sees is 47, 47, 47,
-//! 47, 47, 47, 47, 46 ms (375 ms per 8 ticks). Measured in the VM
+//! truncated to whole ms, so the frame delta the game sees is 46 ms, then
+//! seven 47 ms, repeating (375 ms per 8 ticks). Measured in the VM
 //! (docs/vm-ground-truth.md item 24); the VM's extra late ticks are the
 //! VM's own and are not reproduced.
 //!

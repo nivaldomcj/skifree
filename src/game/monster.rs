@@ -153,14 +153,14 @@ fn toggle_anim(actor: &mut Actor, base: u16) {
     physics::change_state(actor, next);
 }
 
-/// Monster catches the skier (`FUN_00403a00` case 5-8)
-pub fn eat_skier(monster: &mut Actor, skier_idx: usize, elapsed_ms: u32) -> usize {
+/// Monster catches the skier (`FUN_00403a00` case 5-8); the caller frees
+/// the skier.
+pub fn eat_skier(monster: &mut Actor, elapsed_ms: u32) {
     physics::change_state(monster, 0x32);
     monster.timestamp = elapsed_ms;
     monster.vx = 0;
     monster.vy = 0;
     monster.vz = 0;
-    skier_idx // caller should free the skier actor
 }
 
 #[cfg(test)]
@@ -263,7 +263,7 @@ mod tests {
     fn eating_sequence_timing() {
         let mut rng = Rng::new(1);
         let mut m = monster_at(ActorClass::MonsterRight, 0, 32060);
-        eat_skier(&mut m, 42, 1000); // eaten at t=1000
+        eat_skier(&mut m, 1000); // eaten at t=1000
         assert_eq!(m.state, 0x32);
         assert_eq!(m.timestamp, 1000);
         assert_eq!(m.vx, 0);

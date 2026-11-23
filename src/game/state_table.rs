@@ -70,8 +70,8 @@ pub const DOG_PHYSICS: [PhysicsEntry; 5] = [
     PhysicsEntry { accel: 0, max_speed: 0, decel: 0, friction_div: 0, direction: 0 },   // 0x1a
 ];
 
-/// Snowboarder physics table (`DAT_0040a4e0`), states 0x1f-0x26
-pub const SNOWBOARDER_PHYSICS: [PhysicsEntry; 8] = [
+/// Crossing-skier physics table (`DAT_0040a4e0`), states 0x1f-0x26 (class 3).
+pub const CROSSING_SKIER_PHYSICS: [PhysicsEntry; 8] = [
     PhysicsEntry { accel: 2, max_speed: 18, decel: 2, friction_div: 1, direction: -1 }, // 0x1f
     PhysicsEntry { accel: 2, max_speed: 18, decel: 2, friction_div: 1, direction: 1 },  // 0x20
     PhysicsEntry { accel: 1, max_speed: 22, decel: 0, friction_div: 0, direction: 0 },  // 0x21
@@ -88,6 +88,9 @@ pub const CRASH_LANDING: [u16; 9] = [0x0, 0x3, 0x6, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb
 /// Skier direction transition table (`DAT_0040a258`), raw interleaved bytes.
 /// Each state occupies 8 bytes: a LEFT-transition u32 at +0 and a
 /// RIGHT-transition u32 at +4. This is the flat u32 view (states 0..=10).
+/// Kept for the byte check against the exe: the port uses the split
+/// `LEFT_TRANSITION` / `RIGHT_TRANSITION` below.
+#[cfg(test)]
 pub const DIRECTION_TRANSITION: [u16; 22] = [1, 4, 2, 0, 3, 1, 7, 2, 0, 5, 4, 6, 5, 8, 3, 2, 5, 6, 9, 2, 5, 10];
 
 /// LEFT-key transition table, one u32 per state (`DAT_0040a258` + state*8).
@@ -277,7 +280,7 @@ mod tests {
     #[test]
     fn snowboarder_physics_matches_binary() {
         let exe = exe_or_skip!();
-        for (i, entry) in SNOWBOARDER_PHYSICS.iter().enumerate() {
+        for (i, entry) in CROSSING_SKIER_PHYSICS.iter().enumerate() {
             let off = 0xa4e0 + i * 16;
             assert_eq!(i16_at(&exe, off), entry.accel, "sb state {i} accel");
             assert_eq!(i16_at(&exe, off + 2), entry.max_speed, "sb state {i} max_speed");

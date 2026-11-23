@@ -1,3 +1,5 @@
+use super::course::Course;
+
 /// Actor behavior classes (`param_1`[6] in the original)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
@@ -5,7 +7,7 @@ pub enum ActorClass {
     Skier = 0,
     Dog = 1,
     Snowboarder = 2,
-    Obstacle = 3,
+    CrossingSkier = 3,
     AmbientMob = 4,
     MonsterLeft = 5,
     MonsterRight = 6,
@@ -34,12 +36,23 @@ pub enum ActorClass {
 }
 
 impl ActorClass {
+    /// The four boundary monsters (classes 5-8).
+    pub fn is_monster(self) -> bool {
+        matches!(self, Self::MonsterLeft | Self::MonsterRight | Self::MonsterTop | Self::MonsterBottom)
+    }
+
+    /// The original's mob nodes (classes 4-8): ambient mobs and monsters,
+    /// which have a live actor only while on screen.
+    pub fn is_mob_node(self) -> bool {
+        self == Self::AmbientMob || self.is_monster()
+    }
+
     pub fn from_u16(v: u16) -> Option<Self> {
         match v {
             0 => Some(Self::Skier),
             1 => Some(Self::Dog),
             2 => Some(Self::Snowboarder),
-            3 => Some(Self::Obstacle),
+            3 => Some(Self::CrossingSkier),
             4 => Some(Self::AmbientMob),
             5 => Some(Self::MonsterLeft),
             6 => Some(Self::MonsterRight),
@@ -59,16 +72,13 @@ impl ActorClass {
     }
 }
 
-/// Actor flags (bitfield at +0x4c in the original)
+/// Actor flags (the bitfield at +0x4c in the original; the port keeps only
+/// the one it reads).
 #[derive(Debug, Clone, Copy, Default)]
-#[expect(clippy::struct_excessive_bools, reason = "the original's flag bits, one field each")]
 pub struct ActorFlags {
-    pub active: bool,     // bit 0
-    pub dead: bool,       // bit 1
-    pub visible: bool,    // bit 2
-    pub on_screen: bool,  // bit 3
-    pub no_clip: bool,    // bit 4
-    pub new_sprite: bool, // bit 5
+    /// A mob node that has its live actor (see `docs/porting-guide.md`,
+    /// "Monster/mob proxy vs actor").
+    pub on_screen: bool,
 }
 
 /// One actor in the game world (mirrors the 80-byte original struct)
@@ -145,7 +155,6 @@ pub struct SpawnRequest {
 #[derive(Debug, Clone)]
 pub struct SpawnEvent {
     pub actor_idx: Option<usize>,
-    pub event_type: u16, // 0x11=marker, 0x0c=gate, 0x0d=obstacle, 0x04=mob, 5-8=monster
     pub state: u16,
     pub class: u16,
     pub sprite: Option<u16>,
@@ -164,19 +173,10 @@ pub struct Camera {
     pub scroll_y: i16,
 }
 
-/// Course type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CourseType {
-    Freestyle,
-    Slalom,
-    TreeSlalom,
-}
-
 /// A just-completed course run, for the high-score display (`FUN_00402ec0`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FinishRecord {
-    /// 0 = slalom, 1 = giant slalom, 2 = freestyle.
-    pub course: usize,
+    pub course: Course,
     /// Course time in ms (timed courses).
     pub ms: u64,
     /// Style score at the finish (freestyle).
@@ -191,14 +191,10 @@ pub struct FinishRecord {
 pub struct CourseRun {
     /// Player is between the start and finish lines of this course.
     pub active: bool,
-    /// Player has crossed the finish line at least once.
-    pub finished: bool,
     /// Tick timestamp (ms) when the start line was crossed. Signed because
     /// the gate-miss penalty subtracts 5 s even when that goes negative
     /// (the original's `DAT_0040c948` is a plain int).
     pub start_ms: i64,
-    /// Final course clock at the finish (freestyle/slalom only).
-    pub finish_ms: u64,
     /// `spawn_events` index of the next unpassed gate (gated courses only).
     pub next_gate: Option<usize>,
 }

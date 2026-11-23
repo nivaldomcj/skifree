@@ -67,7 +67,6 @@ pub fn change_state(actor: &mut Actor, new_state: u16) {
         actor.sprite_id = STATE_TO_SPRITE[new_state as usize];
     }
     actor.state = new_state;
-    actor.flags.new_sprite = true;
 }
 
 /// Set actor position (`FUN_00402390`)
@@ -120,16 +119,15 @@ mod tests {
         change_state(&mut a, 5);
         assert_eq!(a.state, 5);
         assert_eq!(a.sprite_id, super::super::state_table::STATE_TO_SPRITE[5]);
-        assert!(a.flags.new_sprite);
     }
 
     #[test]
     fn change_state_noop_when_same() {
         let mut a = test_actor();
         change_state(&mut a, 5);
-        a.flags.new_sprite = false;
+        a.sprite_id = 99;
         change_state(&mut a, 5);
-        assert!(!a.flags.new_sprite); // unchanged
+        assert_eq!(a.sprite_id, 99); // unchanged: same state, no sprite update
     }
 
     #[test]

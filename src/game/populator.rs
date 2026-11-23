@@ -6,6 +6,7 @@
 //! per-zone probability table, and is skipped entirely when the live-actor
 //! density (sum of sprite areas) exceeds a per-zone cap.
 
+use super::course::{COURSE_START_Y, FREESTYLE_STRIP, LONG_FINISH_Y, SLALOM_FINISH_Y, SLALOM_STRIP, TREE_SLALOM_STRIP};
 use super::rng::Rng;
 use super::state_table::CLASS_INITIAL_STATE;
 use super::types::{Actor, ActorClass, Camera, SpawnRequest};
@@ -39,17 +40,21 @@ pub enum Edge {
     Bottom = 3,
 }
 
-/// Spawn position on an entering edge (`FUN_004024f0`). The camera anchors the
-/// viewport center; the original's window-frame offsets are 0 here. The RNG
-/// is consumed exactly like the original: one `rand()` for the along-edge axis.
+/// Spawn position on an entering edge (`FUN_004024f0`). The camera anchors
+/// the player at half the width and a third of the height (`FUN_00406060`);
+/// the original's window-frame offsets are 0 here. The RNG is consumed
+/// exactly like the original: one `rand()` for the along-edge axis. The sums
+/// wrap like the original's 16-bit stores (deep runs on tall windows pass
+/// `i16::MAX`).
 pub fn edge_position(edge: Edge, camera: &Camera, screen_w: i16, screen_h: i16, rng: &mut Rng) -> (i16, i16) {
-    let left = camera.cx - screen_w / 2;
-    let top = camera.cy - screen_h / 3; // player anchored at h/3 (FUN_00406060)
+    let left = camera.cx.wrapping_sub(screen_w / 2);
+    let top = camera.cy.wrapping_sub(screen_h / 3);
+    let along = |rng: &mut Rng, len: i16| rng.rand_range(len as u16) as i16;
     match edge {
-        Edge::Left => (left - 0x3c, top + rng.rand_range(screen_h as u16) as i16),
-        Edge::Right => (left + screen_w + 0x3c, top + rng.rand_range(screen_h as u16) as i16),
-        Edge::Top => (left + rng.rand_range(screen_w as u16) as i16, top - 0x3c),
-        Edge::Bottom => (left + rng.rand_range(screen_w as u16) as i16, top + screen_h + 0x3c),
+        Edge::Left => (left.wrapping_sub(0x3c), top.wrapping_add(along(rng, screen_h))),
+        Edge::Right => (left.wrapping_add(screen_w).wrapping_add(0x3c), top.wrapping_add(along(rng, screen_h))),
+        Edge::Top => (left.wrapping_add(along(rng, screen_w)), top.wrapping_sub(0x3c)),
+        Edge::Bottom => (left.wrapping_add(along(rng, screen_w)), top.wrapping_add(screen_h).wrapping_add(0x3c)),
     }
 }
 
@@ -78,8 +83,8 @@ fn pick_default(weight: i32, area: i32, rng: &mut Rng) -> u16 {
     }
 }
 
-/// Freestyle strip picker (`FUN_00402770`): always snow bumps, tighter cap.
-fn pick_zone_a(weight: i32, area: i32) -> u16 {
+/// Slalom strip picker (`FUN_00402770`): always snow bumps, tighter cap.
+fn pick_slalom(weight: i32, area: i32) -> u16 {
     if weight > area >> 6 {
         NOTHING
     } else {
@@ -87,8 +92,8 @@ fn pick_zone_a(weight: i32, area: i32) -> u16 {
     }
 }
 
-/// Slalom strip picker (`FUN_004027a0`): trees with a rare snowboarder.
-fn pick_zone_b(weight: i32, area: i32, rng: &mut Rng) -> u16 {
+/// Tree-slalom strip picker (`FUN_004027a0`): trees with a rare snowboarder.
+fn pick_tree_slalom(weight: i32, area: i32, rng: &mut Rng) -> u16 {
     if weight > area >> 4 {
         return NOTHING;
     }
@@ -99,8 +104,8 @@ fn pick_zone_b(weight: i32, area: i32, rng: &mut Rng) -> u16 {
     }
 }
 
-/// Tree-slalom strip picker (`FUN_004027e0`).
-fn pick_zone_c(weight: i32, area: i32, rng: &mut Rng) -> u16 {
+/// Freestyle strip picker (`FUN_004027e0`): the mixed table.
+fn pick_freestyle(weight: i32, area: i32, rng: &mut Rng) -> u16 {
     if weight > area >> 5 {
         return NOTHING;
     }
@@ -120,15 +125,17 @@ fn pick_zone_c(weight: i32, area: i32, rng: &mut Rng) -> u16 {
     }
 }
 
-/// Zone test + pick for a spawn position (`FUN_004025c0`'s region dispatch).
-/// Zone A = freestyle strip, B = slalom strip, C = tree-slalom strip.
+/// Zone test + pick for a spawn position (`FUN_004025c0`'s region dispatch):
+/// each course strip, from its start line to its finish line, has its own
+/// picker (docs/course-populator.md, "Zones").
 fn pick_class(x: i16, y: i16, weight: i32, area: i32, rng: &mut Rng) -> u16 {
-    if (-0x240..=-0x140).contains(&x) && (0x280..=0x21c0).contains(&y) {
-        pick_zone_a(weight, area)
-    } else if (0x140..=0x200).contains(&x) && (0x280..=0x4100).contains(&y) {
-        pick_zone_b(weight, area, rng)
-    } else if (-0xa0..=0xa0).contains(&x) && (0x280..=0x4100).contains(&y) {
-        pick_zone_c(weight, area, rng)
+    let within = |(lo, hi): (i16, i16), finish: i16| (lo..=hi).contains(&x) && (COURSE_START_Y..=finish).contains(&y);
+    if within(SLALOM_STRIP, SLALOM_FINISH_Y) {
+        pick_slalom(weight, area)
+    } else if within(TREE_SLALOM_STRIP, LONG_FINISH_Y) {
+        pick_tree_slalom(weight, area, rng)
+    } else if within(FREESTYLE_STRIP, LONG_FINISH_Y) {
+        pick_freestyle(weight, area, rng)
     } else {
         pick_default(weight, area, rng)
     }
@@ -216,15 +223,15 @@ mod tests {
         let mut rng = Rng::new(1);
         // weight above area/32 -> nothing regardless of roll
         assert_eq!(pick_default((area >> 5) + 1, area, &mut rng), NOTHING);
-        assert_eq!(pick_zone_a((area >> 6) + 1, area), NOTHING);
-        assert_eq!(pick_zone_b((area >> 4) + 1, area, &mut rng), NOTHING);
-        assert_eq!(pick_zone_c((area >> 5) + 1, area, &mut rng), NOTHING);
+        assert_eq!(pick_slalom((area >> 6) + 1, area), NOTHING);
+        assert_eq!(pick_tree_slalom((area >> 4) + 1, area, &mut rng), NOTHING);
+        assert_eq!(pick_freestyle((area >> 5) + 1, area, &mut rng), NOTHING);
     }
 
     #[test]
     fn zone_a_is_all_snow_bumps() {
         for w in 0..3 {
-            assert_eq!(pick_zone_a(w, padded_area(640, 480)), 0xb);
+            assert_eq!(pick_slalom(w, padded_area(640, 480)), 0xb);
         }
     }
 
@@ -253,9 +260,9 @@ mod tests {
     fn zone_dispatch_uses_spawn_position() {
         let area = padded_area(640, 480);
         let mut rng = Rng::new(1);
-        // Inside freestyle strip -> snow bump
+        // Inside the slalom strip -> snow bump
         assert_eq!(pick_class(-0x200, 0x1000, 0, area, &mut rng), 0xb);
-        // Inside slalom strip -> tree or snowboarder (seed 1: rand(64)=41 -> tree)
+        // Inside the tree-slalom strip -> tree or snowboarder (seed 1: rand(64)=41 -> tree)
         assert_eq!(pick_class(0x180, 0x1000, 0, area, &mut rng), 0xd);
         // Outside everything -> default table (fresh seed 1: 41 -> lift)
         assert_eq!(pick_class(0, 0, 0, area, &mut Rng::new(1)), 10);
