@@ -6,8 +6,9 @@
 #
 # Same environment as compare.sh (SKIFREE_VM_HOST, SKIFREE_VM_EXE, ...).
 # Writes <out-dir>/orig/frame_<t>.raw (the original's client area after tick
-# t), <out-dir>/port_draw.jsonl (the port's draw lists) and, via frames.py,
-# orig_<t>.png, port_<t>.png, diff_<t>.png and side_<t>.png.
+# t), <out-dir>/port_draw.jsonl (the port's draw lists), <out-dir>/win/
+# (frames drawn by the real game binary in frame-capture mode) and, via
+# frames.py, orig_/port_/diff_/side_ and win_/diffwin_ PNGs per tick.
 set -e
 cd "$(dirname "$0")/../.."
 : "${SKIFREE_VM_HOST:?set SKIFREE_VM_HOST}"
@@ -25,6 +26,8 @@ ssh -o BatchMode=yes "$SSH_DEST" 'taskkill /f /im ski32-autoplay.exe' >/dev/null
     --data-dir "$out/orig" \
     "$out/ticks.js" tools/vm/capture_frames.js tools/vm/fixed_clock.js tools/vm/no_dialogs.js \
     "$out/inputs.js" > "$out/orig.txt" 2>&1
-cargo build -q --bin replay
+cargo build -q --bin replay --bin skifree
 ./target/debug/replay "$scenario" --draw "$out/port_draw.jsonl" --draw-ticks "$ticks" > /dev/null
-python3 tools/vm/frames.py "$out"
+rm -rf "$out/win"
+SKIFREE_REPLAY="$scenario" SKIFREE_FRAMES="$out/win" SKIFREE_FRAME_TICKS="$ticks" ./target/debug/skifree
+python3 tools/vm/frames.py "$out" --window "$out/win"

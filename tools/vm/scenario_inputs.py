@@ -101,6 +101,16 @@ function sendWindowMessages(acts) {{
     else SendMessageA(hwnd, 0x0201, 1, 0);                              // WM_LBUTTONDOWN
   }}
 }}
+// Inputs run inside a Frida hook, where fixed_clock.js's hooks don't fire:
+// an F2 new game (0x404977) or a timer restart after F3 / focus
+// (0x404b01) would store the real GetTickCount in DAT_0040c698, the
+// time of the current tick, and the next fixed-clock tick would see time
+// jump (the status display's 327 ms throttle then never fires again).
+// Put back the fixed clock's time of this tick, which is what those reads
+// return when a real key arrives during it.
+function restoreFixedNow() {{
+  if (typeof T0 !== 'undefined') bIn.add(0xc698).writeU32(T0 + 40 * timerCalls);
+}}
 let mainTickCalls = 0;
 Interceptor.attach(bIn.add(0x1e50), {{
   onEnter() {{
@@ -111,6 +121,7 @@ Interceptor.attach(bIn.add(0x1e50), {{
         else if (what === 'mouse') mouseHandler(a, b);
         else clickHandler();
       }}
+      restoreFixedNow();
       send({{t: 'input', call: mainTickCalls, acts: acts}});
     }}
     mainTickCalls++;
@@ -119,6 +130,7 @@ Interceptor.attach(bIn.add(0x1e50), {{
     const acts = MESSAGES[mainTickCalls - 1];
     if (acts) {{
       sendWindowMessages(acts);
+      restoreFixedNow();
       send({{t: 'winmsg', after: mainTickCalls - 1, acts: acts}});
     }}
   }}

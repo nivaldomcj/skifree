@@ -257,9 +257,22 @@ Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
     as raw format strings (`FUN_00406a70`); labels drawn at x 2, values at
     label width + 2, first row at y 2. The timer callback repaints it only
     when more than 327 ms (`0x147`) have passed since its last paint
-    (`0x40104d`, `DAT_0040c5dc`): at 40 ms per tick, every 9th tick. Not
-    yet matched by the port (it draws every frame, in another font,
-    without the box).
+    (`0x40104d`, `DAT_0040c5dc`): at 40 ms per tick, every 9th tick,
+    counted from the first paint when the window shows (before tick 0).
+    The course finish (`FUN_00402e80`, after clearing the course flag and
+    setting the clock) repaints it at once; an **F2 restart doesn't**, and
+    doesn't restart the schedule either, so the old run's values stay up
+    to 8 ticks. Values: Time = `FUN_00401d70` (signed truncating division,
+    each part masked to 16 bits, `%2u:%2.2u:%2.2u.%2.2u` — note the
+    leading space), Dist/Speed = C `%5.2d` (precision on the digits:
+    −5 → `  -05`), Dist in 16-bit arithmetic. The port keeps the painted
+    values (`GameState::status_values`) and repaints by the same rules; its
+    replay records carry `status` on repaint ticks, and `trace_status.js` +
+    `status_align.py` compare them with the original in every scenario.
+    Its glyphs come from Windows' `vgaoem.fon` (the file behind
+    OEM_FIXED_FONT at 96 DPI), extracted by `tools/extract_assets.py`;
+    they equal the font as GDI renders it in the VM (`export_font.js` +
+    `make_font.py`), pixel for pixel.
 
 ## Verified scenarios
 
@@ -318,19 +331,23 @@ Two VM setup requirements, both learned the hard way:
 
 Results (ticks spread over each run):
 
-| Scenario | Frames | Outside the status box |
+| Scenario | Frames | Result |
 |---|---|---|
-| `compare_steer` | 0, 25, 50, 120, 163, 300, 600 | identical (composite and real renderer) |
+| `compare_steer` | 0, 25, 50, 120, 163, 300, 600 | identical |
 | `compare_slalom` | 100 … 1240 (7) | identical |
 | `compare_freestyle` | 200 … 1240 (6) | identical |
 | `compare_monster` | 300 … 1340 (6) | identical |
 | `compare_size_1024x700` | 0, 100, 300, 600 | identical |
 
+"Identical" is the whole client area, status box included, for frames
+drawn by the real renderer (macroquad, on macOS); the composite covers the
+sprite layer only.
+
 They cover the title splash, course banners and Start posts, gates,
 crashes, moguls, jumps and air tricks, the monster's chase and meal, and
-two window sizes. The first run found two port bugs: the sprite anchor and
-order (item 20) and course markers at z = 0x10 (item 4). The status box
-(item 21) is the only remaining difference.
+two window sizes. The comparison found three port bugs: the sprite anchor
+and order (item 20), course markers at z = 0x10 (item 4) and the status
+display (item 21: font, frame, layout, repaint schedule, formats).
 
 ## Harness
 
@@ -340,7 +357,7 @@ above). Pieces:
 | File | Role |
 |---|---|
 | `spawn_locked.py` | spawns a fresh game under Frida; `--size WxH` resizes the window **on entry to the world build** (`FUN_00404b50`), on the game thread, so `MoveWindow`'s synchronous WM_SIZE updates the client-rect globals before the build reads them; tears down with a timeout (Frida's detach can hang) |
-| `scenario_inputs.py` | turns a replay scenario's inputs into a Frida script that calls the game's own handlers on entry to main-tick call N (steer: down/up/left/right in the port's order; `steer_absolute` 1/3/4/6 → End/Home/PgDn/PgUp; `jump` → Insert; `restart` → F2; `click` → `FUN_004066d0`; `mouse {x, y}` → `FUN_00406550`). A tick containing a `focus` input is instead delivered as real window messages (`SendMessageA`: `WM_ACTIVATE`, `WM_KEYDOWN` — `pause` = F3 —, `WM_LBUTTONDOWN`, `WM_MOUSEMOVE`) right after main-tick call N−1, so the original's window procedure and its input gating handle them |
+| `scenario_inputs.py` | turns a replay scenario's inputs into a Frida script that calls the game's own handlers on entry to main-tick call N (steer: down/up/left/right in the port's order; `steer_absolute` 1/3/4/6 → End/Home/PgDn/PgUp; `jump` → Insert; `restart` → F2; `click` → `FUN_004066d0`; `mouse {x, y}` → `FUN_00406550`). A tick containing a `focus` input is instead delivered as real window messages (`SendMessageA`: `WM_ACTIVATE`, `WM_KEYDOWN` — `pause` = F3 —, `WM_LBUTTONDOWN`, `WM_MOUSEMOVE`) right after main-tick call N−1, so the original's window procedure and its input gating handle them. Inputs run inside a Frida hook, where `fixed_clock.js` can't act, so afterwards the injector writes the fixed clock's time back to `DAT_0040c698` (an F2 new game and a timer restart store `GetTickCount` there; the real uptime used to leak in and stop the status display's repaints) |
 | `no_dialogs.js` | patches the three `call [MessageBoxA]` sites to return IDOK (`push 1; pop eax; add esp, 0x10`), so the course-finish high-score box doesn't block the run |
 | `fixed_clock.js` | makes the clock deterministic: after each of the three `GetTickCount` call sites in the game module, sets `eax = T0 + 40 · timer callbacks`, matching the replay's 40 ms ticks (hooking the kernel32 export does not take effect under the VM's emulation) |
 | `trace_player.js` | player state, style score, course clock (`DAT_0040c944`) and the three course flags at the end of every main-tick call (a player flagged 0x08 is reported as gone) |
@@ -350,7 +367,11 @@ above). Pieces:
 | `trace_pairs.js` | each collision-handler call (both actors, both orders) per tick |
 | `rng_align.py` | maps LCG states to stream indices and prints the first call where original and port differ, with call sites on both sides. Calls the original makes *inside* an injected input (an F2 world rebuild) are invisible to Frida — it doesn't fire hooks for calls made from a hook callback — so a port re-seed whose calls the original's log skips is accepted when the original resumes at exactly the same stream index |
 | `player_align.py` | first tick where the player's x/y/z/vx/vy/vz/state, the style score or the course clock differ |
+| `trace_status.js` | every status-display repaint (`FUN_00401b80`) with its value strings and main-tick call |
+| `status_align.py` | first status repaint where original and port differ (tick or strings) |
 | `capture_frames.js` | saves the client area after each main tick in `CAPTURE_TICKS` (pixel comparison) |
+| `export_font.js` / `make_font.py` | render the OEM fixed font in the VM and turn it into `assets/fonts/oem_fixed.png` (cross-check of the `vgaoem.fon` extraction) |
+| `port_frames_win.py` | runs the port's Windows build in the VM in frame-capture mode |
 | `frames.sh` / `frames.py` | run a pixel comparison and write `orig_`, `port_`, `diff_`, `side_` (and `win_`, `diffwin_`) PNGs per tick |
 
 ```bash
@@ -398,6 +419,15 @@ Pitfalls met along the way:
   dialog (course finish); load `no_dialogs.js`.
 - One Frida message per event throttles the game several times in busy
   scenes; batch per tick.
+- Keep at most three listeners on `FUN_00401e50`: with a fourth, the last
+  attached one's `onLeave` silently stopped running under the VM's x86
+  emulation (the injector's window messages vanished and `compare_focus`
+  diverged). Count main ticks on `FUN_00401000` instead (its only caller).
+- frida-server started over SSH runs in session 0: everything works except
+  pixels (captures come back black). Use the interactive `FridaServer`
+  task.
+- Inputs injected from a hook bypass `fixed_clock.js`; the injector puts
+  the fixed time back into `DAT_0040c698` (see `scenario_inputs.py`).
 
 Port-side RNG call-site histogram: `cargo run --features rng_sites --bin
 replay -- replays/compare_vm.json` (via `#[track_caller]` in

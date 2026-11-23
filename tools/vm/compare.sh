@@ -14,7 +14,7 @@
 # The original runs as a fresh process with its client area forced to the
 # scenario's screen_w x screen_h before the world build, the scenario's inputs
 # injected at the matching main-tick calls, and a fixed 40 ms/tick clock.
-# Prints the first diverging rand() call and the first diverging player tick.
+# Prints the first diverging rand() call, player tick and status repaint.
 set -e
 cd "$(dirname "$0")/../.."
 : "${SKIFREE_VM_HOST:?set SKIFREE_VM_HOST}"
@@ -45,9 +45,10 @@ size=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('%dx%d
 python3 tools/vm/scenario_inputs.py "$scenario" > "$prefix.inputs.js"
 ssh -o BatchMode=yes "$SSH_DEST" 'taskkill /f /im ski32-autoplay.exe' >/dev/null 2>&1 || true
 "$FRIDA_PY" tools/vm/spawn_locked.py "$SKIFREE_VM_EXE" "$secs" "$SKIFREE_VM_HOST" --size "$size" \
-    tools/vm/trace_rand.js tools/vm/trace_player.js \
+    tools/vm/trace_rand.js tools/vm/trace_player.js tools/vm/trace_status.js \
     tools/vm/fixed_clock.js tools/vm/no_dialogs.js "$prefix.inputs.js" > "$prefix.orig.txt" 2>&1
 cargo build -q --features rng_sites --bin replay
 SKIFREE_LOG_RNG=1 ./target/debug/replay "$scenario" 2> "$prefix.port_rng.txt" > "$prefix.port.jsonl"
 python3 tools/vm/rng_align.py "$prefix.orig.txt" "$prefix.port_rng.txt" 10
 python3 tools/vm/player_align.py "$prefix.orig.txt" "$prefix.port.jsonl" 6
+python3 tools/vm/status_align.py "$prefix.orig.txt" "$prefix.port.jsonl" || true
