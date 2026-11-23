@@ -126,6 +126,7 @@ async fn main() {
     // Pause notice: the title follows `paused` (FUN_00405760's
     // SetWindowTextA); `title_set` records whether the platform could set it.
     let mut shown_paused = false;
+    let mut timer_was_running = game.timer_running;
     let mut title_set = false;
     // High-score message box (FUN_00402ec0's MessageBoxA): `dialog_due`
     // holds its text for the frame after the finish (so the finish frame is
@@ -220,8 +221,7 @@ async fn main() {
                 }
                 GameAction::StepTick => {
                     // Single-step one tick even when paused
-                    let delta = (timer.frame_delta() * 1000.0) as u32;
-                    game.step_tick(delta);
+                    game.step_tick(timer.step());
                 }
                 GameAction::Repaint => {
                     // Force repaint — no-op in macroquad (always repaints)
@@ -287,13 +287,21 @@ async fn main() {
 
         // Ticks keep arriving while paused: the game state stays frozen but
         // the wall clock advances (see GameState::wall_ms).
+        // F3 / focus loss kill the original's timer and resuming calls
+        // SetTimer again (FUN_00404ad0): re-arm on the same edge.
+        if game.timer_running && !timer_was_running {
+            timer.reset();
+        }
+        timer_was_running = game.timer_running;
+
         if let Some(cap) = &capture {
             if cap.tick < cap.scenario.ticks {
                 skifree::replay::apply_inputs(&mut game, &cap.scenario, cap.tick);
                 game.tick(cap.scenario.delta_ms);
             }
-        } else if timer.should_tick() {
-            let delta = (timer.frame_delta() * 1000.0) as u32;
+        } else if let Some(delta) = timer.poll() {
+            // Every 46.875 ms with the original's GetTickCount deltas (see
+            // platform::timer), not the rendered frame's duration.
             game.tick(delta);
         }
 

@@ -73,8 +73,9 @@ cargo run --bin replay -- replays/descend.json --update-golden replays/golden/de
 
 ## Recovered model highlights
 
-- **Units:** positions/velocities in **1/16-meter** units; one tick = 40 ms
-  (25 fps, timer ID 666). Freestyle course is `0x21c0` units ≈ 540 m.
+- **Units:** positions/velocities in **1/16-meter** units; one tick = the 40 ms
+  timer (ID 666) as Windows delivers it, every 46.875 ms (≈ 21.3/s;
+  replays use a fixed 40 ms). Freestyle course is `0x21c0` units ≈ 540 m.
 - **Actor struct (80 bytes):** `next=+0x00, class=+0x18, state=+0x1c,
   x=+0x40, y=+0x42, z=+0x44, vx=+0x46, vy=+0x48, vz=+0x4a, flags=+0x4c`.
 - **Mover proxy struct (monsters + ambient mobs):** `class=+0xc, state=+0x10,

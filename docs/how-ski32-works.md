@@ -21,12 +21,12 @@ Reverse-engineered with [REA](https://github.com/morluto/rea) 6.10.1 + Ghidra 12
 
 ### Game loop — message loop + timer, no threads
 
-- `FUN_00404ad0` starts the timer: `SetTimer(hwnd, 0x29a, 0x28, GameTimerProc)` — timer **ID 666**, **40 ms interval (25 fps)**
+- `FUN_00404ad0` starts the timer: `SetTimer(hwnd, 0x29a, 0x28, GameTimerProc)` — timer **ID 666**, **40 ms** requested — Windows delivers it every **46.875 ms** (three 15.625 ms timer interrupts, ≈ 21.3 ticks/s; `docs/vm-ground-truth.md` item 24)
 - Each tick, `GameTimerProc` (`0x4047c0`) calls the frame update `FUN_00401000`, which:
   1. Computes frame delta with `GetTickCount`
   2. Runs the world update `FUN_00401e50` (iterates the actor linked list: velocities, collisions, spawn events)
   3. Repaints via `FUN_00401060`
-  4. Repaints the status display (`FUN_00401b80`) only when more than 327 ms have passed since its last repaint (every 9th tick at 40 ms)
+  4. Repaints the status display (`FUN_00401b80`) only when more than 327 ms have passed since its last repaint (every 7th tick at the real 46.875 ms; every 9th at 40 ms)
 - Pause (F3, `FUN_00405760`) kills/starts the timer and retitles the window `"Ski Paused … Press F3 to continue"` (string id 2)
 
 ### Input (`SkiMainWndProc`, `0x405800`)

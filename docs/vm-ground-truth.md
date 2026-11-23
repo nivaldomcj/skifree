@@ -257,7 +257,8 @@ Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
     as raw format strings (`FUN_00406a70`); labels drawn at x 2, values at
     label width + 2, first row at y 2. The timer callback repaints it only
     when more than 327 ms (`0x147`) have passed since its last paint
-    (`0x40104d`, `DAT_0040c5dc`): at 40 ms per tick, every 9th tick,
+    (`0x40104d`, `DAT_0040c5dc`): every 9th tick at 40 ms (the fixed clock
+    of the captures), every 7th at the real 46.875 ms,
     counted from the first paint when the window shows (before tick 0).
     The course finish (`FUN_00402e80`, after clearing the course flag and
     setting the clock) repaints it at once; an **F2 restart doesn't**, and
@@ -322,8 +323,11 @@ Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
     slower in real time than at 40 ms, and the Speed readout, computed
     from the real delta (`vy·1000 / (delta·16)`), shows less (vy 16 →
     21 m/s at 47 ms instead of 25). The verified scenarios and the replay
-    harness use a fixed 40 ms on both sides, so they're unaffected; the
-    port's real-time pacing is a separate choice (TODO.md).
+    harness use a fixed 40 ms on both sides, so they're unaffected. The
+    port's real-time pacing follows Windows (`platform::timer`): expiries
+    every 3 timer interrupts, missed ones coalescing, and the original's
+    47/…/46 ms `GetTickCount` deltas passed to each tick (it used to pass
+    the rendered frame's ~16.7 ms, which ran the course clock at ~0.4×).
 
 ## Verified scenarios
 

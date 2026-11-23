@@ -43,7 +43,7 @@ vx = clamp(dx, -16, +16);
 vy = clamp(dy, -10, +26);
 ```
 
-Every 40 ms tick it is teleported to exactly `step` away from your *current* position on each axis, then closes by the clamped velocity. Anchored to you rather than the world, it cannot be outrun. The clamped `vx/vy` ratio picks one of its 8 run-direction sprite frames (states `0x2a`–`0x31`, by comparing |dx| vs |dy| via a slope ratio).
+Every tick it is teleported to exactly `step` away from your *current* position on each axis, then closes by the clamped velocity. Anchored to you rather than the world, it cannot be outrun. The clamped `vx/vy` ratio picks one of its 8 run-direction sprite frames (states `0x2a`–`0x31`, by comparing |dx| vs |dy| via a slope ratio).
 
 When it arrives (|dx| < 1 and |dy| < 1), there's a **1-in-10 random chance** (`FUN_004020b0(10)`) it pauses in state `0x2b` for 4 frames — the little hesitation before the grab.
 

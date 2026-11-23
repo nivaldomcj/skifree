@@ -20,7 +20,7 @@ from `FUN_00406170`.
 
 The skier spawns in **state 3** (`FUN_00404a80` → `FUN_004020d0(0, 3)`) at
 `(0, 0, 0)`. Distances are in **1/16-meter units** and velocities in units per
-40 ms tick.
+tick (the 40 ms timer, delivered every 46.875 ms by Windows).
 
 ## Movement (`FUN_00403430`, `physics::apply_steering`)
 

@@ -528,7 +528,7 @@ impl GameState {
 
         // FUN_00401000: after the update and the repaint, the status display
         // is repainted only if more than 327 ms have passed since its last
-        // paint (every 9th tick at 40 ms).
+        // paint (every 7th tick at the real 46.875 ms, every 9th at 40 ms).
         if self.status_age_ms > 0x147 {
             self.paint_status();
         }
