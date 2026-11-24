@@ -9,7 +9,9 @@ use super::populator;
 use super::rng::Rng;
 use super::scoring::Scoring;
 use super::skier;
+use super::skier::ArrowKey;
 use super::sound::Sound;
+use super::sprites::SpriteSizes;
 use super::state_table::STATE_TO_SPRITE;
 use super::types::Camera;
 use super::types::{Actor, ActorClass, CourseRun, FinishRecord, SpawnEvent, SpawnRequest};
@@ -87,7 +89,8 @@ pub struct GameState {
     pub last_tick_ms: u32,
     pub screen_w: i16,
     pub screen_h: i16,
-    pub sprite_dims: Vec<(i16, i16)>,
+    /// Sprite sizes by id (the original's sprite table).
+    pub sprites: SpriteSizes,
     /// Debug: log spawn materializations (`SKIFREE_LOG_SPAWNS`).
     pub log_spawns: bool,
     /// `SKIFREE_LOG_UPDATES`: print each actor-loop update (tick, class,
@@ -111,16 +114,16 @@ pub struct GameState {
 }
 
 impl GameState {
-    pub fn new(screen_w: i16, screen_h: i16) -> Self {
-        let mut g = Self::new_seeded(screen_w, screen_h, clock_seed());
+    /// A game whose every new game seeds from the clock.
+    pub fn new(screen_w: i16, screen_h: i16, sprites: SpriteSizes) -> Self {
+        let mut g = Self::new_seeded(screen_w, screen_h, clock_seed(), sprites);
         g.fixed_seed = None;
         g
     }
 
-    pub fn new_seeded(screen_w: i16, screen_h: i16, seed: u32) -> Self {
-        // Load sprite dimensions from meta.json
-        let sprite_dims = Self::load_sprite_dims();
-
+    /// A game whose every new game starts from `seed`, with the loaded
+    /// sprites' sizes.
+    pub fn new_seeded(screen_w: i16, screen_h: i16, seed: u32, sprites: SpriteSizes) -> Self {
         Self {
             pool: ActorPool::new(),
             camera: Camera::default(),
@@ -150,46 +153,13 @@ impl GameState {
             last_tick_ms: 0,
             screen_w,
             screen_h,
-            sprite_dims,
+            sprites,
             log_spawns: std::env::var_os("SKIFREE_LOG_SPAWNS").is_some(),
             log_updates: std::env::var_os("SKIFREE_LOG_UPDATES").is_some(),
             mouse_last: None,
             tick_count: 0,
             sounds: Vec::new(),
         }
-    }
-
-    fn load_sprite_dims() -> Vec<(i16, i16)> {
-        if let Some(dims) = super::assets::installed_sprite_dims() {
-            return dims.to_vec();
-        }
-        let meta_path = super::assets::asset_root().join("meta.json");
-        let mut dims = vec![(16i16, 16i16); 90]; // default
-        if let Ok(data) = std::fs::read_to_string(meta_path) {
-            if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&data) {
-                if let Some(resources) = meta.get("resources").and_then(|r| r.as_array()) {
-                    for r in resources {
-                        // Only bitmaps (RT_BITMAP = 2) are sprites: the icon
-                        // resources (RT_ICON = 3, ids 1-6, 32x32) share ids
-                        // with the skier sprites and must not overwrite them.
-                        if r.get("type").and_then(serde_json::Value::as_u64) != Some(2) {
-                            continue;
-                        }
-                        if let (Some(id), Some(w), Some(h)) = (
-                            r.get("id").and_then(serde_json::Value::as_u64),
-                            r.get("width").and_then(serde_json::Value::as_i64),
-                            r.get("height").and_then(serde_json::Value::as_i64),
-                        ) {
-                            let id = id as usize;
-                            if id < dims.len() {
-                                dims[id] = (w as i16, h as i16);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        dims
     }
 
     /// Start a new game (`FUN_00404970` + `FUN_00404a80`)
@@ -289,7 +259,7 @@ impl GameState {
     /// sprite dimensions exactly like the original: logo top-left anchored,
     /// copyright/version right of it.
     fn spawn_title_splash(&mut self) {
-        let dim = |id: usize| self.sprite_dims.get(id).copied().unwrap_or((16, 16));
+        let dim = |id: u16| self.sprites.get(id);
         // FUN_004051e0 reads the sprite table: the divider (0x36) sits its
         // *own* height + 4 below the logo's top (sprite-table +0x36c = h54;
         // verified via Frida: (-86, 14)), not the logo's height.
@@ -469,9 +439,9 @@ impl GameState {
             &self.camera,
             self.screen_w,
             self.screen_h,
-            &self.sprite_dims,
+            &self.sprites,
             &|idx, a| start_pos.get(idx).copied().flatten() != Some(moved_snapshot(a)),
-            &|a| !a.class.is_mob_node() || a.flags.on_screen,
+            &Actor::is_live,
         );
 
         for result in results {
@@ -514,12 +484,8 @@ impl GameState {
                 // original never subtracts (`removed_area`).
                 let weight = self.removed_area
                     + populator::sprite_weight(
-                        self.pool
-                            .active_indices()
-                            .into_iter()
-                            .filter(|&i| !self.is_proxy(i) || self.pool.get(i).is_some_and(|a| a.flags.on_screen))
-                            .filter_map(|i| self.pool.get(i)),
-                        &self.sprite_dims,
+                        self.pool.active_indices().into_iter().filter_map(|i| self.pool.get(i)).filter(|a| a.is_live()),
+                        &self.sprites,
                     );
                 if let Some(req) =
                     populator::pick_spawn(edge, &self.camera, self.screen_w, self.screen_h, weight, &mut self.rng)
@@ -582,7 +548,7 @@ impl GameState {
         if proxy && !a.flags.on_screen {
             return; // bare mob node, no actor to cull
         }
-        let (w, h) = self.sprite_dims.get(a.sprite_id as usize).copied().unwrap_or((16, 16));
+        let (w, h) = self.sprites.get(a.sprite_id);
         if collision::in_padded_view(a.x, a.y, a.z, w, h, &self.camera, self.screen_w, self.screen_h) {
             return;
         }
@@ -679,7 +645,7 @@ impl GameState {
 
     /// First gate record index within a course strip (`DAT_0040c94c/c950`).
     fn first_gate_index(&self, xmin: i16, xmax: i16) -> Option<usize> {
-        self.spawn_events.iter().position(|e| e.class == ActorClass::Gate as u16 && e.x >= xmin && e.x <= xmax)
+        self.spawn_events.iter().position(|e| e.class == ActorClass::Gate && e.x >= xmin && e.x <= xmax)
     }
 
     /// Gate passing (`FUN_00402c60` / `FUN_00403250` tail + `FUN_00403130`): once
@@ -720,7 +686,7 @@ impl GameState {
             .iter()
             .enumerate()
             .skip(gi + 1)
-            .find(|(_, e)| e.class == ActorClass::Gate as u16 && e.x >= xmin && e.x <= xmax)
+            .find(|(_, e)| e.class == ActorClass::Gate && e.x >= xmin && e.x <= xmax)
             .map(|(i, _)| i);
     }
 
@@ -843,7 +809,7 @@ impl GameState {
     /// order: chairlift chairs, then monsters.
     fn update_proxies(&mut self) {
         let nodes: Vec<usize> =
-            self.spawn_events.iter().filter(|e| (4..=8).contains(&e.class)).filter_map(|e| e.actor_idx).collect();
+            self.spawn_events.iter().filter(|e| e.class.is_mob_node()).filter_map(|e| e.actor_idx).collect();
         for idx in nodes {
             let player = self.player_idx.and_then(|pi| self.pool.get(pi).cloned());
             let mut request = None;
@@ -911,17 +877,17 @@ impl GameState {
             // event y inside the scan window AND the sprite's draw box
             // overlapping the padded viewport. Culled actors (event link
             // reset) re-materialize here when scrolled back into range.
-            let in_window = (4..=8).contains(&event.class) || {
+            let in_window = event.class.is_mob_node() || {
                 let sprite =
                     event.sprite.unwrap_or_else(|| STATE_TO_SPRITE.get(event.state as usize).copied().unwrap_or(0));
-                let (w, h) = self.sprite_dims.get(sprite as usize).copied().unwrap_or((16, 16));
+                let (w, h) = self.sprites.get(sprite);
                 collision::in_event_window(event.y, &self.camera, self.screen_w, self.screen_h)
                     // Event nodes carry z = 0 (verified via Frida); the
                     // actor's own z only applies once materialized.
                     && collision::in_padded_view(event.x, event.y, 0, w, h, &self.camera, self.screen_w, self.screen_h)
             };
             if in_window {
-                let Some(class) = ActorClass::from_u16(event.class) else { continue };
+                let class = event.class;
 
                 let idx = match event.sprite {
                     Some(sprite) => self.pool.alloc_with_sprite(class, sprite),
@@ -942,7 +908,7 @@ impl GameState {
                         eprintln!(
                             "spawn ms={} cls={} spr={:?} x={} y={} rng={}",
                             self.elapsed_ms,
-                            event.class,
+                            event.class as u16,
                             event.sprite,
                             event.x,
                             event.y,
@@ -979,7 +945,7 @@ impl GameState {
     /// from the world but not from `DAT_0040c6fc`.
     fn leak_area(&mut self, idx: usize) {
         if let Some(a) = self.pool.get(idx) {
-            self.removed_area += populator::sprite_weight(std::iter::once(a), &self.sprite_dims);
+            self.removed_area += populator::sprite_weight(std::iter::once(a), &self.sprites);
         }
     }
 
@@ -988,11 +954,10 @@ impl GameState {
         self.player_idx.and_then(|idx| self.pool.get_mut(idx))
     }
 
-    /// Handle keyboard steering
-    #[expect(clippy::fn_params_excessive_bools, reason = "the four arrow keys, held or not")]
-    pub fn steer_keyboard(&mut self, left: bool, right: bool, up: bool, down: bool) {
+    /// One steering key-down (`WM_KEYDOWN`, auto-repeats included).
+    pub fn steer_keyboard(&mut self, key: ArrowKey) {
         if let Some(actor) = self.player_mut() {
-            skier::steer_keyboard(actor, left, right, up, down);
+            skier::steer_keyboard(actor, key);
         }
     }
 
@@ -1096,21 +1061,9 @@ mod tests {
     use super::*;
 
     fn game_with_player() -> GameState {
-        let mut g = GameState::new_seeded(640, 480, 1);
+        let mut g = GameState::new_seeded(640, 480, 1, SpriteSizes::placeholder());
         g.new_game();
         g
-    }
-
-    #[test]
-    fn sprite_dims_ignore_icon_resources() {
-        // Icon resources 1-6 (32x32) share ids with the skier sprites; only
-        // bitmaps may feed sprite_dims. Skipped when assets aren't extracted.
-        if !super::super::assets::asset_root().join("meta.json").exists() {
-            return;
-        }
-        let g = game_with_player();
-        assert_eq!(g.sprite_dims[1], (16, 32));
-        assert_eq!(g.sprite_dims[3], (24, 28));
     }
 
     #[test]
@@ -1119,9 +1072,9 @@ mod tests {
         // -472..472 around the player. The slalom start marker at x = -576
         // stays a bare event; the freestyle ones at +-160 materialize once
         // the skier has descended far enough for y = 640 to enter the window.
-        let mut g = GameState::new_seeded(704, 681, 0);
+        let mut g = GameState::new_seeded(704, 681, 0, SpriteSizes::placeholder());
         g.new_game();
-        g.steer_keyboard(false, false, false, true);
+        g.steer_keyboard(ArrowKey::Down);
         for _ in 0..15 {
             g.tick(40);
         }
@@ -1139,7 +1092,7 @@ mod tests {
 
     #[test]
     fn offscreen_proxies_stay_unmaterialized() {
-        let mut g = GameState::new_seeded(704, 681, 0);
+        let mut g = GameState::new_seeded(704, 681, 0, SpriteSizes::placeholder());
         g.new_game();
         for _ in 0..3 {
             g.tick(40);
@@ -1159,7 +1112,7 @@ mod tests {
     #[test]
     fn losing_focus_stops_the_game_and_input() {
         let mut g = game_with_player();
-        g.steer_keyboard(false, false, false, true);
+        g.steer_keyboard(ArrowKey::Down);
         g.tick(40);
         let y = g.pool.get(g.player_idx.unwrap()).unwrap().y;
         g.set_active(false);
@@ -1276,7 +1229,7 @@ mod tests {
     #[test]
     fn removed_actors_stay_in_the_density_sum_until_a_new_game() {
         let mut g = game_with_player();
-        g.sprite_dims = vec![(8, 11); 100];
+        g.sprites = SpriteSizes::new(vec![(8, 11); 100]);
         let rock = g.pool.alloc_with_sprite(ActorClass::Rock, 0x56).unwrap();
         g.leak_area(rock);
         g.pool.free(rock);
@@ -1377,7 +1330,7 @@ mod tests {
 
     #[test]
     fn fulfill_spawn_by_state_uses_sprite_table() {
-        let mut g = GameState::new_seeded(640, 480, 1);
+        let mut g = GameState::new_seeded(640, 480, 1, SpriteSizes::placeholder());
         g.fulfill_spawn(SpawnRequest {
             class: ActorClass::CrossingSkier,
             state: Some(0x21),
@@ -1395,7 +1348,7 @@ mod tests {
 
     #[test]
     fn fulfill_spawn_by_sprite_sets_raw_sprite() {
-        let mut g = GameState::new_seeded(640, 480, 1);
+        let mut g = GameState::new_seeded(640, 480, 1, SpriteSizes::placeholder());
         g.fulfill_spawn(SpawnRequest {
             class: ActorClass::Effect,
             state: None,
@@ -1414,7 +1367,7 @@ mod tests {
     #[test]
     fn tick_fulfills_snowboarder_jump_effect() {
         let seed = seed_with_first_roll_zero(100);
-        let mut g = GameState::new_seeded(640, 480, seed);
+        let mut g = GameState::new_seeded(640, 480, seed, SpriteSizes::placeholder());
         let idx = g.pool.alloc(ActorClass::Snowboarder, 0x1e).unwrap();
         {
             let a = g.pool.get_mut(idx).unwrap();
@@ -1437,11 +1390,11 @@ mod tests {
 
     #[test]
     fn lift_chair_spawn_event_applies_initial_vy() {
-        let mut g = GameState::new_seeded(640, 480, 1);
+        let mut g = GameState::new_seeded(640, 480, 1, SpriteSizes::placeholder());
         g.spawn_events.push(SpawnEvent {
             actor_idx: None,
             state: 0x27,
-            class: 4,
+            class: ActorClass::LiftChair,
             sprite: None,
             x: -112,
             y: 100,
@@ -1468,7 +1421,7 @@ mod course_tests {
     use super::*;
 
     fn game() -> GameState {
-        let mut g = GameState::new_seeded(640, 480, 1);
+        let mut g = GameState::new_seeded(640, 480, 1, SpriteSizes::placeholder());
         g.new_game();
         g
     }
@@ -1611,7 +1564,7 @@ mod scoring_gate_tests {
 
     #[test]
     fn style_only_accumulates_in_freestyle() {
-        let mut g = GameState::new_seeded(640, 480, 1);
+        let mut g = GameState::new_seeded(640, 480, 1, SpriteSizes::placeholder());
         g.new_game();
         let idx = g.player_idx.unwrap();
         // Outside any course: points are ignored (FUN_00403420 gate).

@@ -57,7 +57,8 @@ Each detector runs after the skier update with the pre-update position:
   crossing time, records the time (slalom/tree slalom) or the style score
   (freestyle), and enters the
   top-10 high-score table (`FUN_00402e80` / `FUN_00402ec0`): the skier
-  stands (state 3, unless crashing/airborne), and the result is inserted
+  stands up (state 3 on the ground, 0xe in the air; left alone when
+  crashed, 0xb or 0x11), and the result is inserted
   into the course's sorted list — `entpack.ini` section `Ski`, keys
   **SS** (slalom), **GS** (giant slalom), **FS** (freestyle style). The
   display marks your entry with ` <-- that's you!`, or shows it below the

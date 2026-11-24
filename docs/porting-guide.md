@@ -10,26 +10,35 @@ The crate is split so the game logic runs headless (no window) for testing.
 
 ```
 src/
-  lib.rs            # exposes `game`, `replay` + `extract` (no macroquad)
+  lib.rs            # exposes `game`, `replay`, `extract` + `assets` (no macroquad)
   main.rs           # the playable game (macroquad window, input, render)
+  assets.rs         # finds assets/ on disk; sprite sizes from meta.json (tools, tests)
   bin/replay.rs     # CLI: run a scenario, print/check/update golden logs
   game/             # pure game logic — macroquad-free, fully deterministic
     state.rs        # GameState: actor pool, tick loop, input entry points
     actor.rs        # actor pool (free list): the original's 100 + mob-node slots
     types.rs        # Actor, ActorClass, SpawnEvent, Camera, CourseType
     physics.rs      # integrator (FUN_00402be0) + steering (FUN_00403430)
-    skier.rs        # skier state machine + steering (FUN_00406170)
+    skier.rs        # skier state machine + keyboard/mouse steering (FUN_00406170)
     monster.rs      # yeti (FUN_004041c0 + FUN_00404350)
     mob.rs          # dog/snowboarder/crossing skier/lift chair/walking + burning tree
     course.rs       # course + spawn-event generation (FUN_00404b50)
-    collision.rs    # actor collision (FUN_00403a00 subset)
+    populator.rs    # random spawns at the scrolled-in edge (FUN_004025c0)
+    camera.rs       # scrolling in 0x3c steps
+    collision.rs    # actor collisions (FUN_00403a00)
+    draw.rs         # what each frame paints, in the original's order (FUN_00401540)
+    cheat.rs        # the cheat keys (WM_CHAR, FUN_00406780)
     rng.rs          # MSVC LCG (FUN_00406cda), with call counter
     state_table.rs  # byte-verified data tables from the binary
-    scoring.rs      # HUD scoring/formatting
+    scoring.rs      # HUD scoring/formatting, high-score tables
     sound.rs        # the nine sound events (FUN_00402ba0), recorded per tick
+    sprites.rs      # SpriteSizes: the sprite table's sizes, handed in
   extract/          # AssetSet + reading it from the player's exe/zip/fon (web)
   platform/         # macroquad-specific: window, input, renderer, audio, persistence
     assets.rs       # loads the AssetSet (assets/, embedded, or extracted)
+    os_window.rs    # title, message box, client size: per-OS calls miniquad lacks
+    timer.rs        # the 46.875 ms game timer
+    dl.rs           # runtime library loading (libX11, libasound; Linux only)
     web.rs          # bindings for web/skifree.js (wasm32 only)
   replay.rs         # Scenario/InputEvent/TickRecord + run_scenario
 tests/
@@ -41,7 +50,10 @@ web/                # the page (index.html) and its miniquad plugin (skifree.js)
 
 `main.rs` owns the only macroquad dependency (`platform/`). Everything under
 `game/` is plain Rust and can be driven without a window, which is what makes
-the replay harness possible.
+the replay harness possible. It reads no files: the caller hands
+`GameState` its sprite sizes (`SpriteSizes`, from the loaded sprites or
+`assets::load_sprite_sizes`). Only `new()` games read a clock, to seed. The
+`SKIFREE_LOG_*` switches (`docs/replay-harness.md`) only print to stderr.
 
 ## Fidelity method
 
@@ -56,8 +68,8 @@ The workflow for any behavior fix:
 
 ### Deterministic replay
 
-`GameState::new_seeded(seed)` makes runs reproducible (the shipped `new()`
-still uses the clock). A *scenario* (JSON: seed, course, tick count, scripted
+`GameState::new_seeded(w, h, seed, sprites)` makes runs reproducible (the
+shipped `new()` still uses the clock). A *scenario* (JSON: seed, course, tick count, scripted
 inputs) runs N fixed 40 ms ticks and emits a per-tick `TickRecord` (player
 pos/vel/state, actor count, score, RNG call count, running FNV-1a hash).
 Committed *golden* logs under `replays/golden/` lock the behavior; `cargo test`
@@ -76,7 +88,10 @@ cargo run --bin replay -- replays/descend.json --update-golden replays/golden/de
 - **Level 2 — deterministic replay.** Golden logs, plus sanity checks (≤ 100
   live actors, off-screen mob nodes excluded; run-to-run identical) that add
   little beyond the golden comparison until a golden is regenerated.
-- **Level 3 — visual playtest** against the original (Wine/VM). Not done yet.
+- **Level 3 — against the original in the VM.** `tools/vm/compare.sh
+  --suite` runs 21 scenarios on `ski32.exe` and the port and compares every
+  `rand()` call, player tick, status repaint and sound; frames are compared
+  pixel for pixel (`docs/vm-ground-truth.md`, items 20–22).
 
 ## Recovered model highlights
 
@@ -150,8 +165,6 @@ may be gone after a reboot. To regenerate: configure Ghidra 12.x
   either limit.
 - **Collisions** now follow the original exactly — both pair orders, the
   crossing flag, every first-actor class (see `docs/vm-ground-truth.md`).
-- **Diagonal keys** map through the cardinal transitions rather than setting
-  states entirely independently (Home/End/PgUp/PgDn now map to states 3/1/6/4).
 
 ## Feel on real displays and input devices
 
@@ -178,6 +191,19 @@ Checked on macOS (Retina, 2560×1080 points) beyond the VM comparisons:
   rate; the port does the same with the OS's repeats (a deliberate choice:
   no emulated Windows timing). Windows' defaults are ~500 ms delay and
   ~33 ms rate; elsewhere the player's own keyboard settings apply.
+
+## Native build notes
+
+- **`cargo run`** starts the game: `default-run = "skifree"` in Cargo.toml
+  picks it over the `replay` tool.
+- **Windows icon:** build.rs compiles a resource script with `iconSki ICON
+  assets/icons/app_1.ico`, the name the original loads
+  (`LoadIconA(hInstance, "iconSki")`), through `embed-resource`, for Windows
+  targets only. Explorer and the taskbar show the SkiFree face.
+- **macOS client size:** miniquad's `request_new_screen_size` sets the
+  window *frame*, title bar included, so the client comes out short.
+  Frame-capture runs set the client size with `setContentSize:` instead
+  (`os_window::set_client_size`).
 
 ## Linux (tested on Debian 13, arm64)
 
@@ -230,11 +256,11 @@ version in `Cargo.lock`.
   in IndexedDB as dropped, re-extracted on each visit). `tests/extract.rs`
   checks the extractor against the Python script: same pixels, sizes and
   WAV bytes.
-- **Game hooks.** wasm32-unknown-unknown has no file system and no
-  `SystemTime`, so the platform layer installs the sprite sizes
-  (`game::assets::install_sprite_dims`) and the clock that seeds new games
-  (`game::state::set_clock_source`). Both fall back to `meta.json` and
-  `SystemTime` for the replay tools and tests.
+- **Game hooks.** The game gets its sprite sizes from the loaded
+  `AssetSet` (`AssetSet::sprite_sizes`) on every platform. wasm32 has no
+  `SystemTime`, so the platform layer installs the clock that seeds new
+  games (`game::state::set_clock_source`); the replay tools and tests run
+  seeded games and never need it.
 - **Glue.** `web/skifree.js` is a miniquad plugin; `platform::web` holds
   its Rust bindings. The pause notice goes in the tab title (in fullscreen
   the game draws it, as natively without a title bar). High scores live in

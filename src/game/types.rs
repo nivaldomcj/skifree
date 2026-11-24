@@ -109,6 +109,14 @@ pub struct Actor {
     pub prev_y: Option<i16>,
 }
 
+impl Actor {
+    /// Whether the original would have a live actor for this one: always,
+    /// except a mob node (classes 4-8) while it is off screen.
+    pub fn is_live(&self) -> bool {
+        !self.class.is_mob_node() || self.flags.on_screen
+    }
+}
+
 impl Default for Actor {
     fn default() -> Self {
         Self {
@@ -156,7 +164,7 @@ pub struct SpawnRequest {
 pub struct SpawnEvent {
     pub actor_idx: Option<usize>,
     pub state: u16,
-    pub class: u16,
+    pub class: ActorClass,
     pub sprite: Option<u16>,
     pub x: i16,
     pub y: i16,

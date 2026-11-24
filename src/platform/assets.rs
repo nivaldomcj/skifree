@@ -6,17 +6,12 @@
 //!   embedded by build.rs;
 //! - public web build: extracted in the page from the player's own
 //!   `ski32.exe` (`skifree::extract`).
-//!
-//! It also installs the sprite sizes for the game logic
-//! (`game::assets::install_sprite_dims`).
 
 use macroquad::prelude::*;
 use skifree::extract::{AssetSet, Rgba};
 
 pub async fn load() -> AssetSet {
-    let set = imp::load().await;
-    skifree::game::assets::install_sprite_dims(set.sprite_dims());
-    set
+    imp::load().await
 }
 
 /// Decode a PNG the way macroquad's `load_texture` does.
@@ -41,7 +36,7 @@ mod imp {
 
     #[expect(clippy::unused_async, reason = "the same signature as the public web version, which awaits")]
     pub async fn load() -> AssetSet {
-        let root = skifree::game::assets::asset_root();
+        let root = skifree::assets::asset_root();
         let mut set = AssetSet::new();
         // Slot 0 is unused: sprites are indexed by resource id, 1..=SPRITE_COUNT.
         for (id, sprite) in set.sprites.iter_mut().enumerate().skip(1) {

@@ -1,4 +1,5 @@
 use super::sound::Sound;
+use super::sprites::SpriteSizes;
 use super::types::{Actor, ActorClass, Camera};
 
 /// AABB intersection test (`FUN_00401290`)
@@ -330,7 +331,8 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
                     super::physics::change_state(a, 0x22);
                 }
             }
-            // Bump/ramp: launched at half its speed (state 0x21).
+            // Large rock or ramp (the table at 0x404054; a snow bump does
+            // nothing): launched at half its speed (state 0x21).
             ActorClass::RockLarge | ActorClass::Banner if a.z < top => {
                 a.vz = a.vy / 2;
                 result.sound = Some(Sound::SkierLaunch);
@@ -387,7 +389,7 @@ pub fn check_all_collisions(
     camera: &Camera,
     screen_w: i16,
     screen_h: i16,
-    sprite_dims: &[(i16, i16)],
+    sprites: &SpriteSizes,
     moved: &dyn Fn(usize, &Actor) -> bool,
     collidable: &dyn Fn(&Actor) -> bool,
 ) -> Vec<CollisionResult> {
@@ -395,7 +397,7 @@ pub fn check_all_collisions(
     let indices = pool.active_indices();
     let mut removed: Vec<usize> = Vec::new();
 
-    let dims_of = |a: &Actor| sprite_dims.get(a.sprite_id as usize).copied().unwrap_or((16, 16));
+    let dims_of = |a: &Actor| sprites.get(a.sprite_id);
     for j in 0..indices.len() {
         let later = indices[j];
         // The outer actor's box and its moved flag (0x20) are read once per
@@ -523,10 +525,10 @@ mod tests {
         }
         let p = pool.get_mut(player).unwrap();
         (p.vy, p.prev_y) = (9, Some(91));
-        let mut dims = vec![(16, 16); 100];
-        dims[27] = (64, 32);
-        dims[49] = (28, 32);
-        dims[super::super::state_table::STATE_TO_SPRITE[0] as usize] = (16, 30);
+        let mut dims = SpriteSizes::new(vec![(16, 16); 100]);
+        dims.set(27, (64, 32));
+        dims.set(49, (28, 32));
+        dims.set(super::super::state_table::STATE_TO_SPRITE[0], (16, 30));
         let camera = Camera { cx: 0, cy: 100, ..Default::default() };
         check_all_collisions(&mut pool, Some(player), &camera, 640, 480, &dims, &|_, _| true, &|_| true);
         let p = pool.get(player).unwrap();
@@ -556,7 +558,7 @@ mod tests {
         pool.get_mut(dog).unwrap().vy = 5;
         let start: Vec<_> = (0..pool.slots()).map(|i| pool.get(i).map(|a| (a.y, a.sprite_id))).collect();
         let moved = |idx: usize, a: &Actor| start[idx] != Some((a.prev_y.unwrap_or(a.y), a.sprite_id));
-        let dims = vec![(16, 16); 100];
+        let dims = SpriteSizes::new(vec![(16, 16); 100]);
         let camera = Camera { cx: 0, cy: 100, ..Default::default() };
         let results = check_all_collisions(&mut pool, Some(player), &camera, 640, 480, &dims, &moved, &|_| true);
         assert_eq!(pool.get(player).unwrap().state, 0x0b, "the dog knocks the skier over");

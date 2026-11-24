@@ -1,4 +1,4 @@
-use super::types::SpawnEvent;
+use super::types::{ActorClass, SpawnEvent};
 
 /// Course strip x-ranges (world units), from `FUN_00402c60` / `FUN_00403250` /
 /// `FUN_00403180` and the zone tests in `FUN_004025c0`. Identified by the
@@ -91,11 +91,29 @@ fn banner_y(top: i16, screen_h: i16) -> i16 {
 }
 
 fn marker(events: &mut Vec<SpawnEvent>, sprite: u16, x: i16, y: i16) {
-    events.push(SpawnEvent { actor_idx: None, state: 0, class: 0x11, sprite: Some(sprite), x, y, z: 0, param: 0 });
+    events.push(SpawnEvent {
+        actor_idx: None,
+        state: 0,
+        class: ActorClass::Effect,
+        sprite: Some(sprite),
+        x,
+        y,
+        z: 0,
+        param: 0,
+    });
 }
 
 fn gate(events: &mut Vec<SpawnEvent>, sprite: u16, x: i16, y: i16) {
-    events.push(SpawnEvent { actor_idx: None, state: 0, class: 0x0c, sprite: Some(sprite), x, y, z: 0, param: 0 });
+    events.push(SpawnEvent {
+        actor_idx: None,
+        state: 0,
+        class: ActorClass::Gate,
+        sprite: Some(sprite),
+        x,
+        y,
+        z: 0,
+        param: 0,
+    });
 }
 
 /// Slalom (left strip): short timed course with flag gates.
@@ -189,7 +207,7 @@ fn generate_lift_poles(events: &mut Vec<SpawnEvent>) {
         events.push(SpawnEvent {
             actor_idx: None,
             state: 0,
-            class: 0x0d,
+            class: ActorClass::Tree,
             sprite: Some(0x40),
             x: -128,
             y,
@@ -212,7 +230,7 @@ fn generate_mob_spawns(events: &mut Vec<SpawnEvent>) {
             events.push(SpawnEvent {
                 actor_idx: None,
                 state: 0x27,
-                class: 4,
+                class: ActorClass::LiftChair,
                 sprite: None,
                 x: -112,
                 y,
@@ -225,7 +243,7 @@ fn generate_mob_spawns(events: &mut Vec<SpawnEvent>) {
             events.push(SpawnEvent {
                 actor_idx: None,
                 state: 0x29,
-                class: 4,
+                class: ActorClass::LiftChair,
                 sprite: None,
                 x: -144,
                 y,
@@ -239,13 +257,49 @@ fn generate_mob_spawns(events: &mut Vec<SpawnEvent>) {
 
 fn generate_monster_spawns(events: &mut Vec<SpawnEvent>) {
     // Class 7: guards the left side
-    events.push(SpawnEvent { actor_idx: None, state: 0x2a, class: 7, sprite: None, x: -16060, y: 0, z: 0, param: 0 });
+    events.push(SpawnEvent {
+        actor_idx: None,
+        state: 0x2a,
+        class: ActorClass::MonsterLeftEdge,
+        sprite: None,
+        x: -16060,
+        y: 0,
+        z: 0,
+        param: 0,
+    });
     // Class 8: guards the right side
-    events.push(SpawnEvent { actor_idx: None, state: 0x2a, class: 8, sprite: None, x: 16060, y: 0, z: 0, param: 0 });
+    events.push(SpawnEvent {
+        actor_idx: None,
+        state: 0x2a,
+        class: ActorClass::MonsterRightEdge,
+        sprite: None,
+        x: 16060,
+        y: 0,
+        z: 0,
+        param: 0,
+    });
     // Class 5: guards uphill
-    events.push(SpawnEvent { actor_idx: None, state: 0x2a, class: 5, sprite: None, x: 0, y: -2060, z: 0, param: 0 });
+    events.push(SpawnEvent {
+        actor_idx: None,
+        state: 0x2a,
+        class: ActorClass::MonsterUphill,
+        sprite: None,
+        x: 0,
+        y: -2060,
+        z: 0,
+        param: 0,
+    });
     // Class 6: guards downhill (the 2000 m yeti)
-    events.push(SpawnEvent { actor_idx: None, state: 0x2a, class: 6, sprite: None, x: 0, y: 32060, z: 0, param: 0 });
+    events.push(SpawnEvent {
+        actor_idx: None,
+        state: 0x2a,
+        class: ActorClass::MonsterDownhill,
+        sprite: None,
+        x: 0,
+        y: 32060,
+        z: 0,
+        param: 0,
+    });
 }
 
 /// `FUN_00402e30`: the value of a quantity at the moment the player crossed

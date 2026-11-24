@@ -1,5 +1,7 @@
 pub mod assets;
 pub mod audio;
+#[cfg(target_os = "linux")]
+mod dl;
 pub mod input;
 pub mod os_window;
 pub mod persistence;

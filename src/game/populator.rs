@@ -8,6 +8,7 @@
 
 use super::course::{COURSE_START_Y, FREESTYLE_STRIP, LONG_FINISH_Y, SLALOM_FINISH_Y, SLALOM_STRIP, TREE_SLALOM_STRIP};
 use super::rng::Rng;
+use super::sprites::SpriteSizes;
 use super::state_table::CLASS_INITIAL_STATE;
 use super::types::{Actor, ActorClass, Camera, SpawnRequest};
 
@@ -22,10 +23,10 @@ pub fn padded_area(screen_w: i16, screen_h: i16) -> i32 {
 
 /// Live-actor density (`DAT_0040c6fc`): sum of sprite areas (width * height,
 /// sprite-table entry +0xe) over all active actors.
-pub fn sprite_weight<'a>(actors: impl Iterator<Item = &'a Actor>, sprite_dims: &[(i16, i16)]) -> i32 {
+pub fn sprite_weight<'a>(actors: impl Iterator<Item = &'a Actor>, sprites: &SpriteSizes) -> i32 {
     actors
         .map(|a| {
-            let (w, h) = sprite_dims.get(a.sprite_id as usize).copied().unwrap_or((16, 16));
+            let (w, h) = sprites.get(a.sprite_id);
             i32::from(w) * i32::from(h)
         })
         .sum()

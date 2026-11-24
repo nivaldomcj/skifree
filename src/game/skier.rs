@@ -74,7 +74,16 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool, sounds: &mut Vec<Soun
     points
 }
 
-/// Handle keyboard steering input (`FUN_00406170`, faithful port)
+/// A cardinal steering key (arrows or numpad 2/4/6/8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArrowKey {
+    Left,
+    Right,
+    Up,
+    Down,
+}
+
+/// Handle one keyboard steering key-down (`FUN_00406170`, faithful port)
 ///
 /// The original handles each cardinal key as a discrete event:
 /// - DOWN (ground): straight down (state 0) — the fastest descent.
@@ -82,70 +91,76 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool, sounds: &mut Vec<Soun
 /// - LEFT/RIGHT: step through the left/right transition fan (0→1→2→3→7 and
 ///   0→4→5→6→8); the hard-carve states 7/8 also kick lateral velocity to ±8.
 /// - In the air, UP/DOWN cycle the jump-trick poses instead of steering.
-#[expect(clippy::fn_params_excessive_bools, reason = "the four arrow keys, held or not")]
-pub fn steer_keyboard(actor: &mut Actor, left: bool, right: bool, up: bool, down: bool) {
+pub fn steer_keyboard(actor: &mut Actor, key: ArrowKey) {
     if actor.state == 0x0b || actor.state == 0x11 {
         return; // crashed or jumping
     }
 
-    if down {
-        if actor.z == 0 {
-            physics::change_state(actor, 0);
-        } else {
-            let next = match actor.state {
-                0x0d => 0x13,
-                0x12 => 0x0d,
-                0x13 => 0x12,
-                0x14 => 0x0e,
-                0x15 => 0x0f,
-                _ => actor.state,
-            };
-            physics::change_state(actor, next);
-        }
+    match key {
+        ArrowKey::Down => steer_down(actor),
+        ArrowKey::Up => steer_up(actor),
+        ArrowKey::Left => steer_left(actor),
+        ArrowKey::Right => steer_right(actor),
     }
+}
 
-    if up {
-        match actor.state {
-            3 | 7 | 0x0c => {
-                if actor.vy == 0 {
-                    physics::change_state(actor, 9);
-                    actor.vy = -4;
-                }
-            }
-            6 | 8 => {
-                if actor.vy == 0 {
-                    physics::change_state(actor, 10);
-                    actor.vy = -4;
-                }
-            }
-            0x0d => physics::change_state(actor, 0x12),
-            0x0e => physics::change_state(actor, 0x14),
-            0x0f => physics::change_state(actor, 0x15),
-            0x12 => physics::change_state(actor, 0x13),
-            0x13 => physics::change_state(actor, 0x0d),
-            _ => {}
-        }
+/// DOWN: straight down on the ground; in the air, the next trick pose.
+fn steer_down(actor: &mut Actor) {
+    if actor.z == 0 {
+        physics::change_state(actor, 0);
+    } else {
+        let next = match actor.state {
+            0x0d => 0x13,
+            0x12 => 0x0d,
+            0x13 => 0x12,
+            0x14 => 0x0e,
+            0x15 => 0x0f,
+            _ => actor.state,
+        };
+        physics::change_state(actor, next);
     }
+}
 
-    if left {
-        let state = actor.state as usize;
-        if state < LEFT_TRANSITION.len() {
-            let next = LEFT_TRANSITION[state];
-            physics::change_state(actor, next);
-            if next == 7 {
-                actor.vx = (actor.vx - 8).max(-8);
+/// UP: the snowplow brake from a hard turn; in the air, the next trick pose.
+fn steer_up(actor: &mut Actor) {
+    match actor.state {
+        3 | 7 | 0x0c => {
+            if actor.vy == 0 {
+                physics::change_state(actor, 9);
+                actor.vy = -4;
             }
         }
-    }
-
-    if right {
-        let state = actor.state as usize;
-        if state < RIGHT_TRANSITION.len() {
-            let next = RIGHT_TRANSITION[state];
-            physics::change_state(actor, next);
-            if next == 8 {
-                actor.vx = (actor.vx + 8).min(8);
+        6 | 8 => {
+            if actor.vy == 0 {
+                physics::change_state(actor, 10);
+                actor.vy = -4;
             }
+        }
+        0x0d => physics::change_state(actor, 0x12),
+        0x0e => physics::change_state(actor, 0x14),
+        0x0f => physics::change_state(actor, 0x15),
+        0x12 => physics::change_state(actor, 0x13),
+        0x13 => physics::change_state(actor, 0x0d),
+        _ => {}
+    }
+}
+
+/// LEFT: one step through the left fan; the hard carve (7) kicks vx left.
+fn steer_left(actor: &mut Actor) {
+    if let Some(&next) = LEFT_TRANSITION.get(actor.state as usize) {
+        physics::change_state(actor, next);
+        if next == 7 {
+            actor.vx = (actor.vx - 8).max(-8);
+        }
+    }
+}
+
+/// RIGHT: one step through the right fan; the hard carve (8) kicks vx right.
+fn steer_right(actor: &mut Actor) {
+    if let Some(&next) = RIGHT_TRANSITION.get(actor.state as usize) {
+        physics::change_state(actor, next);
+        if next == 8 {
+            actor.vx = (actor.vx + 8).min(8);
         }
     }
 }

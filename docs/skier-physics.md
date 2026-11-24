@@ -160,4 +160,5 @@ the only deliberate deviation from the original controls.
 - `physics` tests assert downhill acceleration to max speed, decay above max
   speed, and speed-scrubbing on hard turns.
 - The `descend` replay scenario drives the skier from `(0,0)` to
-  `y ≈ 7864` over 500 ticks and is locked by a golden log.
+  `y = 6739` over 500 ticks, crashing three times and ending crashed, and
+  is locked by a golden log.

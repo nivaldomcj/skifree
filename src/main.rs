@@ -15,18 +15,6 @@ fn window_conf() -> Conf {
     window::conf()
 }
 
-#[derive(serde::Deserialize)]
-struct ScriptEvent {
-    at_ms: u64,
-    key: String,
-}
-
-fn load_script() -> Option<Vec<ScriptEvent>> {
-    let path = std::env::var("SKIFREE_SCRIPT").ok()?;
-    let data = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&data).ok()
-}
-
 /// The original's pause notice (string 2), shown in the window title.
 const PAUSE_TEXT: &str = "Ski Paused ... Press F3 to continue";
 /// Its normal title (string 1).
@@ -170,6 +158,7 @@ async fn run() {
     #[cfg(target_arch = "wasm32")]
     window::set_favicon(&assets);
     let renderer = Renderer::new(&assets);
+    let sprites = assets.sprite_sizes();
     // Where the platform can, stop the user's resize at the minimum, like
     // the original's WM_GETMINMAXINFO; elsewhere enforce_min_size bounces.
     platform::os_window::set_min_client_size(f64::from(window::MIN_WIDTH), f64::from(window::MIN_HEIGHT));
@@ -180,16 +169,17 @@ async fn run() {
 
     // SKIFREE_SEED=<u32> forces a deterministic world for side-by-side
     // testing against the original running a patched seed.
+    let (w, h) = skifree::game::DEFAULT_CLIENT_SIZE;
     let mut game = match std::env::var("SKIFREE_SEED").ok().and_then(|s| s.parse::<u32>().ok()) {
-        Some(seed) => GameState::new_seeded(window::DEFAULT_WIDTH as i16, window::DEFAULT_HEIGHT as i16, seed),
-        None => GameState::new(window::DEFAULT_WIDTH as i16, window::DEFAULT_HEIGHT as i16),
+        Some(seed) => GameState::new_seeded(w, h, seed, sprites.clone()),
+        None => GameState::new(w, h, sprites.clone()),
     };
     game.new_game();
     game.high_scores = persistence::load_scores();
 
     let mut capture = load_frame_capture().await;
     if let Some(cap) = &capture {
-        let (w, h) = (cap.scenario.screen_w.unwrap_or(640), cap.scenario.screen_h.unwrap_or(480));
+        let (w, h) = cap.scenario.client_size();
         // On macOS miniquad's request_new_screen_size sets the window frame,
         // title bar included, so the client would come out short (and
         // screen_width/height report the requested size at once): set the
@@ -205,16 +195,9 @@ async fn run() {
                 break;
             }
         }
-        game = GameState::new_seeded(w, h, cap.scenario.seed);
+        game = GameState::new_seeded(w, h, cap.scenario.seed, sprites);
         game.new_game();
     }
-
-    // SKIFREE_SCRIPT=<json file> replays timed key events for side-by-side
-    // comparison with the original (which is driven by the same schedule
-    // through Frida PostMessage). Format: [{"at_ms": 2000, "key": "down"}]
-    let script = load_script();
-    let script_start = get_time();
-    let mut script_fired = 0usize;
 
     let mut running = true;
     // Pause notice: the title follows `paused` (FUN_00405760's
@@ -309,10 +292,7 @@ async fn run() {
                 }
                 // One state step per key-down (WM_KEYDOWN), auto-repeats
                 // included.
-                GameAction::SteerLeft => game.steer_keyboard(true, false, false, false),
-                GameAction::SteerRight => game.steer_keyboard(false, true, false, false),
-                GameAction::SteerUp => game.steer_keyboard(false, false, true, false),
-                GameAction::SteerDown => game.steer_keyboard(false, false, false, true),
+                GameAction::Steer(key) => game.steer_keyboard(key),
                 GameAction::ToggleMute => audio.toggle_mute(),
                 // A t step runs for the GetTickCount time since the last tick.
                 GameAction::Cheat(cheat) => {
@@ -324,27 +304,6 @@ async fn run() {
                 GameAction::Click(_, _) => {
                     game.click();
                 }
-            }
-        }
-
-        // Fire due scripted events (side-by-side testing only).
-        if let Some(events) = &script {
-            let now_ms = ((get_time() - script_start) * 1000.0) as u64;
-            while script_fired < events.len() && events[script_fired].at_ms <= now_ms {
-                if !game.input_enabled {
-                    script_fired += 1;
-                    continue;
-                }
-                match events[script_fired].key.as_str() {
-                    "down" => game.steer_keyboard(false, false, false, true),
-                    "up" => game.steer_keyboard(false, false, true, false),
-                    "left" => game.steer_keyboard(true, false, false, false),
-                    "right" => game.steer_keyboard(false, true, false, false),
-                    "jump" => game.jump_keyboard(),
-                    "click" => game.click(),
-                    _ => {}
-                }
-                script_fired += 1;
             }
         }
 

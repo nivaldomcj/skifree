@@ -363,11 +363,13 @@ def main():
         payload = data[off:off + size]
         entry = {"type": rtype[1] if rtype[0] == "id" else rtype[1],
                  "id": rname[1], "offset": off, "size": size, "sha256": sha256(payload)}
-        if rtype == ("id", RT_BITMAP):
+        # Sprites and icons are written under their numeric id: a string
+        # name would go into a file path unchecked (`icon_../../x.png`).
+        if rtype == ("id", RT_BITMAP) and rname[0] == "id":
             dib = Dib(payload)
             entry.update(width=dib.width, height=dib.height, bpp=dib.bpp)
             bitmaps[rname[1]] = dib
-        elif rtype == ("id", RT_ICON):
+        elif rtype == ("id", RT_ICON) and rname[0] == "id":
             dib = Dib(payload)
             dib.height //= 2  # icon DIBs store XOR+AND stacked
             entry.update(width=dib.width, height=dib.height, bpp=dib.bpp)

@@ -86,7 +86,7 @@ fails and the game has always been silent.
 | 2 | `0x40c768` | The ramp, the automatic hop over a large rock, an airborne bounce off a rock or a large rock | `0x403ccb`, `0x403be8` |
 | 3 | `0x40c5d0` | A snowboarder knocked down by anything moving | `0x403fa8` |
 | 4 | `0x40c718` | Every landing (the landing table never yields `0x11`) | `0x402aeb` |
-| 5 | `0x40c750` | A crossing skier (class 3) launched by a bump or a ramp | `0x403ef3` |
+| 5 | `0x40c750` | A crossing skier (class 3) launched by a large rock or the ramp (the table at `0x404054`; a snow bump does nothing) | `0x403ef3` |
 | 6 | `0x40c628` | A dog knocked over, by anything | `0x403f5f` |
 | 7 | `0x40c6e0` | The monster catches the player | `0x403b1e` |
 | 8 | `0x40c608` | A snowboarder jumps | `0x40371a` |
@@ -95,6 +95,11 @@ fails and the game has always been silent.
 The chase sound plays on every chase step. Each step makes the monster hop
 (`vz = 1`), and it skips the chase while airborne, so a chasing monster
 steps, and plays sound 9, on every third tick (`docs/monster-mob-physics.md`).
+
+The High Scores box makes no sound. It is a `MessageBoxA` with `MB_OK` and
+no icon, and Windows' `SoftModalMessageBox` calls neither `MessageBeep`
+nor `PlaySound` for such a box (checked in the VM), so the port's box is
+silent too.
 
 **A build with sounds:** foone's `ski32sounds.exe` (2005) has the same
 code, `.rdata` and `.data` as `ski32.exe`, plus WAVE resources 1–11

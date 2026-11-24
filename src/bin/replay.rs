@@ -56,32 +56,26 @@ fn main() -> ExitCode {
     };
 
     let mut frames = String::new();
-    // Sprite sizes drive the run (collisions, density, culling): without
-    // assets/ they fall back to 16x16 and the records are silently wrong.
-    let meta = skifree::game::assets::asset_root().join("meta.json");
-    if !meta.is_file() {
-        eprintln!(
-            "replay: {} not found: run from the repo root with the extracted assets (README, \"Getting the assets\")",
-            meta.display()
-        );
-        return ExitCode::FAILURE;
-    }
-    let records = run_scenario_observed(
-        &scenario,
-        scenario.screen_w.unwrap_or(640),
-        scenario.screen_h.unwrap_or(480),
-        |tick, game| {
-            if draw_out.is_none() || !draw_ticks.contains(&tick) {
-                return;
-            }
-            let items: Vec<[i16; 3]> = draw_list(game).iter().map(|d| [d.sprite as i16, d.left, d.top]).collect();
-            let frame = serde_json::json!({
-                "tick": tick, "w": game.screen_w, "h": game.screen_h, "items": items,
-            });
-            frames.push_str(&frame.to_string());
-            frames.push('\n');
-        },
-    );
+    // Sprite sizes drive the run (collisions, density, culling).
+    let sprites = match skifree::assets::load_sprite_sizes() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("replay: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let (w, h) = scenario.client_size();
+    let records = run_scenario_observed(&scenario, &sprites, w, h, |tick, game| {
+        if draw_out.is_none() || !draw_ticks.contains(&tick) {
+            return;
+        }
+        let items: Vec<[i16; 3]> = draw_list(game).iter().map(|d| [d.sprite as i16, d.left, d.top]).collect();
+        let frame = serde_json::json!({
+            "tick": tick, "w": game.screen_w, "h": game.screen_h, "items": items,
+        });
+        frames.push_str(&frame.to_string());
+        frames.push('\n');
+    });
     if let Some(ref path) = draw_out {
         if let Err(e) = std::fs::write(path, &frames) {
             eprintln!("replay: cannot write {path}: {e}");

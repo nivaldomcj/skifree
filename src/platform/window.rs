@@ -6,8 +6,6 @@ use macroquad::prelude::*;
 /// uses on every platform.
 pub const MIN_WIDTH: i32 = 304;
 pub const MIN_HEIGHT: i32 = 261;
-pub const DEFAULT_WIDTH: i32 = 640;
-pub const DEFAULT_HEIGHT: i32 = 480;
 
 pub fn conf() -> Conf {
     // Frame-capture replays (SKIFREE_REPLAY) open at the scenario's client
@@ -15,15 +13,12 @@ pub fn conf() -> Conf {
     let (width, height) = std::env::var("SKIFREE_REPLAY")
         .ok()
         .and_then(|p| std::fs::read_to_string(p).ok())
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .map_or((DEFAULT_WIDTH, DEFAULT_HEIGHT), |v| {
-            let get = |k: &str, d: i32| v.get(k).and_then(serde_json::Value::as_i64).map_or(d, |x| x as i32);
-            (get("screen_w", DEFAULT_WIDTH), get("screen_h", DEFAULT_HEIGHT))
-        });
+        .and_then(|t| serde_json::from_str::<skifree::replay::Scenario>(&t).ok())
+        .map_or(skifree::game::DEFAULT_CLIENT_SIZE, |s| s.client_size());
     Conf {
         window_title: "SkiFree".to_owned(),
-        window_width: width,
-        window_height: height,
+        window_width: i32::from(width),
+        window_height: i32::from(height),
         icon: window_icon(),
         window_resizable: true,
         platform: miniquad::conf::Platform {
@@ -91,7 +86,7 @@ fn window_icon() -> Option<miniquad::conf::Icon> {
     if cfg!(target_os = "macos") && in_app_bundle() {
         return None;
     }
-    let path = skifree::game::assets::asset_root().join("icons/icon_3.png");
+    let path = skifree::assets::asset_root().join("icons/icon_3.png");
     let bytes = std::fs::read(path).ok()?;
     let img = Image::from_file_with_format(&bytes, Some(ImageFormat::Png)).ok()?;
     if img.width != 32 || img.height != 32 {

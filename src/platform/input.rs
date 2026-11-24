@@ -1,12 +1,11 @@
 use macroquad::prelude::*;
 use skifree::game::cheat::Cheat;
+use skifree::game::skier::ArrowKey;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GameAction {
-    SteerLeft,
-    SteerRight,
-    SteerUp,
-    SteerDown,
+    /// A cardinal steering key: one state step per key-down.
+    Steer(ArrowKey),
     /// Diagonal keys set a skiing state directly (1/4 = slight, 3/6 = hard).
     SteerAbsolute(u16),
     /// Keyboard jump (Insert / numpad0) — smaller hop that scrubs speed.
@@ -55,6 +54,10 @@ enum WindowEvent {
     MouseMove(f32, f32),
     /// Left button pressed, in miniquad's pixels (`WM_LBUTTONDOWN`).
     MouseDown(f32, f32),
+    /// M pressed without Ctrl, Alt or Cmd (not a repeat): the port's own
+    /// mute key. Cmd+M is macOS's minimize, Ctrl+M and Alt+M belong to the
+    /// browser or the desktop.
+    Mute,
 }
 
 struct WindowEvents(Vec<WindowEvent>);
@@ -68,7 +71,14 @@ impl macroquad::miniquad::EventHandler for WindowEvents {
     fn window_restored_event(&mut self) {
         self.0.push(WindowEvent::Focus(true));
     }
-    fn key_down_event(&mut self, keycode: KeyCode, _mods: macroquad::miniquad::KeyMods, _repeat: bool) {
+    fn key_down_event(&mut self, keycode: KeyCode, mods: macroquad::miniquad::KeyMods, repeat: bool) {
+        if keycode == KeyCode::M {
+            // Not a cheat key either: the original's WM_CHAR handler ignores M.
+            if !(repeat || mods.ctrl || mods.alt || mods.logo) {
+                self.0.push(WindowEvent::Mute);
+            }
+            return;
+        }
         self.0.push(WindowEvent::KeyDown(keycode));
     }
     fn char_event(&mut self, character: char, mods: macroquad::miniquad::KeyMods, _repeat: bool) {
@@ -95,10 +105,10 @@ fn key_action(key: KeyCode) -> Option<GameAction> {
         Right, Up, F2, F3,
     };
     Some(match key {
-        Left | Kp4 => GameAction::SteerLeft,
-        Right | Kp6 => GameAction::SteerRight,
-        Up | Kp8 => GameAction::SteerUp,
-        Down | Kp2 => GameAction::SteerDown,
+        Left | Kp4 => GameAction::Steer(ArrowKey::Left),
+        Right | Kp6 => GameAction::Steer(ArrowKey::Right),
+        Up | Kp8 => GameAction::Steer(ArrowKey::Up),
+        Down | Kp2 => GameAction::Steer(ArrowKey::Down),
         // Diagonals set a skiing state directly (numpad + nav cluster).
         // Top row = hard turns (3 left / 6 right), bottom row = slight (1 / 4).
         Kp7 | Home => GameAction::SteerAbsolute(3),
@@ -158,6 +168,7 @@ fn translate(events: &[WindowEvent], scale: f32, focus_loss_counts: impl Fn() ->
             }
             WindowEvent::KeyDown(key) => actions.extend(key_action(key)),
             WindowEvent::Char(ch) => actions.extend(char_action(ch)),
+            WindowEvent::Mute => actions.push(GameAction::ToggleMute),
             WindowEvent::MouseMove(x, y) => {
                 let (cx, cy) = client_point(x, y, scale);
                 actions.push(GameAction::MouseSteer(cx, cy));
@@ -190,12 +201,7 @@ impl Input {
         let mut events = WindowEvents(Vec::new());
         macroquad::input::utils::repeat_all_miniquad_input(&mut events, self.subscriber);
         let scale = macroquad::miniquad::window::dpi_scale();
-        let mut actions = translate(&events.0, scale, || super::os_window::window_is_active() != Some(true));
-        // Not a cheat key: the original's WM_CHAR handler ignores M.
-        if is_key_pressed(KeyCode::M) {
-            actions.push(GameAction::ToggleMute);
-        }
-        actions
+        translate(&events.0, scale, || super::os_window::window_is_active() != Some(true))
     }
 }
 
@@ -218,10 +224,25 @@ mod tests {
     fn only_mapped_keys_act() {
         assert_eq!(key_action(KeyCode::A), None);
         assert_eq!(key_action(KeyCode::Space), None);
-        assert_eq!(key_action(KeyCode::Left), Some(GameAction::SteerLeft));
+        assert_eq!(key_action(KeyCode::Left), Some(GameAction::Steer(ArrowKey::Left)));
         assert_eq!(key_action(KeyCode::F3), Some(GameAction::PauseToggle));
         #[cfg(not(target_arch = "wasm32"))]
         assert_eq!(key_action(KeyCode::Escape), Some(GameAction::Quit));
+    }
+
+    #[test]
+    fn m_mutes_only_without_modifiers() {
+        use macroquad::miniquad::{EventHandler, KeyMods};
+        let plain = KeyMods { shift: false, ctrl: false, alt: false, logo: false };
+        let mut events = WindowEvents(Vec::new());
+        events.key_down_event(KeyCode::M, plain, false);
+        events.key_down_event(KeyCode::M, plain, true);
+        events.key_down_event(KeyCode::M, KeyMods { logo: true, ..plain }, false);
+        events.key_down_event(KeyCode::M, KeyMods { ctrl: true, ..plain }, false);
+        events.key_down_event(KeyCode::M, KeyMods { shift: true, ..plain }, false);
+        assert_eq!(events.0, vec![WindowEvent::Mute, WindowEvent::Mute]);
+        let actions = translate(&[WindowEvent::KeyDown(KeyCode::Left), WindowEvent::Mute], 1.0, || true);
+        assert_eq!(actions, vec![GameAction::Steer(ArrowKey::Left), GameAction::ToggleMute], "in arrival order");
     }
 
     #[test]

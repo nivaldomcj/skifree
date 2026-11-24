@@ -11,11 +11,30 @@ Level 2 fidelity adds a deterministic replay harness to the SkiFree port. It let
   - `ticks`: number of ticks (timer callbacks) to simulate.
   - `delta_ms`: the `GetTickCount` delta each tick sees. It defaults to 40, the fixed clock `tools/vm/fixed_clock.js` forces on the original for the verified captures. That is not the original's real rate: Windows delivers its 40 ms timer every 46.875 ms, with deltas of 46 and 47 (`docs/vm-ground-truth.md` item 24), so at 40 the status display repaints every 9th tick instead of every 7th and Speed reads 47/40 higher. A single `delta_ms` can't reproduce the 46/47 mix; 47 comes closest.
   - `inputs`: a list of `{tick, type, ...}` events mapping to the same `GameState` methods the real game uses.
+- **Records** (`TickRecord`, one JSON line per tick): the tick, `elapsed_ms`, the player's position, velocity, state and sprite, the live actor count, the score, the course clock, the `rand()` call count, the status display's four values when it was repainted that tick (`status`), the sounds played that tick in call order (`sounds`, WAVE ids 1–9, left out when empty), and a running FNV-1a `hash` of every record so far. `status` and `sounds` are compared with the original by `status_align.py` and `sound_align.py`.
 - `cargo run --bin replay -- <scenario.json>` runs the scenario and prints JSONL tick records. Run it from the repo root: it refuses to run without the extracted `assets/meta.json` (README, "Getting the assets"), because the sprite sizes drive collisions, density and culling.
 - `cargo run --bin replay -- <scenario.json> --check <golden.jsonl>` checks a run against a golden log.
 - `cargo run --bin replay -- <scenario.json> --update-golden <golden.jsonl>` regenerates the golden file after an intentional change.
 - `cargo run --bin replay -- <scenario.json> --draw <out.jsonl> --draw-ticks 100,200` also writes the draw list (sprite, box, painting order — `game::draw`) of the frame after each listed tick, for the pixel comparison with the original (`tools/vm/frames.sh`, see `docs/vm-ground-truth.md`).
 - `cargo test` runs the integration tests in `tests/replay.rs`, which compare every scenario that has a golden in `replays/golden/` against it (`showcase.json`, the README screenshot run, has none), plus sanity checks: ≤ 100 live actors (off-screen mob nodes excluded) and deterministic across runs. With the committed goldens these add little beyond the golden comparison; they matter once a golden is regenerated.
+
+## Environment variables
+
+Read by the game binary (`target/debug/skifree`) unless noted. None of them changes what a run computes, except `SKIFREE_SEED`, which picks the seed.
+
+| Variable | Effect |
+|----------|--------|
+| `SKIFREE_REPLAY=<scenario.json>` | frame capture: play the scenario at its client size, one tick per frame, no live input (`docs/vm-ground-truth.md`) |
+| `SKIFREE_FRAMES=<dir>`, `SKIFREE_FRAME_TICKS=<t1,...>` | where and after which ticks the capture saves frames; it quits after the last one |
+| `SKIFREE_REPLAY_DIALOGS=1` | show the high-score box in a capture (normally skipped, like `tools/vm/no_dialogs.js`) |
+| `SKIFREE_SEED=<u32>` | every new game starts from this seed instead of the clock, for side-by-side play with the patched original |
+| `SKIFREE_LOG_RNG=1` | print every `rand()` call, in order (also the `replay` tool; `rng_align.py`) |
+| `SKIFREE_LOG_UPDATES=1` | print each actor-loop update (`trace_updates.js`) |
+| `SKIFREE_LOG_PAIRS=1` | print every ordered collision-handler call (`trace_pairs.js`) |
+| `SKIFREE_LOG_COLLISIONS=1` | print each skier-first collision |
+| `SKIFREE_LOG_SPAWNS=1` | print each spawn event as it gets its actor |
+| `SKIFREE_LINUX_BACKEND` | Linux: `wayland`, `wayland-first` or `x11-first` (README) |
+| `SKIFREE_NO_ASSETS=1` or `sound` | build time: let build.rs build without the game files (CI) |
 
 ## Files
 
