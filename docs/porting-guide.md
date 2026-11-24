@@ -17,12 +17,12 @@ src/
   game/             # pure game logic — macroquad-free, fully deterministic
     state.rs        # GameState: actor pool, tick loop, input entry points
     actor.rs        # actor pool (free list): the original's 100 + mob-node slots
-    types.rs        # Actor, ActorClass, SpawnEvent, Camera, CourseType
+    types.rs        # Actor, ActorClass, SpawnEvent, SpawnRequest, Camera
     physics.rs      # integrator (FUN_00402be0) + steering (FUN_00403430)
     skier.rs        # skier state machine + keyboard/mouse steering (FUN_00406170)
     monster.rs      # yeti (FUN_004041c0 + FUN_00404350)
     mob.rs          # dog/snowboarder/crossing skier/lift chair/walking + burning tree
-    course.rs       # course + spawn-event generation (FUN_00404b50)
+    course.rs       # Course, course strips + spawn-event generation (FUN_00404b50)
     populator.rs    # random spawns at the scrolled-in edge (FUN_004025c0)
     camera.rs       # scrolling in 0x3c steps
     collision.rs    # actor collisions (FUN_00403a00)
@@ -36,11 +36,16 @@ src/
   extract/          # AssetSet + reading it from the player's exe/zip/fon (web)
   platform/         # macroquad-specific: window, input, renderer, audio, persistence
     assets.rs       # loads the AssetSet (assets/, embedded, or extracted)
+    audio.rs        # sound playback per OS, muting (M, `nosound`)
+    input.rs        # keys and mouse to GameAction
+    window.rs       # window config, minimum client size, SKIFREE_LINUX_BACKEND
+    renderer.rs     # sprites, status display, pause notice, the drawn message box
+    persistence.rs  # high scores (~/.skifree/scores.json, localStorage on the web)
     os_window.rs    # title, message box, client size: per-OS calls miniquad lacks
     timer.rs        # the 46.875 ms game timer
     dl.rs           # runtime library loading (libX11, libasound; Linux only)
     web.rs          # bindings for web/skifree.js (wasm32 only)
-  replay.rs         # Scenario/InputEvent/TickRecord + run_scenario
+  replay.rs         # Scenario/InputEvent/TickRecord, run_scenario(_observed), apply_inputs
 tests/
   replay.rs         # golden-file regression tests
   extract.rs        # Rust extractor vs tools/extract_assets.py output
@@ -48,7 +53,8 @@ replays/            # scenario JSON + golden/*.jsonl
 web/                # the page (index.html) and its miniquad plugin (skifree.js)
 ```
 
-`main.rs` owns the only macroquad dependency (`platform/`). Everything under
+`main.rs` owns the only macroquad dependency (`platform/`); outside it, only
+`tests/extract.rs` uses macroquad, to decode PNGs. Everything under
 `game/` is plain Rust and can be driven without a window, which is what makes
 the replay harness possible. It reads no files: the caller hands
 `GameState` its sprite sizes (`SpriteSizes`, from the loaded sprites or
@@ -69,11 +75,14 @@ The workflow for any behavior fix:
 ### Deterministic replay
 
 `GameState::new_seeded(w, h, seed, sprites)` makes runs reproducible (the
-shipped `new()` still uses the clock). A *scenario* (JSON: seed, course, tick count, scripted
-inputs) runs N fixed 40 ms ticks and emits a per-tick `TickRecord` (player
-pos/vel/state, actor count, score, RNG call count, running FNV-1a hash).
-Committed *golden* logs under `replays/golden/` lock the behavior; `cargo test`
-re-runs every scenario and diffs exactly. Regenerate only intentionally:
+shipped `new()` still uses the clock). A *scenario* (JSON: seed, tick count,
+`delta_ms` per tick, 40 by default, optional client size, scripted inputs)
+runs its ticks and emits a per-tick `TickRecord` (player, actor count,
+score, course clock, RNG call count, status repaints, sounds, running
+FNV-1a hash; fields in `docs/replay-harness.md`). Committed *golden* logs
+under `replays/golden/` lock the behavior; `cargo test` re-runs every
+scenario that has one and diffs exactly. It needs the extracted
+`assets/meta.json`, for the sprite sizes. Regenerate only intentionally:
 
 ```bash
 cargo run --bin replay -- replays/descend.json --update-golden replays/golden/descend.jsonl
@@ -87,11 +96,14 @@ cargo run --bin replay -- replays/descend.json --update-golden replays/golden/de
   `ski32.exe`; see "Copyrighted files" below.)
 - **Level 2 — deterministic replay.** Golden logs, plus sanity checks (≤ 100
   live actors, off-screen mob nodes excluded; run-to-run identical) that add
-  little beyond the golden comparison until a golden is regenerated.
+  little beyond the golden comparison until a golden is regenerated. These
+  need the extracted `assets/` and fail without them, so CI skips them.
 - **Level 3 — against the original in the VM.** `tools/vm/compare.sh
   --suite` runs 21 scenarios on `ski32.exe` and the port and compares every
-  `rand()` call, player tick, status repaint and sound; frames are compared
-  pixel for pixel (`docs/vm-ground-truth.md`, items 20–22).
+  `rand()` call, player tick, status repaint and sound (it builds the
+  `replay` tool with `--features rng_sites` for the port's `rand()` log);
+  `tools/vm/frames.sh` compares frames pixel for pixel
+  (`docs/vm-ground-truth.md`, items 20–22).
 
 ## Recovered model highlights
 
@@ -245,7 +257,8 @@ without shifted characters (`;` instead of `&&`) or use SSH.
 ## Web platform layer
 
 The browser build is the same crate compiled to `wasm32-unknown-unknown`;
-`game/` is untouched. `tools/build_web.sh` puts the `.wasm` next to
+`game/` is untouched. `tools/build_web.sh --public` (into `dist/web/`) or
+`--private` (into `dist/web-private/`) puts the `.wasm` next to
 `web/index.html`, `web/skifree.js` and the `gl.js` loader of the miniquad
 version in `Cargo.lock`.
 
@@ -292,7 +305,8 @@ version in `Cargo.lock`.
   too, which is why build.rs treats every wasm32 target as the web build).
   `tools/web/compare_frames.sh` draws replay frames in headless Chrome
   (`?replay=<scenario>&ticks=...`) and natively and compares them byte for
-  byte: 26 frames from 8 scenarios are identical.
+  byte: 26 frames from 8 scenarios are identical. It needs a private web
+  build, Node 22+ and Chrome.
 - **Browsers.** Played on macOS in Chrome, Firefox and Safari: keys (F2
   and F3 included), sound, the drop box with `ski32.zip`, and high scores
   that survive a reload.

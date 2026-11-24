@@ -12,7 +12,8 @@ use super::types::{Actor, ActorClass};
 /// the monster integrates its velocity into position, applies gravity (it can
 /// hop), then either runs the eating state machine, chases the player
 /// (rubber-banded to within one screen), holds position at its boundary, or
-/// drifts back toward it. Every chasing tick plays the chase sound.
+/// drifts back toward it. Each chase step plays the chase sound; the step
+/// ends in a hop that skips the next two ticks, so that is every third tick.
 pub fn update_monster(
     actor: &mut Actor,
     player: Option<&Actor>,
@@ -108,8 +109,8 @@ pub fn update_monster(
         // Velocity toward the player.
         vx = dx.clamp(-16, 16) as i16;
         vy = dy.clamp(-10, 26) as i16;
-        // FUN_00402ba0 right after the clamps (0x4045d3): on every chasing
-        // tick, so the sound restarts each tick.
+        // FUN_00402ba0 right after the clamps (0x4045d3): on every chase
+        // step, which the hop below spaces to every third tick.
         sounds.push(Sound::Chase);
     } else if !in_region {
         // Drift back into the guard region.

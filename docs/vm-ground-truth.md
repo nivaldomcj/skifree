@@ -7,7 +7,7 @@ the style score, the course clock, the status-display repaints and the sound
 calls on every tick must be identical. Twenty-one scenarios — keyboard and mouse
 steering, freestyle tricks, all three courses (timed runs included), a
 monster encounter, F2 restarts, window focus changes, window sizes and
-resizes, sound calls, the cheat keys (teleports, T steps in a pause), the
+resizes, sound calls, the cheat keys (teleports, t steps in a pause), the
 collision pass's order and the 0x11 gate, a catch on a scroll boundary and a
 long run to the 2000 m yeti — pass this test and
 are locked in as golden replays (`tests/replay.rs`, `verified_*`).
@@ -23,10 +23,12 @@ are locked in as golden replays (`tests/replay.rs`, `verified_*`).
 - `frida-server-x86.exe -l 0.0.0.0:27042` (32-bit build, matches the x86
   game). Runs as scheduled task `FridaServer` (SSH-spawned processes get
   job-killed when the session closes; scheduled tasks survive).
-- SSH key auth into the VM, used only to kill leftover game processes.
+- SSH key auth into the VM, used to kill leftover game processes and, for
+  `port_frames_win.py`, to copy the port's Windows build over and start it.
 - frida-tools (pipx) on the Mac connects to `<vm-ip>:27042`. Frida's
   x86-under-Prism instrumentation works — a key result for future
-  DX6-era ports. Under Frida the game runs at ~19 ticks/s instead of 25.
+  DX6-era ports. Under Frida the game runs at ~19 ticks/s, about the VM's
+  own rate without Frida (item 24).
 
 ## Key addresses (module base is always 0x400000, no ASLR)
 
@@ -46,6 +48,9 @@ are locked in as golden replays (`tests/replay.rs`, `verified_*`).
 | `0x00406170` | keyboard handler (ecx = virtual-key code) |
 | `0x004066d0` | mouse-click (jump) handler, no arguments |
 | `0x00406550` | mouse-move handler (ecx = x, edx = y, client coordinates) |
+| `0x00406780` | `WM_CHAR` handler: cheat keys (ecx = the character) |
+| `0x00401b80` | status display repaint |
+| `0x00402ba0` | play a sound (ecx = the sound's slot) |
 | `0x00403420` | add style points (ecx) to `DAT_0040c6a8` when `DAT_0040c954` (freestyle running) |
 | `0x00404970` | new game (re-seeds, resets camera/scroll/score/course globals) |
 | `0x004057c0` / `0x00404ad0` | pause (kill timer) / resume (restart timer, shift course clock) |
@@ -365,7 +370,7 @@ is checked).
 
 | Scenario (`replays/`) | Size | What it covers | Ticks | Calls | Result |
 |---|---|---|---|---|---|
-| `compare_vm.json` | 704×681 | straight descent, no input; tree crash | 700 | 3021 | identical |
+| `compare_vm.json` | 704×681 | straight descent, no input after the tick-0 Down; tree crash | 700 | 3021 | identical |
 | `compare_steer.json` | 704×681 | turns, diagonals, an Up press at speed (no effect), both jumps, air tricks, crash + get-up | 700 | 3342 | identical |
 | `compare_size_640x480.json` | 640×480 | same inputs as `compare_steer` | 700 | 3028 | identical |
 | `compare_size_1024x700.json` | 1024×700 | same inputs as `compare_steer` | 700 | 3318 | identical |
@@ -383,7 +388,7 @@ is checked).
 | `compare_crash_landing.json` | 704×681 | seed 38, Down every 25 ticks: a crash-landing skier (0x11) crosses a tree and is not charged again (0x403b93) | 300 | 1340 | identical (the deferred-state port charged −32 and a crash sound at tick 211) |
 | `compare_collision_order.json` | 704×681 | seed 20, random steering and clicks: a banner take-off seen by the next pair of the same pass | 700 | 3341 | identical (the deferred-state port diverged at tick 625) |
 | `compare_cheats.json` | 704×681 | x/X/y/Y teleports (`WM_CHAR`) and r | 400 | 2151 | identical (no edge spawns; x goes right) |
-| `compare_step.json` | 704×681 | t steps in the timed slalom: two inside an F3 pause, one outside | 800 | 3697 | identical, clock included (without the restart's course-start shift the clock runs 40 ms ahead from tick 201) |
+| `compare_step.json` | 704×681 | t steps in the timed slalom: two inside an F3 pause, one outside | 800 | 3697 | identical, clock included (without the resume's course-start shift the clock runs 40 ms ahead from tick 201) |
 | `compare_catch.json` | 704×681 | seed 8: the yeti's catch tick crosses a scroll boundary; a click then starts a new game | 2750 | 13119 (+117) | identical; the click's rebuild verified by stream position |
 | `compare_long.json` | 704×681 | freestyle top to bottom: finish line (high-score box auto-dismissed), then caught by the 2000 m yeti | 4500 | 20384 | identical |
 
@@ -393,7 +398,7 @@ agreement with the original fails the test suite even without the VM.
 
 ## Pixel comparison
 
-`tools/vm/frames.sh <scenario> <out-dir> <t1,t2,...>` captures the
+`tools/vm/frames.sh <scenario> <out-dir> <t1,t2,...> [seconds]` captures the
 original's client area after the listed main ticks (`capture_frames.js`:
 GDI `BitBlt` of the window into a 32-bit DIB on entry to call t + 1,
 before that call's injected inputs; raw pixels, no compression) and the
@@ -405,7 +410,11 @@ SKIFREE_FRAMES=DIR SKIFREE_FRAME_TICKS=<t1,...> target/debug/skifree`
 replays the scenario at fixed ticks (no live input, no clock, no
 high-score writes) and saves each listed frame drawn by the normal
 renderer (macroquad) into an offscreen target of the scenario's client
-size, as raw RGBA.
+size, as raw RGBA. `seconds` (default 40) is the original's capture time:
+like `compare.sh`'s, it must cover the last listed tick at ~19 ticks/s,
+so frames past about tick 750 need more. The capture skips the high-score
+box, as `no_dialogs.js` does for the original; `SKIFREE_REPLAY_DIALOGS=1`
+shows it (`port_frames_win.py` takes it through `PORT_EXTRA_ENV`).
 
 The capture quits after its last listed tick. To keep a frame on screen,
 for a screenshot, list a tick past the scenario's end as well:
@@ -449,6 +458,12 @@ the Windows build running in the same VM as the original
 (`port_frames_win.py`; OpenGL 2.1 context there) — and for the composite,
 which covers the sprite layer only.
 
+The web build has the same capture mode (`?replay=<scenario>&ticks=...`).
+`tools/web/compare_frames.sh` captures it in headless Chrome
+(`tools/web/capture_frames.mjs`) and compares it byte for byte with the
+native capture, which the frames above tie to the original; see
+`docs/porting-guide.md`.
+
 They cover the title splash, course banners and Start posts, gates,
 crashes, moguls, jumps and air tricks, the monster's chase and meal, and
 two window sizes. The comparison found three port bugs: the sprite anchor
@@ -464,13 +479,13 @@ the original's trace is empty (a hook that never fired, a run cut short);
 
 | File | Role |
 |---|---|
-| `spawn_locked.py` | spawns a fresh game under Frida; `--size WxH` resizes the window **on entry to the world build** (`FUN_00404b50`), on the game thread, so `MoveWindow`'s synchronous WM_SIZE updates the client-rect globals before the build reads them; tears down with a timeout (Frida's detach can hang) |
-| `scenario_inputs.py` | turns a replay scenario's inputs into a Frida script that calls the game's own handlers on entry to main-tick call N (steer: down/up/left/right in the port's order; `steer_absolute` 1/3/4/6 → End/Home/PgDn/PgUp; `jump` → Insert; `restart` → F2; `click` → `FUN_004066d0`; `mouse {x, y}` → `FUN_00406550`; `cheat` x/X/y/Y/r → the `WM_CHAR` handler `FUN_00406780`). A scenario seed other than 0 (0-127) re-patches the exe's `srand` to `push seed; pop eax; nop`. A tick with a `t` cheat is posted instead (`PostMessageA`: `WM_KEYDOWN`, `WM_CHAR`, mouse) after timer callback N−1, so the game's message loop runs the step outside any Frida hook and it is traced as call N, like the port's record N. A tick containing a `focus` or `resize` input is instead delivered as real window messages (`SendMessageA`: `WM_ACTIVATE`, `WM_KEYDOWN` — `pause` = F3 —, `WM_LBUTTONDOWN`, `WM_MOUSEMOVE`; `MoveWindow` → `WM_SIZE`) after the whole timer callback N−1 (`FUN_00401000`: main tick, paint, status check) returns, where a real message loop would deliver them, so the original's window procedure and its input gating handle them. It rejects a scenario with a pause not undone in the same tick or a focus loss not regained in the same tick (the original's timer would stop, and every comparison would pass on an empty tail). After the inputs it also writes the fixed clock's time back to `DAT_0040c698`, as a safeguard |
+| `spawn_locked.py` | spawns a fresh game under Frida; `--size WxH` resizes the window **on entry to the world build** (`FUN_00404b50`), on the game thread, so `MoveWindow`'s synchronous WM_SIZE updates the client-rect globals before the build reads them; `--data-dir DIR` saves messages that carry binary data (frames, the font render) as files there; tears down with a timeout (Frida's detach can hang) |
+| `scenario_inputs.py` | turns a replay scenario's inputs into a Frida script that calls the game's own handlers on entry to main-tick call N, plus an optional tick offset given as its second argument (steer: down/up/left/right in the port's order; `steer_absolute` 1/3/4/6 → End/Home/PgDn/PgUp; `jump` → Insert; `restart` → F2; `click` → `FUN_004066d0`; `mouse {x, y}` → `FUN_00406550`; `cheat` x/X/y/Y/r → the `WM_CHAR` handler `FUN_00406780`). A scenario seed other than 0 (0-127) re-patches the exe's `srand` to `push seed; pop eax; nop`. A tick with a `t` cheat is posted instead (`PostMessageA`: `WM_KEYDOWN`, `WM_CHAR`, mouse) after timer callback N−1, so the game's message loop runs the step outside any Frida hook and it is traced as call N, like the port's record N. A tick containing a `focus` or `resize` input is instead delivered as real window messages (`SendMessageA`: `WM_ACTIVATE`, `WM_KEYDOWN` — `pause` = F3 —, `WM_LBUTTONDOWN`, `WM_MOUSEMOVE`; `MoveWindow` → `WM_SIZE`) after the whole timer callback N−1 (`FUN_00401000`: main tick, paint, status check) returns, where a real message loop would deliver them, so the original's window procedure and its input gating handle them. It rejects a scenario with a pause not undone in the same tick or a focus loss not regained in the same tick (the original's timer would stop, and every comparison would pass on an empty tail). After the inputs it also writes the fixed clock's time back to `DAT_0040c698`, as a safeguard |
 | `no_dialogs.js` | patches the three `call [MessageBoxA]` sites to return IDOK (`push 1; pop eax; add esp, 0x10`), so the course-finish high-score box doesn't block the run |
 | `fixed_clock.js` | makes the clock deterministic: every `GetTickCount` read in the game module returns `T0 + 40 · timer callbacks`, matching the replay's 40 ms ticks. The timer callback's read is set by a hook; the new-game and resume call sites (`0x404971`, `0x404af5`) are patched in place to read a fixed-time cell (`mov eax, [cell]`), so the clock stays fixed when they run inside the injector's hooks (an F2 new game, a resume after F3 or a focus change), where Frida fires no hooks (hooking the kernel32 export does not take effect under the VM's emulation) |
 | `trace_player.js` | player state, style score, course clock (`DAT_0040c944`) and the three course flags at the end of every main-tick call (a player flagged 0x08 is reported as gone) |
 | `trace_rand.js` | every `rand_range` call: caller, modulus, post-call LCG state, main-tick index — batched into one message per tick |
-| `trace_ticks.js` | player per *integrated* tick plus skier collisions (legacy view; defines `tick2`) |
+| `trace_ticks.js` | legacy: player per *integrated* tick plus skier collisions. No current tool loads it; `rng_align.py`'s usage text still names it, but `compare.sh` gives `rng_align.py` the `trace_rand.js` output |
 | `trace_updates.js` | each `FUN_004028e0` update (class/state/position) per tick — diff with the port's `SKIFREE_LOG_UPDATES=1` |
 | `trace_pairs.js` | each collision-handler call (both actors, both orders) per tick |
 | `rng_align.py` | maps LCG states to stream indices from the scenario's seed (compare.sh passes it) and prints the first call where original and port differ, with call sites on both sides. Calls the original makes *inside* an injected input (an F2 world rebuild) are invisible to Frida — it doesn't fire hooks for calls made from a hook callback — so a port re-seed whose calls the original's log skips is accepted when the original resumes at exactly the same stream index |
@@ -487,15 +502,17 @@ the original's trace is empty (a hook that never fired, a run cut short);
 
 ```bash
 export SKIFREE_VM_HOST=<vm-ip>             # frida-server :27042
-export SKIFREE_VM_SSH=user@vm-host         # for killing leftovers
+export SKIFREE_VM_SSH=user@vm-host         # optional, default $SKIFREE_VM_HOST
 export SKIFREE_VM_EXE='C:\Users\<you>\Downloads\ski32-autoplay.exe'
-tools/vm/compare.sh replays/compare_steer.json /tmp/steer 32
+# optional: FRIDA_PY, a python with the frida module
+# (default: frida-tools' pipx venv under ~/Library/Application Support)
+tools/vm/compare.sh replays/compare_steer.json /tmp/steer 42
 tools/vm/compare.sh --suite /tmp/suite     # all verified scenarios (~22 min)
 ```
 
 New scenarios need a duration that covers their ticks at ~19 ticks/s, with
 some margin; a capture that ends early fails the run.
-`fast_forward` (the F cheat) has no deterministic mapping and is rejected
+`fast_forward` (the f cheat) has no deterministic mapping and is rejected
 by `scenario_inputs.py`. A paused or inactive original runs no ticks at
 all, so an F3 pause or a focus loss must be undone in the same tick
 (`compare_focus` does both); `scenario_inputs.py` rejects a scenario that
@@ -513,7 +530,9 @@ doesn't.
    collision bug) or the RNG does (a consumer bug).
 3. Diff actor updates: `trace_updates.js` (edit its tick window) vs
    `SKIFREE_LOG_UPDATES=1`; collisions: `trace_pairs.js` vs
-   `SKIFREE_LOG_COLLISIONS=1`; spawns: `SKIFREE_LOG_SPAWNS=1`.
+   `SKIFREE_LOG_PAIRS=1` (every ordered handler call;
+   `SKIFREE_LOG_COLLISIONS=1` prints only the skier-first ones); spawns:
+   `SKIFREE_LOG_SPAWNS=1`.
 4. Read the responsible routine with rizin
    (`rizin -q -e scr.color=0 -c 'aaa; pdf @ 0x…' originals/ski32.exe`) and
    dump whatever state it reads with a small Frida script appended to the

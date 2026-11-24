@@ -13,11 +13,18 @@ top, right, left. Each call:
 1. Picks a random position along the entering edge (`FUN_004024f0`): random x
    (top/bottom edges) or y (left/right edges) across the client area, 0x3c
    beyond the edge. z = 0.
-2. Picks a class by **zone test on the spawn position**, then a per-zone
-   probability table.
-3. Skips the spawn entirely (`0x12`) when the **density cap** is hit.
-4. Creates the actor: classes < 0xb with an initial state from
-   `DAT_0040a22c`, classes ≥ 0xb with a raw sprite from `FUN_00402850`.
+2. Picks a zone by a **test on the spawn position**.
+3. Skips the spawn entirely (`0x12`) when the zone's **density cap** is
+   exceeded. This check comes before any roll, so a skipped spawn uses
+   only the edge roll from step 1.
+4. Picks a class from the zone's probability table (one roll; zone A
+   needs none).
+5. Creates the actor: classes < 0xb with an initial state from
+   `DAT_0040a22c`, classes ≥ 0xb with a raw sprite from `FUN_00402850`
+   (one more roll for trees, rocks and large rocks).
+
+The tick also rolls a 1-in-666 crossing skier at the top edge right after
+these edge spawns; see `docs/monster-mob-physics.md`.
 
 ## Zones
 
@@ -83,9 +90,10 @@ verified call-for-call against the original, are in
   reaches the obstacle's y, using both actors' start-of-tick y, and the next
   tick too if it lands exactly on that y): a tree hit off-centre by more
   than half the wider sprite only halves `vy`; anything else downs the
-  skier — grounded and still → crash `0x0b`, otherwise crash-landing `0x11`
-  — for **−32 style**. The **dead tree (sprite 50)** catches fire instead (+16; class-9
-  burning tree, states `0x38–0x3b`, sprites 83/84/85/84). Flying over a
+  skier for **−32 style**: on the ground (`z = 0` and `vz = 0`, whatever
+  its speed) → crash `0x0b`, airborne → crash-landing `0x11`. An airborne
+  hit on the **dead tree (sprite 50)** sets it on fire instead (+16, no
+  −32; class-9 burning tree, states `0x38–0x3b`, sprites 83/84/85/84). Flying over a
   burning tree scores **+1000** and puts it out (back to class 0xd, sprite
   50).
 - **Rock (0xe)**: grounded → the solid path, where an uphill hit (`vy < 0`)

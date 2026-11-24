@@ -752,8 +752,8 @@ impl GameState {
         }
     }
 
-    /// T cheat (`WM_CHAR` -> `FUN_00406780` case 'T' -> `FUN_00401000`): run one
-    /// tick directly, whether or not the timer is running (F3 / focus pause).
+    /// t cheat, lowercase only (`WM_CHAR` -> `FUN_00406780` case 't' -> `FUN_00401000`): run
+    /// one tick directly, whether or not the timer is running (F3 / focus pause).
     pub fn step_tick(&mut self, delta_ms: u32) {
         let running = self.timer_running;
         self.timer_running = true;

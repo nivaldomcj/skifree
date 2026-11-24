@@ -10,17 +10,19 @@ Level 2 fidelity adds a deterministic replay harness to the SkiFree port. It let
   - `seed`: the MSVC LCG seed.
   - `ticks`: number of ticks (timer callbacks) to simulate.
   - `delta_ms`: the `GetTickCount` delta each tick sees. It defaults to 40, the fixed clock `tools/vm/fixed_clock.js` forces on the original for the verified captures. That is not the original's real rate: Windows delivers its 40 ms timer every 46.875 ms, with deltas of 46 and 47 (`docs/vm-ground-truth.md` item 24), so at 40 the status display repaints every 9th tick instead of every 7th and Speed reads 47/40 higher. A single `delta_ms` can't reproduce the 46/47 mix; 47 comes closest.
+  - `screen_w`, `screen_h` (optional): the client size the world is built and run at. Without them a scenario runs at `DEFAULT_CLIENT_SIZE`, 640×480 (`Scenario::client_size`); the `compare_*` scenarios set 704×681, except the two `compare_size_*` ones.
   - `inputs`: a list of `{tick, type, ...}` events mapping to the same `GameState` methods the real game uses.
-- **Records** (`TickRecord`, one JSON line per tick): the tick, `elapsed_ms`, the player's position, velocity, state and sprite, the live actor count, the score, the course clock, the `rand()` call count, the status display's four values when it was repainted that tick (`status`), the sounds played that tick in call order (`sounds`, WAVE ids 1–9, left out when empty), and a running FNV-1a `hash` of every record so far. `status` and `sounds` are compared with the original by `status_align.py` and `sound_align.py`.
+- **Records** (`TickRecord`, one JSON line per tick): the tick, `elapsed_ms`, the player's position, velocity, state and sprite, the active actor count (`actor_count`, off-screen mob nodes included, so not the original's live count), the score, the course clock, the `rand()` call count, the status display's four values when it was repainted that tick (`status`), the sounds played that tick in call order (`sounds`, WAVE ids 1–9, left out when empty), and a running FNV-1a `hash` of every record so far. `status` and `sounds` are compared with the original by `status_align.py` and `sound_align.py`.
 - `cargo run --bin replay -- <scenario.json>` runs the scenario and prints JSONL tick records. Run it from the repo root: it refuses to run without the extracted `assets/meta.json` (README, "Getting the assets"), because the sprite sizes drive collisions, density and culling.
 - `cargo run --bin replay -- <scenario.json> --check <golden.jsonl>` checks a run against a golden log.
 - `cargo run --bin replay -- <scenario.json> --update-golden <golden.jsonl>` regenerates the golden file after an intentional change.
-- `cargo run --bin replay -- <scenario.json> --draw <out.jsonl> --draw-ticks 100,200` also writes the draw list (sprite, box, painting order — `game::draw`) of the frame after each listed tick, for the pixel comparison with the original (`tools/vm/frames.sh`, see `docs/vm-ground-truth.md`).
-- `cargo test` runs the integration tests in `tests/replay.rs`, which compare every scenario that has a golden in `replays/golden/` against it (`showcase.json`, the README screenshot run, has none), plus sanity checks: ≤ 100 live actors (off-screen mob nodes excluded) and deterministic across runs. With the committed goldens these add little beyond the golden comparison; they matter once a golden is regenerated.
+- `cargo run --bin replay -- <scenario.json> --draw <out.jsonl> --draw-ticks 100,200` also writes the draw list (`[sprite, left, top]` in painting order, `game::draw`) of the frame after each listed tick, for the pixel comparison with the original (`tools/vm/frames.sh`, see `docs/vm-ground-truth.md`).
+- `cargo test` runs the integration tests in `tests/replay.rs`, which compare every scenario that has a golden in `replays/golden/` against it (`showcase.json`, the README screenshot run, has none). Each golden has its own `#[test]`, so a new golden needs a new test too. Sanity checks come on top: the skier descends in `descend`, ≤ 100 live actors (off-screen mob nodes excluded) at 640×480 and 5120×2880, and deterministic across runs. With the committed goldens these add little beyond the golden comparison; they matter once a golden is regenerated.
+- The replay tests need the extracted `assets/meta.json` and panic without it, so CI, which has no game files, skips them (`.github/workflows/ci.yml` runs `--lib --bins --test extract`). Run `cargo test` locally before merging. `tools/test_wasi.sh` runs the same tests compiled to `wasm32-wasip1` under wasmtime.
 
 ## Environment variables
 
-Read by the game binary (`target/debug/skifree`) unless noted. None of them changes what a run computes, except `SKIFREE_SEED`, which picks the seed.
+Read by the game binary (`target/debug/skifree`) unless noted. The `SKIFREE_LOG_*` switches are read by the game logic (`game/`), so the `replay` tool and the tests honor them too. None of them changes what a run computes, except `SKIFREE_SEED`, which picks the seed.
 
 | Variable | Effect |
 |----------|--------|
@@ -28,12 +30,12 @@ Read by the game binary (`target/debug/skifree`) unless noted. None of them chan
 | `SKIFREE_FRAMES=<dir>`, `SKIFREE_FRAME_TICKS=<t1,...>` | where and after which ticks the capture saves frames; it quits after the last one |
 | `SKIFREE_REPLAY_DIALOGS=1` | show the high-score box in a capture (normally skipped, like `tools/vm/no_dialogs.js`) |
 | `SKIFREE_SEED=<u32>` | every new game starts from this seed instead of the clock, for side-by-side play with the patched original |
-| `SKIFREE_LOG_RNG=1` | print every `rand()` call, in order (also the `replay` tool; `rng_align.py`) |
+| `SKIFREE_LOG_RNG=1` | print every `rand()` call, in order (`rng_align.py`); only in a build with `--features rng_sites`, as `tools/vm/compare.sh` makes |
 | `SKIFREE_LOG_UPDATES=1` | print each actor-loop update (`trace_updates.js`) |
 | `SKIFREE_LOG_PAIRS=1` | print every ordered collision-handler call (`trace_pairs.js`) |
 | `SKIFREE_LOG_COLLISIONS=1` | print each skier-first collision |
 | `SKIFREE_LOG_SPAWNS=1` | print each spawn event as it gets its actor |
-| `SKIFREE_LINUX_BACKEND` | Linux: `wayland`, `wayland-first` or `x11-first` (README) |
+| `SKIFREE_LINUX_BACKEND` | Linux: `x11` (the default), `wayland`, `wayland-first` or `x11-first` (README) |
 | `SKIFREE_NO_ASSETS=1` or `sound` | build time: let build.rs build without the game files (CI) |
 
 ## Files
@@ -41,9 +43,11 @@ Read by the game binary (`target/debug/skifree`) unless noted. None of them chan
 | File | Purpose |
 |------|---------|
 | `src/lib.rs` | exposes the game-logic-only library so bins and tests can use it without macroquad |
-| `src/replay.rs` | `Scenario`, `InputEvent`, `TickRecord`, `run_scenario`, JSONL helpers |
+| `src/replay.rs` | `Scenario`, `InputEvent`, `TickRecord`, `run_scenario`, `run_scenario_observed`, `apply_inputs` (also used by the game binary's frame capture), JSONL helpers |
+| `src/assets.rs` | `load_sprite_sizes`: the sprite sizes from `assets/meta.json`, for the CLI and the tests |
 | `src/bin/replay.rs` | CLI runner |
 | `tests/replay.rs` | golden-file regression tests |
+| `tools/test_wasi.sh` | the replay tests compiled to `wasm32-wasip1`, run under wasmtime |
 | `replays/*.json` | scenario definitions |
 | `replays/golden/*.jsonl` | expected per-tick state logs |
 
@@ -51,7 +55,7 @@ Read by the game binary (`target/debug/skifree`) unless noted. None of them chan
 
 - `idle.json` — 250 ticks, no input. The skier stays at the start; baseline for the monsters holding their regions and the random spawns.
 - `descend.json` — 500 ticks, DOWN pressed every 10 ticks. The skier descends the course (y ≈ 6700), crashing three times and ending crashed; the main descent baseline.
-- `steer_and_jump.json` — 500 ticks with a DOWN start, left/right fan steering, direct diagonal states, a mouse jump, a keyboard jump, an Up press at speed (no effect), and fast-forward toggles. Exercises the full skier state machine and control set.
+- `steer_and_jump.json` — 500 ticks with a DOWN start, two Left presses, direct diagonal states, a mouse jump, a keyboard jump, an Up press at speed (no effect), and fast-forward toggles. Exercises the skier's steering and jump states; the `compare_*` scenarios cover restart, pause, focus, resize, mouse steering and cheats.
 
 ### Verified against the original
 
@@ -105,10 +109,10 @@ Records include the style score.
 
 Two key changes make the harness deterministic:
 
-1. `GameState::new_seeded(screen_w, screen_h, seed)` replaces the time-based seed.
+1. `GameState::new_seeded(screen_w, screen_h, seed, sprites)` replaces the time-based seed. The sprite sizes (`SpriteSizes`) are handed in too: collisions, culling and density depend on them, so the goldens only match with the real sizes from `assets/meta.json` (`assets::load_sprite_sizes`).
 2. The RNG now counts every `rand()` call, so divergences can be localized.
 
-The original `GameState::new()` still uses the system clock, so `cargo run` remains a normal, non-deterministic play session.
+`GameState::new(screen_w, screen_h, sprites)` still uses the system clock, so `cargo run` remains a normal, non-deterministic play session unless `SKIFREE_SEED` is set.
 
 ## Resolved: downhill physics
 

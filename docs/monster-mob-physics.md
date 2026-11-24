@@ -1,13 +1,15 @@
 # Monster & mob physics
 
 Faithful port of the monster (yeti) and mob behavior, recovered from `ski32.exe`
-(Ghidra 12.2 decompilation). This corrects and supersedes the looser claims in
-`docs/monster-ai.md` where they conflict (see the notes at the bottom).
+(Ghidra 12.2 decompilation). `docs/monster-ai.md` is the shorter overview;
+the notes at the bottom list what it used to get wrong.
 
 ## Per-tick update order
 
-Every moving thing is driven by two routines working on a small **proxy
-struct** (not the 80-byte actor): `FUN_004041c0` then the behavior routine.
+The chairlift chairs and the monsters (classes 4–8) are driven by two routines
+working on a small **proxy struct** (not the 80-byte actor): `FUN_004041c0`
+then the behavior routine. The other mobs are ordinary actors, updated in the
+actor loop (see "Mobs").
 
 `FUN_004041c0` (integrator, runs for class 4–8 proxies):
 
@@ -62,10 +64,10 @@ vy = clamp(dy, -10, +26)
 ```
 
 **`screen_w` / `screen_h` are the live window dimensions** (`DAT_0040c5f0 =
-client width`, `DAT_0040c6d8 = client height`, recomputed on `WM_SIZE`). The
-monster is kept within one screen of the player and teleported to exactly one
-screen behind when outrun — so it never falls more than a screen away and can't
-be escaped. (Earlier docs left these step values unspecified; they are the
+client width`, `DAT_0040c6d8 = client height`, recomputed on `WM_SIZE`). On
+each step the monster is pulled back to within one screen of the player,
+teleported to exactly one screen behind when outrun, so it can't be
+escaped. (Earlier docs left these step values unspecified; they are the
 window size.)
 
 ### Sprite states: 4 directions, 2-frame animation
@@ -99,9 +101,16 @@ ticks 804 and 805.)
 
 ### Eating (collision `FUN_00403a00` case 5–8)
 
-When a monster actor touches the player, the skier actor is freed and the
-monster enters state `0x32` with a timestamp. The eating animation is a
-wall-clock state machine (runs even while "paused"):
+When a monster actor touches the player, sound 7 plays, the skier actor is
+freed and the monster enters state `0x32` with a wall-clock timestamp. Only the
+monster-first call of the pair does this (skier-first does nothing), and only
+while the monster's node has a live actor. The catch zeroes `vx` and `vy` but
+not `vz`, so a monster caught mid-hop finishes the hop first
+(`monster::eat_skier`).
+
+The eating animation is a wall-clock state machine. No ticks run while the game
+is paused, but the wall clock keeps going, so after a long pause the remaining
+frames go by in a few ticks:
 
 - `0x32 → 0x33` immediately
 - `0x33 → 0x34` once ≥ 500 ms have passed, **else back to `0x32`** (chewing)
@@ -118,9 +127,9 @@ through `0x32–0x37` without the two chewing loops.)
 
 ### Dog (`FUN_00403540`, class 1)
 
-Integrates, applies `DOG_PHYSICS[state - 0x16]`, and only processes states
-`0x16–0x18` (returns early above `0x18`). 1-in-12 chance to re-randomize
-direction: `rand(3)` → state `0x16 / 0x17 / 0x18`.
+Returns at once above state `0x18` (a knocked-over dog doesn't move).
+Otherwise integrates and applies `DOG_PHYSICS[state - 0x16]`. 1-in-12
+chance to re-randomize direction: `rand(3)` → state `0x16 / 0x17 / 0x18`.
 
 ### Snowboarder (`FUN_00403610`, class 2)
 
@@ -129,8 +138,9 @@ direction: `rand(3)` → state `0x16 / 0x17 / 0x18`.
 - `0x1d`: `vx = vy = 0`, integrate, `rand(32)` → **`0x1e` if non-zero else `0x1b`**
 - `0x1e`: `rand(100)` non-zero → integrate, → `0x1d`; else (1-in-100) **jump**:
   spawn an effect actor (see below) at `(x-4, y-2, z)` from the
-  pre-integration position, fire a sound (`FUN_00402ba0` — silent, the WAVE
-  resource is absent from the shipped binary), then integrate and → `0x1b`.
+  pre-integration position, play sound 8 (`FUN_00402ba0`; silent in the
+  shipped `ski32.exe`, which has none of the nine WAVE resources, see
+  `docs/how-ski32-works.md`, "Sound"), then integrate and → `0x1b`.
 
 The jump effect is a **class `0x11` actor with raw sprite `0x52`** (16×8,
 created via `FUN_004026a0`, which bypasses the state→sprite table). Classes
@@ -151,8 +161,8 @@ known gaps):
 | Source | Creator | Class | State/Sprite | Position |
 |--------|---------|-------|--------------|----------|
 | Snowboarder `0x1e` jump | `FUN_004026a0` | `0x11` (effect) | sprite `0x52` | `(x-4, y-2, z)` pre-integration |
-| Chairlift chair `0x27` (1-in-1000) | `FUN_004020d0` | 3 (obstacle) | state `0x21` | mob's `(x, y, z)` post-integration |
-| Main tick tail (1-in-666) | `FUN_004020d0` + `FUN_00402350` | 3 (obstacle) | state `0x1f` | random x across window, `viewport_top - 0x3c`, z 0 |
+| Chairlift chair `0x27` (1-in-1000) | `FUN_004020d0` | 3 (crossing skier) | state `0x21` | mob's `(x, y, z)` post-integration |
+| Main tick tail (1-in-666) | `FUN_004020d0` + `FUN_00402350` | 3 (crossing skier) | state `0x1f` | random x across window, `viewport_top - 0x3c`, z 0 |
 
 The rider that falls off a chair (class 3) inherits the chair's **z = 0x20**,
 so it visibly drops in from above; state `0x21` means "airborne" and lands to
@@ -168,17 +178,24 @@ the wrong class — class 4 — at `(0,0,0)`; fixed.)
 
 ### Crossing skier (`FUN_00403910`, class 3)
 
-Integrates, applies `CROSSING_SKIER_PHYSICS[state - 0x1f]`, then:
+Returns at once outside states `0x1f–0x26`. Otherwise integrates, applies
+`CROSSING_SKIER_PHYSICS[state - 0x1f]`, then:
 `0x1f →(rand 10) 0x20`, `0x20 →(rand 10) 0x1f`, `0x21 →(z==0) 0x20`,
 `0x22–0x26 → +1` (wrapping `0x27 → 0x20`). Already faithful.
+
+Collisions set the other states (`FUN_00403a00` case 3, sub-case table at
+`0x404054`): hitting the player, a dog, another crossing skier, a tree or a
+rock knocks it down (`0x22`) unless it passes above; a large rock or the ramp
+launches it (`vz = vy / 2`, state `0x21`, sound 5). A snow bump does nothing.
 
 ### Chairlift chair (`FUN_00404290`, class 4)
 
 The chairs (sprites 65–67, with riders or empty) ride the lift-pole line
 (x = -128), drifting **vertically** just left of the slope center. Course
-generation (`FUN_00404b50`) seeds pairs of these proxies every
-`0x800` units of y: state `0x27` at `x = -112, vy = -2` (drifting up) and
-state `0x29` at `x = -144, vy = +2` (drifting down), all floating at
+generation (`FUN_00404b50`) seeds rows of these proxies every `0x800` units
+of y from -1024 to 23552: state `0x27` at `x = -112, vy = -2` (drifting up,
+every row but the first) and state `0x29` at `x = -144, vy = +2` (drifting
+down, every row but the last), all floating at
 **z = `0x20`** (proxy integration has no gravity, so they never land).
 
 - `y < -1023`: state `0x29`, `x = -144`, `vy = 2`
@@ -188,10 +205,11 @@ state `0x29` at `x = -144, vy = +2` (drifting down), all floating at
   skier falls in from above — and set state `0x28`
 
 The original gates the roll (and so the spawn) on the proxy having a live
-actor (`*proxy != 0`): the node got one when its point `(x, y − z)` entered
-the padded viewport, and keeps it until the tick after its sprite box is
-culled. The port models this with `flags.on_screen` + `proxy_unlink` on the
-merged actor (see `docs/vm-ground-truth.md` item 7); proxies are updated in
+actor (`*proxy != 0`): the node got one when its y was inside the spawn scan
+window, its point `(x, y − z)` was inside the padded viewport and the pool had
+a free slot, and keeps it until the tick after its sprite box is culled.
+The port models this with `flags.on_screen` + `proxy_unlink` on the merged
+actor (see `docs/vm-ground-truth.md` item 7); proxies are updated in
 their own pass, in node order, after the actor loop. Rows start at y = ±1024
 + 0x800·k (verified via Frida). The spawn itself is implemented (see
 "Secondary-actor spawns").
@@ -208,6 +226,9 @@ Both already faithful (`mob::update_walking_tree`, `mob::update_burning_tree`):
   (sprites 83/84/85/84). These are not the monster's meal states `0x32–0x37`.
 
 ## Corrections to `docs/monster-ai.md`
+
+These are fixed there now; they are kept as a record of what earlier
+versions said.
 
 - Sprite selection is **4-direction / 2-frame**, not 8-way slope ratio.
 - The arrival "pause" is a **hop** (`vz = 4` + gravity), not a timed stop.
