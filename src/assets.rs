@@ -53,8 +53,9 @@ struct Meta {
 
 #[derive(serde::Deserialize)]
 struct Resource {
+    /// A number, or a name (foone's `ski32sounds.exe` has "WAVE").
     #[serde(rename = "type")]
-    kind: u16,
+    kind: serde_json::Value,
     /// A number, or a name (the `RT_GROUP_ICON` "ICONSKI").
     id: serde_json::Value,
     #[serde(default)]
@@ -64,7 +65,7 @@ struct Resource {
 }
 
 /// Bitmap resource type (`RT_BITMAP`).
-const RT_BITMAP: u16 = 2;
+const RT_BITMAP: u64 = 2;
 
 /// The sprite sizes in a `meta.json` text: 16x16 for ids without a bitmap.
 ///
@@ -76,7 +77,7 @@ pub fn sprite_sizes_from_meta(text: &str) -> Result<SpriteSizes, String> {
     let mut sizes = SpriteSizes::placeholder();
     // Only bitmaps are sprites: the icon resources (RT_ICON = 3, ids 1-6,
     // 32x32) share ids with the skier sprites and must not overwrite them.
-    for r in meta.resources.iter().filter(|r| r.kind == RT_BITMAP) {
+    for r in meta.resources.iter().filter(|r| r.kind.as_u64() == Some(RT_BITMAP)) {
         let id = r.id.as_u64().and_then(|id| u16::try_from(id).ok()).filter(|&id| usize::from(id) <= SPRITE_COUNT);
         if let (Some(id), Some(w), Some(h)) = (id, r.width, r.height) {
             sizes.set(id, (w, h));
@@ -95,7 +96,8 @@ mod tests {
             {"type": 2, "id": 1, "width": 16, "height": 32},
             {"type": 3, "id": 1, "width": 32, "height": 32},
             {"type": 2, "id": 3, "width": 24, "height": 28},
-            {"type": 14, "id": "ICONSKI"}
+            {"type": 14, "id": "ICONSKI"},
+            {"type": "WAVE", "id": 2}
         ]}"#;
         let sizes = sprite_sizes_from_meta(meta).unwrap();
         assert_eq!(sizes.get(1), (16, 32));
