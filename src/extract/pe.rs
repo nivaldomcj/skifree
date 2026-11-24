@@ -8,6 +8,11 @@ pub const RT_BITMAP: u16 = 2;
 /// 130. Directories can share subdirectories, so without a budget a small
 /// crafted file expands into billions of entries.
 const MAX_ENTRIES: usize = 4096;
+/// Longest resource name read, in UTF-16 units: the game matches only the
+/// type "WAVE", and ski32.exe's other names are ICONSKI and ICONSKI2. Every
+/// entry's path copies its names, so without a cap the entry budget could
+/// still hold gigabytes of names.
+const MAX_NAME: usize = 64;
 pub const RT_ICON: u16 = 3;
 
 /// A resource type or name: a number or a string.
@@ -99,6 +104,9 @@ pub fn resources(data: &[u8]) -> Result<Vec<Resource<'_>>> {
         if raw & 0x8000_0000 != 0 {
             let o = at(rsrc, (raw & 0x7FFF_FFFF) as usize)?;
             let n = u16_at(data, o)? as usize;
+            if n > MAX_NAME {
+                return Err("resource directory is damaged".to_owned());
+            }
             let units: Vec<u16> =
                 slice(data, o + 2, n * 2)?.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
             Ok(Name::Str(String::from_utf16_lossy(&units)))
@@ -196,10 +204,119 @@ mod tests {
     }
 
     #[test]
+    fn builder_round_trips() {
+        use super::testing::{build, Ty};
+        let exe = build(&[(Ty::Id(2), 1, b"bmp"), (Ty::Str("WAVE"), 4, b"wav")]);
+        let r = resources(&exe).unwrap();
+        assert_eq!(r.len(), 2);
+        assert!(matches!((&r[0].rtype, &r[0].name, r[0].data), (Name::Id(2), Name::Id(1), b"bmp")));
+        assert!(matches!((&r[1].rtype, &r[1].name), (Name::Str(t), Name::Id(4)) if t == "WAVE"));
+    }
+
+    #[test]
+    fn long_resource_names_are_refused() {
+        use super::testing::{build, Ty};
+        let long = "W".repeat(MAX_NAME + 1);
+        assert!(resources(&build(&[(Ty::Str(&long), 1, b"x")])).is_err());
+        assert!(resources(&build(&[(Ty::Str(&long[..MAX_NAME]), 1, b"x")])).is_ok());
+    }
+
+    #[test]
     fn shared_directory_bomb_is_refused() {
         // 200³ = 8 million resources without the entry budget.
         let f = shared_directory_pe(200);
         assert!(f.len() < 8 * 1024);
         assert_eq!(resources(&f).map(|r| r.len()), Err("resource directory is damaged".to_owned()));
+    }
+}
+
+/// A minimal PE32 builder for tests: a resource directory with the given
+/// (type, name id, data) entries, duplicates allowed, in order.
+#[cfg(test)]
+pub(crate) mod testing {
+    /// A resource type: a numeric id, or a string such as "WAVE".
+    #[derive(PartialEq)]
+    pub enum Ty<'a> {
+        Id(u16),
+        Str(&'a str),
+    }
+
+    fn put16(f: &mut [u8], o: usize, v: u16) {
+        f[o..o + 2].copy_from_slice(&v.to_le_bytes());
+    }
+
+    fn put32(f: &mut [u8], o: usize, v: u32) {
+        f[o..o + 4].copy_from_slice(&v.to_le_bytes());
+    }
+
+    fn dir(r: &mut Vec<u8>, named: usize, ids: usize) -> usize {
+        let o = r.len();
+        r.resize(o + 16 + 8 * (named + ids), 0);
+        put16(r, o + 12, named as u16);
+        put16(r, o + 14, ids as u16);
+        o
+    }
+
+    /// One resource type and its (name id, data) entries, in order.
+    type Group<'a, 'b> = (&'a Ty<'b>, Vec<(u16, &'a [u8])>);
+
+    pub fn build(resources: &[(Ty<'_>, u16, &[u8])]) -> Vec<u8> {
+        let mut types: Vec<Group<'_, '_>> = Vec::new();
+        for (ty, id, data) in resources {
+            match types.iter_mut().find(|(t, _)| *t == ty) {
+                Some((_, items)) => items.push((*id, data)),
+                None => types.push((ty, vec![(*id, data)])),
+            }
+        }
+        let named = types.iter().filter(|(t, _)| matches!(t, Ty::Str(_))).count();
+        let mut r = Vec::new();
+        let root = dir(&mut r, named, types.len() - named);
+        for (ti, (ty, items)) in types.iter().enumerate() {
+            let type_dir = dir(&mut r, 0, items.len());
+            let raw = match ty {
+                Ty::Id(id) => u32::from(*id),
+                Ty::Str(s) => {
+                    let o = r.len();
+                    let units: Vec<u16> = s.encode_utf16().collect();
+                    r.extend_from_slice(&(units.len() as u16).to_le_bytes());
+                    for u in units {
+                        r.extend_from_slice(&u.to_le_bytes());
+                    }
+                    0x8000_0000 | o as u32
+                }
+            };
+            put32(&mut r, root + 16 + ti * 8, raw);
+            put32(&mut r, root + 20 + ti * 8, 0x8000_0000 | type_dir as u32);
+            for (ii, (id, data)) in items.iter().enumerate() {
+                let lang = dir(&mut r, 0, 1);
+                put32(&mut r, type_dir + 16 + ii * 8, u32::from(*id));
+                put32(&mut r, type_dir + 20 + ii * 8, 0x8000_0000 | lang as u32);
+                let entry = r.len();
+                r.resize(entry + 16, 0);
+                put32(&mut r, lang + 16, 0x409);
+                put32(&mut r, lang + 20, entry as u32);
+                let at = r.len();
+                r.extend_from_slice(data);
+                put32(&mut r, entry, 0x1000 + at as u32);
+                put32(&mut r, entry + 4, data.len() as u32);
+            }
+        }
+        let (pe, rsrc) = (0x40usize, 0x200usize);
+        let mut f = vec![0u8; rsrc];
+        f[..2].copy_from_slice(b"MZ");
+        put32(&mut f, 0x3C, pe as u32);
+        f[pe..pe + 4].copy_from_slice(b"PE\0\0");
+        put16(&mut f, pe + 6, 1);
+        put16(&mut f, pe + 20, 0xE0);
+        let opt = pe + 24;
+        put16(&mut f, opt, 0x10B);
+        put32(&mut f, opt + 112, 0x1000);
+        let sec = opt + 0xE0;
+        put32(&mut f, sec + 8, r.len() as u32);
+        put32(&mut f, sec + 12, 0x1000);
+        put32(&mut f, sec + 16, r.len() as u32);
+        put32(&mut f, sec + 20, rsrc as u32);
+        f.extend_from_slice(&r);
+        f
     }
 }

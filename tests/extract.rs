@@ -64,6 +64,12 @@ fn check_icon(set: &AssetSet) {
 
 fn check_sounds(set: &AssetSet) {
     let wavs = set.sounds.as_ref().expect("sounds");
+    // The extractor must still find them; only the comparison needs
+    // tools/extract_assets.py's output.
+    if !root().join("assets/sounds").is_dir() {
+        eprintln!("skip sound comparison: assets/sounds/ not present");
+        return;
+    }
     for (i, wav) in wavs.iter().enumerate() {
         let expected = std::fs::read(root().join(format!("assets/sounds/sound_{}.wav", i + 1))).unwrap();
         assert!(wav == &expected, "sound {} bytes", i + 1);

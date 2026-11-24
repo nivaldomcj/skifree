@@ -75,25 +75,24 @@ impl ExeAssets {
     }
 }
 
-/// Most decoded sprite bytes kept from one exe: the game's 89 sprites take
+/// Most decoded sprite bytes for a whole drop: one exe's 89 sprites take
 /// 360 KB as RGBA, and sprite ids can all point at one huge bitmap.
 const MAX_SPRITE_BYTES: usize = 16 * 1024 * 1024;
 
-fn read_exe(data: &[u8]) -> bytes::Result<ExeAssets> {
-    let mut found = ExeAssets { sprites: vec![None; SPRITE_COUNT + 1], icon: None, sounds: None };
-    let mut wavs: Vec<Option<Vec<u8>>> = vec![None; SOUND_COUNT];
-    let mut sprite_bytes = 0usize;
+/// One exe's assets. Duplicate resources are only recorded during the walk
+/// and decoded once after it (the last one wins, as in `extract_assets.py`),
+/// so repeating an icon thousands of times costs nothing. `sprite_budget`
+/// is shared by every exe in the drop.
+fn read_exe(data: &[u8], sprite_budget: &mut usize) -> bytes::Result<ExeAssets> {
+    let mut bitmaps: Vec<Option<&[u8]>> = vec![None; SPRITE_COUNT + 1];
+    let mut icon: Option<&[u8]> = None;
+    let mut wavs: Vec<Option<&[u8]>> = vec![None; SOUND_COUNT];
     for r in pe::resources(data)? {
         match (&r.rtype, &r.name) {
             (Name::Id(RT_BITMAP), Name::Id(id)) if (1..=SPRITE_COUNT).contains(&(*id as usize)) => {
-                let sprite = dib::decode_sprite(r.data)?;
-                sprite_bytes += sprite.data.len();
-                if sprite_bytes > MAX_SPRITE_BYTES {
-                    return Err("its pictures are far too large".to_owned());
-                }
-                found.sprites[*id as usize] = Some(sprite);
+                bitmaps[*id as usize] = Some(r.data);
             }
-            (Name::Id(RT_ICON), Name::Id(ICON_ID)) => found.icon = Some(dib::decode_icon(r.data)?),
+            (Name::Id(RT_ICON), Name::Id(ICON_ID)) => icon = Some(r.data),
             // FUN_004052d0 loads WAVE resources 1-9 (ski32sounds.exe has
             // two more that are never played).
             (Name::Str(t), Name::Id(id))
@@ -102,14 +101,30 @@ fn read_exe(data: &[u8]) -> bytes::Result<ExeAssets> {
                     && r.data.starts_with(b"RIFF")
                     && r.data.get(8..12) == Some(b"WAVE") =>
             {
-                wavs[*id as usize - 1] = Some(r.data.to_vec());
+                wavs[*id as usize - 1] = Some(r.data);
             }
             _ => {}
         }
     }
-    // Sound only with all nine, like build.rs.
-    found.sounds = wavs.into_iter().collect();
-    Ok(found)
+    // Charged to the drop's budget only if the whole exe loads: a file
+    // that fails partway must not use up the budget of a good one.
+    let mut budget = *sprite_budget;
+    let mut sprites = vec![None; SPRITE_COUNT + 1];
+    for (slot, bitmap) in sprites.iter_mut().zip(&bitmaps) {
+        if let Some(bitmap) = bitmap {
+            let sprite = dib::decode_sprite(bitmap)?;
+            budget = budget.checked_sub(sprite.data.len()).ok_or("its pictures are far too large")?;
+            *slot = Some(sprite);
+        }
+    }
+    let assets = ExeAssets {
+        sprites,
+        icon: icon.map(dib::decode_icon).transpose()?,
+        // Sound only with all nine, like build.rs.
+        sounds: wavs.into_iter().map(|w| w.map(<[u8]>::to_vec)).collect(),
+    };
+    *sprite_budget = budget;
+    Ok(assets)
 }
 
 /// Build the asset set from the player's files: `ski32.exe` (sprites and
@@ -142,9 +157,10 @@ pub fn from_files(files: &[(String, Vec<u8>)]) -> Result<AssetSet, String> {
 
     let mut exes: Vec<(String, ExeAssets)> = Vec::new();
     let mut font = None;
+    let mut sprite_budget = MAX_SPRITE_BYTES;
     for (name, data) in &inputs {
         match pe::kind(data) {
-            Kind::Pe => match read_exe(data) {
+            Kind::Pe => match read_exe(data, &mut sprite_budget) {
                 Ok(found) => exes.push((name.clone(), found)),
                 Err(e) => problems.push(format!("{name}: {e}.")),
             },
@@ -197,4 +213,58 @@ pub fn from_files(files: &[(String, Vec<u8>)]) -> Result<AssetSet, String> {
     set.sounds = sounds;
     set.font = font;
     Ok(set)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pe::testing::{build, Ty};
+    use super::*;
+
+    /// A 32x32, 16-colour icon image (XOR bitmap and AND mask, so the header
+    /// says 64 rows); `truncated` keeps only the header and palette.
+    fn icon(truncated: bool) -> Vec<u8> {
+        let mut d = vec![0u8; if truncated { 40 + 64 } else { 40 + 64 + 512 + 128 }];
+        d[..4].copy_from_slice(&40u32.to_le_bytes());
+        d[4..8].copy_from_slice(&32i32.to_le_bytes());
+        d[8..12].copy_from_slice(&64i32.to_le_bytes());
+        d[12..14].copy_from_slice(&1u16.to_le_bytes());
+        d[14..16].copy_from_slice(&4u16.to_le_bytes());
+        d
+    }
+
+    #[test]
+    fn duplicate_icons_decode_once_and_the_last_wins() {
+        // A damaged first copy no longer fails the exe: only the last copy
+        // is decoded, as extract_assets.py keeps the last one.
+        let (bad, good) = (icon(true), icon(false));
+        let exe = build(&[(Ty::Id(RT_ICON), ICON_ID, &bad), (Ty::Id(RT_ICON), ICON_ID, &good)]);
+        let found = read_exe(&exe, &mut MAX_SPRITE_BYTES.clone()).unwrap();
+        assert_eq!(found.icon.map(|i| (i.width, i.height)), Some((32, 32)));
+    }
+
+    #[test]
+    fn many_duplicate_icons_cost_one_decode() {
+        let good = icon(false);
+        // 2000 copies: each takes two directory entries, within MAX_ENTRIES.
+        let entries: Vec<_> = (0..2000).map(|_| (Ty::Id(RT_ICON), ICON_ID, good.as_slice())).collect();
+        let found = read_exe(&build(&entries), &mut MAX_SPRITE_BYTES.clone()).unwrap();
+        assert!(found.icon.is_some());
+    }
+
+    #[test]
+    fn the_sprite_budget_is_shared_by_the_drop() {
+        let mut budget = 10;
+        let mut bmp = icon(false);
+        bmp[8..12].copy_from_slice(&32i32.to_le_bytes()); // a 32x32 sprite: 4 KB as RGBA
+        let exe = build(&[(Ty::Id(RT_BITMAP), 1, &bmp)]);
+        assert!(read_exe(&exe, &mut budget).is_err());
+        let mut budget = MAX_SPRITE_BYTES;
+        read_exe(&exe, &mut budget).unwrap();
+        assert_eq!(budget, MAX_SPRITE_BYTES - 32 * 32 * 4);
+        // An exe that fails after decoding a sprite is charged nothing.
+        let broken = build(&[(Ty::Id(RT_BITMAP), 1, &bmp), (Ty::Id(RT_BITMAP), 2, &bmp[..20])]);
+        let before = budget;
+        assert!(read_exe(&broken, &mut budget).is_err());
+        assert_eq!(budget, before);
+    }
 }

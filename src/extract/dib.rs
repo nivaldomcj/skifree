@@ -30,7 +30,7 @@ impl<'a> Dib<'a> {
         }
         // The game's largest bitmap is 93x64; 1024 leaves room and keeps a
         // crafted file from making the decoder allocate gigabytes.
-        if !matches!(bpp, 1 | 4 | 8) || width <= 0 || width > 1024 || height == 0 || height.abs() > 2048 {
+        if !matches!(bpp, 1 | 4 | 8) || width <= 0 || width > 1024 || height == 0 || height.unsigned_abs() > 2048 {
             return Err(format!("unsupported bitmap ({width}x{height}, {bpp} bpp)"));
         }
         let mut n_pal = u32_at(buf, 32)? as usize;
