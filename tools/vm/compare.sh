@@ -26,8 +26,8 @@ if [ "$1" = "--suite" ]; then
     out=${2:?out-dir}; mkdir -p "$out"; failed=
     # scenario:seconds (seconds cover the scenario's ticks at ~19 ticks/s
     # under Frida; the whole suite takes ~22 minutes)
-    for entry in compare_vm:32 compare_steer:32 compare_size_640x480:34 \
-                 compare_size_1024x700:34 compare_slalom:66 \
+    for entry in compare_vm:42 compare_steer:42 compare_size_640x480:42 \
+                 compare_size_1024x700:42 compare_slalom:66 \
                  compare_tree_slalom:66 compare_slalom_timed:68 \
                  compare_tree_slalom_timed:68 compare_freestyle:68 \
                  compare_mouse:68 compare_restart:40 compare_focus:40 compare_resize:42 \

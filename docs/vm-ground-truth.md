@@ -358,15 +358,17 @@ Sprite-table entry (16 bytes): `+0x08` x offset in the source strip,
 ## Verified scenarios
 
 All run from a fresh process (seed 0 unless the row says otherwise), world built at the scenario's
-size. "Calls" = rand() calls compared (the original runs for the capture
-time, the port for the scenario's ticks; the shorter side bounds the check).
+size. "Calls" = rand() calls compared. The original runs for the capture
+time and the port for the scenario's ticks: the capture must outlast every
+tick, or `player_align.py` fails the run (a slower VM must not shrink what
+is checked).
 
 | Scenario (`replays/`) | Size | What it covers | Ticks | Calls | Result |
 |---|---|---|---|---|---|
-| `compare_vm.json` | 704×681 | straight descent, no input; tree crash | 617 | 2772 | identical |
-| `compare_steer.json` | 704×681 | turns, diagonals, an Up press at speed (no effect), both jumps, air tricks, crash + get-up | 618 | 3004 | identical |
-| `compare_size_640x480.json` | 640×480 | same inputs as `compare_steer` | 655 | 2796 | identical |
-| `compare_size_1024x700.json` | 1024×700 | same inputs as `compare_steer` | 656 | 3157 | identical |
+| `compare_vm.json` | 704×681 | straight descent, no input; tree crash | 700 | 3021 | identical |
+| `compare_steer.json` | 704×681 | turns, diagonals, an Up press at speed (no effect), both jumps, air tricks, crash + get-up | 700 | 3342 | identical |
+| `compare_size_640x480.json` | 640×480 | same inputs as `compare_steer` | 700 | 3028 | identical |
+| `compare_size_1024x700.json` | 1024×700 | same inputs as `compare_steer` | 700 | 3318 | identical |
 | `compare_slalom.json` | 704×681 | slalom strip: gates, rocks, repeated crash/recovery | 1250 | 6566 | identical |
 | `compare_tree_slalom.json` | 704×681 | tree-slalom strip (populator zone B trees) | 1250 | 6414 | identical |
 | `compare_monster.json` | 704×681 | uphill walk past y −2000: monster chase, meal, departure | 1350 | 5339 | identical |
@@ -483,7 +485,8 @@ tools/vm/compare.sh replays/compare_steer.json /tmp/steer 32
 tools/vm/compare.sh --suite /tmp/suite     # all verified scenarios (~22 min)
 ```
 
-New scenarios need a duration that covers their ticks at ~19 ticks/s.
+New scenarios need a duration that covers their ticks at ~19 ticks/s, with
+some margin; a capture that ends early fails the run.
 `fast_forward` (the F cheat) has no deterministic mapping and is rejected
 by `scenario_inputs.py`. A paused or inactive original runs no ticks at
 all, so an F3 pause or a focus loss must be undone in the same tick

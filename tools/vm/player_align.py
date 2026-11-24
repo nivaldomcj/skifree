@@ -42,6 +42,13 @@ def main():
     if not orig:
         print("player: the original's trace has no ticks")
         return 1
+    if first is None and len(orig) < len(port):
+        # The capture ended before the scenario did (the VM ran slower than
+        # the seconds allowed): the tail went unchecked, so this is no pass.
+        # The other aligners stop at the original's end too.
+        print(f"player identical for the {n} ticks the original ran, but the scenario has {len(port)}: "
+              "capture too short, raise its seconds")
+        return 1
     if first is None:
         print(f"player identical for all {n} common ticks")
         return 0
