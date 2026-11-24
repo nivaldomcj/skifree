@@ -52,10 +52,7 @@ impl ActorPool {
     /// Live actors as the original counts them: every actor except mob
     /// nodes that are off screen.
     pub fn live_count(&self) -> usize {
-        self.active_indices()
-            .into_iter()
-            .filter(|&i| !self.actors[i].class.is_mob_node() || self.actors[i].flags.on_screen)
-            .count()
+        self.active_indices().into_iter().filter(|&i| self.actors[i].is_live()).count()
     }
 
     pub fn alloc(&mut self, class: ActorClass, state: u16) -> Option<usize> {

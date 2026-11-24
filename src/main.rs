@@ -292,10 +292,7 @@ async fn run() {
                 }
                 // One state step per key-down (WM_KEYDOWN), auto-repeats
                 // included.
-                GameAction::SteerLeft => game.steer_keyboard(true, false, false, false),
-                GameAction::SteerRight => game.steer_keyboard(false, true, false, false),
-                GameAction::SteerUp => game.steer_keyboard(false, false, true, false),
-                GameAction::SteerDown => game.steer_keyboard(false, false, false, true),
+                GameAction::Steer(key) => game.steer_keyboard(key),
                 GameAction::ToggleMute => audio.toggle_mute(),
                 // A t step runs for the GetTickCount time since the last tick.
                 GameAction::Cheat(cheat) => {

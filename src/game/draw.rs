@@ -44,7 +44,7 @@ pub fn draw_list(game: &GameState) -> Vec<DrawItem> {
         let Some(a) = game.pool.get(idx) else { continue };
         // A mob node without its live actor (only at the pool limit) isn't
         // drawn: the original has no actor to paint for it.
-        if a.class.is_mob_node() && !a.flags.on_screen {
+        if !a.is_live() {
             continue;
         }
         if a.sprite_id == 0 {

@@ -9,6 +9,7 @@ use super::populator;
 use super::rng::Rng;
 use super::scoring::Scoring;
 use super::skier;
+use super::skier::ArrowKey;
 use super::sound::Sound;
 use super::sprites::SpriteSizes;
 use super::state_table::STATE_TO_SPRITE;
@@ -440,7 +441,7 @@ impl GameState {
             self.screen_h,
             &self.sprites,
             &|idx, a| start_pos.get(idx).copied().flatten() != Some(moved_snapshot(a)),
-            &|a| !a.class.is_mob_node() || a.flags.on_screen,
+            &Actor::is_live,
         );
 
         for result in results {
@@ -483,11 +484,7 @@ impl GameState {
                 // original never subtracts (`removed_area`).
                 let weight = self.removed_area
                     + populator::sprite_weight(
-                        self.pool
-                            .active_indices()
-                            .into_iter()
-                            .filter(|&i| !self.is_proxy(i) || self.pool.get(i).is_some_and(|a| a.flags.on_screen))
-                            .filter_map(|i| self.pool.get(i)),
+                        self.pool.active_indices().into_iter().filter_map(|i| self.pool.get(i)).filter(|a| a.is_live()),
                         &self.sprites,
                     );
                 if let Some(req) =
@@ -648,7 +645,7 @@ impl GameState {
 
     /// First gate record index within a course strip (`DAT_0040c94c/c950`).
     fn first_gate_index(&self, xmin: i16, xmax: i16) -> Option<usize> {
-        self.spawn_events.iter().position(|e| e.class == ActorClass::Gate as u16 && e.x >= xmin && e.x <= xmax)
+        self.spawn_events.iter().position(|e| e.class == ActorClass::Gate && e.x >= xmin && e.x <= xmax)
     }
 
     /// Gate passing (`FUN_00402c60` / `FUN_00403250` tail + `FUN_00403130`): once
@@ -689,7 +686,7 @@ impl GameState {
             .iter()
             .enumerate()
             .skip(gi + 1)
-            .find(|(_, e)| e.class == ActorClass::Gate as u16 && e.x >= xmin && e.x <= xmax)
+            .find(|(_, e)| e.class == ActorClass::Gate && e.x >= xmin && e.x <= xmax)
             .map(|(i, _)| i);
     }
 
@@ -812,7 +809,7 @@ impl GameState {
     /// order: chairlift chairs, then monsters.
     fn update_proxies(&mut self) {
         let nodes: Vec<usize> =
-            self.spawn_events.iter().filter(|e| (4..=8).contains(&e.class)).filter_map(|e| e.actor_idx).collect();
+            self.spawn_events.iter().filter(|e| e.class.is_mob_node()).filter_map(|e| e.actor_idx).collect();
         for idx in nodes {
             let player = self.player_idx.and_then(|pi| self.pool.get(pi).cloned());
             let mut request = None;
@@ -880,7 +877,7 @@ impl GameState {
             // event y inside the scan window AND the sprite's draw box
             // overlapping the padded viewport. Culled actors (event link
             // reset) re-materialize here when scrolled back into range.
-            let in_window = (4..=8).contains(&event.class) || {
+            let in_window = event.class.is_mob_node() || {
                 let sprite =
                     event.sprite.unwrap_or_else(|| STATE_TO_SPRITE.get(event.state as usize).copied().unwrap_or(0));
                 let (w, h) = self.sprites.get(sprite);
@@ -890,7 +887,7 @@ impl GameState {
                     && collision::in_padded_view(event.x, event.y, 0, w, h, &self.camera, self.screen_w, self.screen_h)
             };
             if in_window {
-                let Some(class) = ActorClass::from_u16(event.class) else { continue };
+                let class = event.class;
 
                 let idx = match event.sprite {
                     Some(sprite) => self.pool.alloc_with_sprite(class, sprite),
@@ -911,7 +908,7 @@ impl GameState {
                         eprintln!(
                             "spawn ms={} cls={} spr={:?} x={} y={} rng={}",
                             self.elapsed_ms,
-                            event.class,
+                            event.class as u16,
                             event.sprite,
                             event.x,
                             event.y,
@@ -957,11 +954,10 @@ impl GameState {
         self.player_idx.and_then(|idx| self.pool.get_mut(idx))
     }
 
-    /// Handle keyboard steering
-    #[expect(clippy::fn_params_excessive_bools, reason = "the four arrow keys, held or not")]
-    pub fn steer_keyboard(&mut self, left: bool, right: bool, up: bool, down: bool) {
+    /// One steering key-down (`WM_KEYDOWN`, auto-repeats included).
+    pub fn steer_keyboard(&mut self, key: ArrowKey) {
         if let Some(actor) = self.player_mut() {
-            skier::steer_keyboard(actor, left, right, up, down);
+            skier::steer_keyboard(actor, key);
         }
     }
 
@@ -1078,7 +1074,7 @@ mod tests {
         // the skier has descended far enough for y = 640 to enter the window.
         let mut g = GameState::new_seeded(704, 681, 0, SpriteSizes::placeholder());
         g.new_game();
-        g.steer_keyboard(false, false, false, true);
+        g.steer_keyboard(ArrowKey::Down);
         for _ in 0..15 {
             g.tick(40);
         }
@@ -1116,7 +1112,7 @@ mod tests {
     #[test]
     fn losing_focus_stops_the_game_and_input() {
         let mut g = game_with_player();
-        g.steer_keyboard(false, false, false, true);
+        g.steer_keyboard(ArrowKey::Down);
         g.tick(40);
         let y = g.pool.get(g.player_idx.unwrap()).unwrap().y;
         g.set_active(false);
@@ -1398,7 +1394,7 @@ mod tests {
         g.spawn_events.push(SpawnEvent {
             actor_idx: None,
             state: 0x27,
-            class: 4,
+            class: ActorClass::LiftChair,
             sprite: None,
             x: -112,
             y: 100,

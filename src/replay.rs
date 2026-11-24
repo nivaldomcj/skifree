@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::game::cheat::Cheat;
+use crate::game::skier::ArrowKey;
 use crate::game::sprites::SpriteSizes;
 use crate::game::state::GameState;
 use crate::game::DEFAULT_CLIENT_SIZE;
@@ -176,7 +177,14 @@ pub fn apply_inputs(game: &mut GameState, scenario: &Scenario, tick: u32) -> boo
             continue;
         }
         match &input.kind {
-            InputKind::Steer { left, right, up, down } => game.steer_keyboard(*left, *right, *up, *down),
+            // One record may press several keys: they act in this order.
+            InputKind::Steer { left, right, up, down } => {
+                let keys =
+                    [(down, ArrowKey::Down), (up, ArrowKey::Up), (left, ArrowKey::Left), (right, ArrowKey::Right)];
+                for (_, key) in keys.into_iter().filter(|(pressed, _)| **pressed) {
+                    game.steer_keyboard(key);
+                }
+            }
             InputKind::SteerAbsolute { state } => game.steer_absolute(*state),
             InputKind::Jump => game.jump_keyboard(),
             InputKind::Click => game.click(),

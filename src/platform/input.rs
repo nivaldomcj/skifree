@@ -1,12 +1,11 @@
 use macroquad::prelude::*;
 use skifree::game::cheat::Cheat;
+use skifree::game::skier::ArrowKey;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum GameAction {
-    SteerLeft,
-    SteerRight,
-    SteerUp,
-    SteerDown,
+    /// A cardinal steering key: one state step per key-down.
+    Steer(ArrowKey),
     /// Diagonal keys set a skiing state directly (1/4 = slight, 3/6 = hard).
     SteerAbsolute(u16),
     /// Keyboard jump (Insert / numpad0) — smaller hop that scrubs speed.
@@ -95,10 +94,10 @@ fn key_action(key: KeyCode) -> Option<GameAction> {
         Right, Up, F2, F3,
     };
     Some(match key {
-        Left | Kp4 => GameAction::SteerLeft,
-        Right | Kp6 => GameAction::SteerRight,
-        Up | Kp8 => GameAction::SteerUp,
-        Down | Kp2 => GameAction::SteerDown,
+        Left | Kp4 => GameAction::Steer(ArrowKey::Left),
+        Right | Kp6 => GameAction::Steer(ArrowKey::Right),
+        Up | Kp8 => GameAction::Steer(ArrowKey::Up),
+        Down | Kp2 => GameAction::Steer(ArrowKey::Down),
         // Diagonals set a skiing state directly (numpad + nav cluster).
         // Top row = hard turns (3 left / 6 right), bottom row = slight (1 / 4).
         Kp7 | Home => GameAction::SteerAbsolute(3),
@@ -218,7 +217,7 @@ mod tests {
     fn only_mapped_keys_act() {
         assert_eq!(key_action(KeyCode::A), None);
         assert_eq!(key_action(KeyCode::Space), None);
-        assert_eq!(key_action(KeyCode::Left), Some(GameAction::SteerLeft));
+        assert_eq!(key_action(KeyCode::Left), Some(GameAction::Steer(ArrowKey::Left)));
         assert_eq!(key_action(KeyCode::F3), Some(GameAction::PauseToggle));
         #[cfg(not(target_arch = "wasm32"))]
         assert_eq!(key_action(KeyCode::Escape), Some(GameAction::Quit));
