@@ -1,4 +1,4 @@
-/// Actor behavior classes (param_1[6] in the original)
+/// Actor behavior classes (`param_1`[6] in the original)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u16)]
 pub enum ActorClass {
@@ -61,6 +61,7 @@ impl ActorClass {
 
 /// Actor flags (bitfield at +0x4c in the original)
 #[derive(Debug, Clone, Copy, Default)]
+#[expect(clippy::struct_excessive_bools, reason = "the original's flag bits, one field each")]
 pub struct ActorFlags {
     pub active: bool,     // bit 0
     pub dead: bool,       // bit 1
@@ -92,7 +93,7 @@ pub struct Actor {
     /// so the node still behaves as live during its next update.
     pub proxy_unlink: bool,
     /// y at the start of the current tick (the original's previous-position
-    /// copy at `[actor+4]`, returned by FUN_00404070, which the collision
+    /// copy at `[actor+4]`, returned by `FUN_00404070`, which the collision
     /// crossing test compares against). `None` for actors created during
     /// the tick: the original then compares the actor with itself.
     pub prev_y: Option<i16>,
@@ -124,8 +125,8 @@ impl Default for Actor {
 /// A request to spawn a secondary actor, returned by behavior updates that
 /// create actors mid-tick (the ambient mob's 1-in-1000 crossing skier, the
 /// snowboarder's jump effect). Exactly one of `state` / `sprite` is set:
-/// `state` goes through the state-to-sprite table (FUN_004020d0), `sprite`
-/// sets a raw sprite id (FUN_004026a0).
+/// `state` goes through the state-to-sprite table (`FUN_004020d0`), `sprite`
+/// sets a raw sprite id (`FUN_004026a0`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SpawnRequest {
     pub class: ActorClass,
@@ -138,9 +139,9 @@ pub struct SpawnRequest {
 
 /// Spawn event — consumed as the player scrolls past its y coordinate.
 /// Mirrors the original's 36-byte spawn record: when `sprite` is set the
-/// actor is created with a raw sprite id (FUN_004026a0, classes >= 0xb and
+/// actor is created with a raw sprite id (`FUN_004026a0`, classes >= 0xb and
 /// all signage), otherwise with a state looked up in the state table
-/// (FUN_004020d0). `param` carries the initial vy for ambient mobs.
+/// (`FUN_004020d0`). `param` carries the initial vy for ambient mobs.
 #[derive(Debug, Clone)]
 pub struct SpawnEvent {
     pub actor_idx: Option<usize>,
@@ -171,7 +172,7 @@ pub enum CourseType {
     TreeSlalom,
 }
 
-/// A just-completed course run, for the high-score display (FUN_00402ec0).
+/// A just-completed course run, for the high-score display (`FUN_00402ec0`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FinishRecord {
     /// 0 = slalom, 1 = giant slalom, 2 = freestyle.
@@ -184,8 +185,8 @@ pub struct FinishRecord {
     pub rank: Option<usize>,
 }
 
-/// One course's run state (the original's DAT_0040c95c / 0c958 / 0c954 and
-/// the gate cursor DAT_0040c6f8).
+/// One course's run state (the original's `DAT_0040c95c` / 0c958 / 0c954 and
+/// the gate cursor `DAT_0040c6f8`).
 #[derive(Debug, Clone, Default)]
 pub struct CourseRun {
     /// Player is between the start and finish lines of this course.
@@ -194,10 +195,10 @@ pub struct CourseRun {
     pub finished: bool,
     /// Tick timestamp (ms) when the start line was crossed. Signed because
     /// the gate-miss penalty subtracts 5 s even when that goes negative
-    /// (the original's DAT_0040c948 is a plain int).
+    /// (the original's `DAT_0040c948` is a plain int).
     pub start_ms: i64,
     /// Final course clock at the finish (freestyle/slalom only).
     pub finish_ms: u64,
-    /// spawn_events index of the next unpassed gate (gated courses only).
+    /// `spawn_events` index of the next unpassed gate (gated courses only).
     pub next_gate: Option<usize>,
 }

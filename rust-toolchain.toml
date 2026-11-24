@@ -1,0 +1,8 @@
+# The Rust release this project builds and lints with, here and in CI.
+# Pinned so a new Clippy can't fail CI by itself: bump it by hand, then fix
+# what the new Clippy finds (cargo clippy on every target, see ci.yml).
+[toolchain]
+channel = "1.100.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]

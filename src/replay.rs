@@ -70,7 +70,7 @@ pub enum InputKind {
     },
     Jump,
     Click,
-    /// Mouse moved to client position (x, y), like WM_MOUSEMOVE.
+    /// Mouse moved to client position (x, y), like `WM_MOUSEMOVE`.
     Mouse {
         x: i16,
         y: i16,
@@ -84,7 +84,7 @@ pub enum InputKind {
     Focus {
         active: bool,
     },
-    /// The client area resized to w x h (WM_SIZE).
+    /// The client area resized to w x h (`WM_SIZE`).
     Resize {
         w: i16,
         h: i16,
@@ -110,18 +110,18 @@ pub struct TickRecord {
     pub player: Option<PlayerSnapshot>,
     pub actor_count: usize,
     pub score: i32,
-    /// Course clock (DAT_0040c944, ms).
+    /// Course clock (`DAT_0040c944`, ms).
     #[serde(default)]
     pub course_ms: i64,
     pub rng_calls: u64,
     /// Status display values (Time, Dist, Speed, Style) when it was
-    /// repainted during this tick (FUN_00401b80); compared with
-    /// tools/vm/trace_status.js by status_align.py.
+    /// repainted during this tick (`FUN_00401b80`); compared with
+    /// `tools/vm/trace_status.js` by `status_align.py`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<[String; 4]>,
     /// Sounds played during this tick (WAVE resource ids, in call order;
-    /// FUN_00402ba0); compared with tools/vm/trace_sounds.js by
-    /// sound_align.py.
+    /// `FUN_00402ba0`); compared with `tools/vm/trace_sounds.js` by
+    /// `sound_align.py`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sounds: Vec<u8>,
     /// FNV-1a hash of every record up to and including this one.
@@ -162,13 +162,13 @@ impl TickRecord {
 pub fn fnv1a_update(hash: u64, bytes: &[u8]) -> u64 {
     let mut h = hash;
     for &b in bytes {
-        h ^= b as u64;
-        h = h.wrapping_mul(0x100000001b3);
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
     }
     h
 }
 
-pub const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+pub const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 
 /// Feed the scenario's inputs for `tick` to the game, like the original's
 /// window procedure would before that main tick.
@@ -180,12 +180,7 @@ pub fn apply_inputs(game: &mut GameState, scenario: &Scenario, tick: u32) {
             continue;
         }
         match &input.kind {
-            InputKind::Steer {
-                left,
-                right,
-                up,
-                down,
-            } => game.steer_keyboard(*left, *right, *up, *down),
+            InputKind::Steer { left, right, up, down } => game.steer_keyboard(*left, *right, *up, *down),
             InputKind::SteerAbsolute { state } => game.steer_absolute(*state),
             InputKind::Jump => game.jump_keyboard(),
             InputKind::Click => game.click(),
@@ -200,18 +195,10 @@ pub fn apply_inputs(game: &mut GameState, scenario: &Scenario, tick: u32) {
 }
 
 pub fn run_scenario(scenario: &Scenario) -> Vec<TickRecord> {
-    run_scenario_with_size(
-        scenario,
-        scenario.screen_w.unwrap_or(640),
-        scenario.screen_h.unwrap_or(480),
-    )
+    run_scenario_with_size(scenario, scenario.screen_w.unwrap_or(640), scenario.screen_h.unwrap_or(480))
 }
 
-pub fn run_scenario_with_size(
-    scenario: &Scenario,
-    screen_w: i16,
-    screen_h: i16,
-) -> Vec<TickRecord> {
+pub fn run_scenario_with_size(scenario: &Scenario, screen_w: i16, screen_h: i16) -> Vec<TickRecord> {
     run_scenario_observed(scenario, screen_w, screen_h, |_, _| {})
 }
 
@@ -259,7 +246,7 @@ pub fn run_scenario_observed(
             // Repaints since the last record: during this tick, or between
             // ticks before it (the first paint, a resize).
             status: std::mem::take(&mut game.status_painted).then(|| game.status_values.clone()),
-            sounds: std::mem::take(&mut game.sounds).into_iter().map(|s| s.id()).collect(),
+            sounds: std::mem::take(&mut game.sounds).into_iter().map(super::game::sound::Sound::id).collect(),
             hash: 0,
         };
         hash = fnv1a_update(hash, record.payload_json().as_bytes());
@@ -271,6 +258,11 @@ pub fn run_scenario_observed(
     records
 }
 
+/// One JSON object per line.
+///
+/// # Panics
+///
+/// Never in practice: a `TickRecord` always serializes.
 pub fn records_to_jsonl(records: &[TickRecord]) -> String {
     let mut out = String::new();
     for r in records {
@@ -280,11 +272,13 @@ pub fn records_to_jsonl(records: &[TickRecord]) -> String {
     out
 }
 
+/// The records of a JSON Lines text; blank lines are skipped.
+///
+/// # Errors
+///
+/// When a line is not a valid `TickRecord`.
 pub fn parse_jsonl(text: &str) -> Result<Vec<TickRecord>, serde_json::Error> {
-    text.lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(serde_json::from_str)
-        .collect()
+    text.lines().filter(|line| !line.trim().is_empty()).map(serde_json::from_str).collect()
 }
 
 #[cfg(test)]

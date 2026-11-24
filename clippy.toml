@@ -1,0 +1,5 @@
+# Tests may unwrap: a panic is how a test fails.
+allow-unwrap-in-tests = true
+
+# Names, not code: doc comments may write them without backticks.
+doc-valid-idents = ["SkiFree", "VileR", "XWayland", ".."]

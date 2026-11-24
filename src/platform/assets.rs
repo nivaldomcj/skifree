@@ -20,29 +20,34 @@ pub async fn load() -> AssetSet {
 }
 
 /// Decode a PNG the way macroquad's `load_texture` does.
-#[cfg_attr(all(target_arch = "wasm32", not(feature = "embed-assets")), allow(dead_code))]
+#[cfg_attr(
+    all(target_arch = "wasm32", not(feature = "embed-assets")),
+    expect(dead_code, reason = "the public web build gets its images from extract, not PNGs")
+)]
 fn decode_png(bytes: &[u8]) -> Option<Rgba> {
     let img = Image::from_file_with_format(bytes, Some(ImageFormat::Png)).ok()?;
-    Some(Rgba { width: img.width as u32, height: img.height as u32, data: img.bytes })
+    Some(Rgba { width: u32::from(img.width), height: u32::from(img.height), data: img.bytes })
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 mod imp {
     use super::decode_png;
-    use skifree::extract::{AssetSet, Rgba, SPRITE_COUNT};
+    use skifree::extract::{AssetSet, Rgba};
     use std::path::Path;
 
     fn read_png(path: &Path) -> Option<Rgba> {
         decode_png(&std::fs::read(path).ok()?)
     }
 
+    #[expect(clippy::unused_async, reason = "the same signature as the public web version, which awaits")]
     pub async fn load() -> AssetSet {
         let root = skifree::game::assets::asset_root();
         let mut set = AssetSet::new();
-        for id in 1..=SPRITE_COUNT {
-            let path = root.join(format!("sprites/bitmap_{:02}.png", id));
-            set.sprites[id] = read_png(&path);
-            if set.sprites[id].is_none() {
+        // Slot 0 is unused: sprites are indexed by resource id, 1..=SPRITE_COUNT.
+        for (id, sprite) in set.sprites.iter_mut().enumerate().skip(1) {
+            let path = root.join(format!("sprites/bitmap_{id:02}.png"));
+            *sprite = read_png(&path);
+            if sprite.is_none() {
                 eprintln!("warning: failed to load sprite {}", path.display());
             }
         }
@@ -62,6 +67,7 @@ mod imp {
         include!(concat!(env!("OUT_DIR"), "/web_assets.rs"));
     }
 
+    #[expect(clippy::unused_async, reason = "the same signature as the public web version, which awaits")]
     pub async fn load() -> AssetSet {
         let mut set = AssetSet::new();
         for (i, png) in embedded::SPRITES.iter().enumerate() {

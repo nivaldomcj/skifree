@@ -1,5 +1,5 @@
 //! Device-independent bitmaps (BITMAPINFOHEADER, uncompressed, 1/4/8 bpp):
-//! the game's RT_BITMAP sprites and RT_ICON images, decoded as
+//! the game's `RT_BITMAP` sprites and `RT_ICON` images, decoded as
 //! `tools/extract_assets.py` (`Dib`) decodes them.
 
 use super::bytes::{i32_at, slice, u16_at, u32_at, u8_at, Result};
@@ -56,7 +56,11 @@ impl<'a> Dib<'a> {
 
     /// Stored row of logical row `y` (0 = top).
     fn row(&self, y: usize) -> usize {
-        if self.top_down { y } else { self.height - 1 - y }
+        if self.top_down {
+            y
+        } else {
+            self.height - 1 - y
+        }
     }
 
     fn index(&self, x: usize, y: usize) -> Result<usize> {
@@ -86,7 +90,7 @@ impl<'a> Dib<'a> {
 }
 
 /// A sprite: white (255,255,255) is the game's transparency colour key
-/// (FUN_00405ab0 builds its masks from it).
+/// (`FUN_00405ab0` builds its masks from it).
 pub fn decode_sprite(buf: &[u8]) -> Result<Rgba> {
     Dib::parse(buf)?.to_rgba(Some([255, 255, 255]))
 }

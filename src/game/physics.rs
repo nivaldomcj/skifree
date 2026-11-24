@@ -1,7 +1,7 @@
 use super::state_table::STATE_TO_SPRITE;
-use super::types::*;
+use super::types::Actor;
 
-/// Physics integrator (FUN_00402be0)
+/// Physics integrator (`FUN_00402be0`)
 /// position += velocity per axis; gravity decrements z
 pub fn integrate(actor: &mut Actor, fast_forward: bool) {
     actor.x = actor.x.wrapping_add(actor.vx);
@@ -20,7 +20,7 @@ pub fn integrate(actor: &mut Actor, fast_forward: bool) {
     }
 }
 
-/// Apply steering physics (FUN_00403430, faithful port)
+/// Apply steering physics (`FUN_00403430`, faithful port)
 ///
 /// vy is the downhill speed: it accelerates toward `max_speed` and decays by 2
 /// when above it. vx is the lateral speed: it is derived from a friction term
@@ -29,47 +29,35 @@ pub fn integrate(actor: &mut Actor, fast_forward: bool) {
 /// in i32 and truncated to i16 on store, mirroring the original's int promotion
 /// and short stores.
 pub fn apply_steering(actor: &mut Actor, accel: i16, max_speed: i16, decel: i16, friction_div: i16, direction: i16) {
-    let vx = actor.vx as i32;
-    let vy = actor.vy as i32;
+    let vx = i32::from(actor.vx);
+    let vy = i32::from(actor.vy);
 
     // Effective direction: table value, or the sign of current vx when the
     // table direction is 0 (skiing straight keeps lateral drift direction).
-    let dir: i32 = if direction != 0 {
-        direction as i32
-    } else if vx < 0 {
-        -1
-    } else if vx > 0 {
-        1
-    } else {
-        0
-    };
+    let dir: i32 = if direction != 0 { i32::from(direction) } else { vx.signum() };
 
     // Signed magnitude of lateral velocity along the direction of travel.
     let s4 = dir * vx;
 
     // Friction term coupling lateral speed to downhill speed.
     let vy_clamped = if vy < 1 { 0 } else { vy };
-    let friction = (friction_div as i32 * vy_clamped) / 2;
+    let friction = (i32::from(friction_div) * vy_clamped) / 2;
 
     // Clamp the friction term into the window [s4 - 2, s4 + decel].
-    let s2 = if friction < s4 {
-        friction.max(s4 - 2)
-    } else {
-        friction.min(s4 + decel as i32)
-    };
+    let s2 = if friction < s4 { friction.max(s4 - 2) } else { friction.min(s4 + i32::from(decel)) };
 
     // Downhill speed accelerates toward max_speed, decaying when above it.
-    let new_vy = if (max_speed as i32) < vy {
-        (vy - 2).max(max_speed as i32)
+    let new_vy = if i32::from(max_speed) < vy {
+        (vy - 2).max(i32::from(max_speed))
     } else {
-        (accel as i32 + vy).min(max_speed as i32)
+        (i32::from(accel) + vy).min(i32::from(max_speed))
     };
 
     actor.vy = new_vy as i16;
     actor.vx = (dir * s2) as i16;
 }
 
-/// Change actor state (FUN_00402120)
+/// Change actor state (`FUN_00402120`)
 /// Updates sprite from state table
 pub fn change_state(actor: &mut Actor, new_state: u16) {
     if actor.state == new_state {
@@ -82,7 +70,7 @@ pub fn change_state(actor: &mut Actor, new_state: u16) {
     actor.flags.new_sprite = true;
 }
 
-/// Set actor position (FUN_00402390)
+/// Set actor position (`FUN_00402390`)
 pub fn set_position(actor: &mut Actor, x: i16, y: i16, z: i16) {
     actor.x = x;
     actor.y = y;
@@ -94,10 +82,7 @@ mod tests {
     use super::*;
 
     fn test_actor() -> Actor {
-        Actor {
-            active: true,
-            ..Default::default()
-        }
+        Actor { active: true, ..Default::default() }
     }
 
     #[test]
@@ -153,7 +138,7 @@ mod tests {
         let mut a = Actor { active: true, vx: 0, vy: 0, ..Default::default() };
         for expected_vy in 1..=16 {
             apply_steering(&mut a, 1, 16, 0, 0, 0);
-            assert_eq!(a.vy, expected_vy, "after {} ticks", expected_vy);
+            assert_eq!(a.vy, expected_vy, "after {expected_vy} ticks");
             assert_eq!(a.vx, 0);
         }
         // Capped at max_speed.
@@ -176,6 +161,7 @@ mod tests {
         let mut a = Actor { active: true, vx: -10, vy: 8, ..Default::default() };
         apply_steering(&mut a, 1, 0, 1, 8, -1);
         assert_eq!(a.vy, 6); // vy - 2
+
         // Keep scrubbing until vy reaches 0.
         while a.vy > 0 {
             apply_steering(&mut a, 1, 0, 1, 8, -1);

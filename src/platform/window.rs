@@ -1,7 +1,7 @@
 use macroquad::prelude::*;
 
 /// Smallest client area. The original limits its *window* to 320x300
-/// (WM_GETMINMAXINFO, ptMinTrackSize), frame included; with Windows 10/11
+/// (`WM_GETMINMAXINFO`, ptMinTrackSize), frame included; with Windows 10/11
 /// frames that leaves a 304x261 client (measured in the VM), which the port
 /// uses on every platform.
 pub const MIN_WIDTH: i32 = 304;
@@ -16,11 +16,10 @@ pub fn conf() -> Conf {
         .ok()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
-        .map(|v| {
-            let get = |k: &str, d: i32| v.get(k).and_then(|x| x.as_i64()).map_or(d, |x| x as i32);
+        .map_or((DEFAULT_WIDTH, DEFAULT_HEIGHT), |v| {
+            let get = |k: &str, d: i32| v.get(k).and_then(serde_json::Value::as_i64).map_or(d, |x| x as i32);
             (get("screen_w", DEFAULT_WIDTH), get("screen_h", DEFAULT_HEIGHT))
-        })
-        .unwrap_or((DEFAULT_WIDTH, DEFAULT_HEIGHT));
+        });
     Conf {
         window_title: "SkiFree".to_owned(),
         window_width: width,
@@ -39,7 +38,7 @@ pub fn conf() -> Conf {
     }
 }
 
-/// Linux window system, chosen with SKIFREE_LINUX_BACKEND:
+/// Linux window system, chosen with `SKIFREE_LINUX_BACKEND`:
 ///
 /// - `x11` (default, miniquad's own default): X11 only — under a Wayland
 ///   session through XWayland;
@@ -51,7 +50,7 @@ pub fn conf() -> Conf {
 fn linux_backend() -> miniquad::conf::LinuxBackend {
     use miniquad::conf::LinuxBackend;
     match std::env::var("SKIFREE_LINUX_BACKEND").as_deref() {
-        Err(_) | Ok("") | Ok("x11") => LinuxBackend::X11Only,
+        Err(_) | Ok("" | "x11") => LinuxBackend::X11Only,
         Ok("wayland") => LinuxBackend::WaylandOnly,
         Ok("wayland-first") => LinuxBackend::WaylandWithX11Fallback,
         Ok("x11-first") => LinuxBackend::X11WithWaylandFallback,
@@ -74,7 +73,7 @@ pub fn enforce_min_size() {
 }
 
 /// The window/taskbar icon: the original registers its window class with
-/// `LoadIconA(hInstance, "iconSki")` (FUN_004052d0), the ICONSKI group —
+/// `LoadIconA(hInstance, "iconSki")` (`FUN_004052d0`), the ICONSKI group —
 /// the goggled skier's face, 32x32 only. Windows shows its 16-colour image
 /// (icon 3) and shrinks it for the title bar itself; `small` reproduces that
 /// exactly (colour from every odd pixel, opaque if any pixel of the 2x2
@@ -82,7 +81,7 @@ pub fn enforce_min_size() {
 /// the VM). `big` is the 32x32 doubled.
 ///
 /// On macOS miniquad uses the icon only as the Dock image: inside the .app
-/// bundle we leave it unset so the bundle's own icon (tools/make_icon.py)
+/// bundle we leave it unset so the bundle's own icon (`tools/make_icon.py`)
 /// stays; `cargo run` gets the face instead of miniquad's logo.
 fn window_icon() -> Option<miniquad::conf::Icon> {
     if cfg!(target_os = "macos") && in_app_bundle() {
@@ -95,11 +94,8 @@ fn window_icon() -> Option<miniquad::conf::Icon> {
         return None;
     }
     let px = |x: usize, y: usize| &img.bytes[(y * 32 + x) * 4..(y * 32 + x) * 4 + 4];
-    let mut icon = miniquad::conf::Icon {
-        small: icon_small(&img.bytes),
-        medium: [0; 32 * 32 * 4],
-        big: [0; 64 * 64 * 4],
-    };
+    let mut icon =
+        miniquad::conf::Icon { small: icon_small(&img.bytes), medium: [0; 32 * 32 * 4], big: [0; 64 * 64 * 4] };
     icon.medium.copy_from_slice(&img.bytes);
     for y in 0..64 {
         for x in 0..64 {
@@ -138,7 +134,5 @@ pub fn set_favicon(assets: &skifree::extract::AssetSet) {
 }
 
 fn in_app_bundle() -> bool {
-    std::env::current_exe()
-        .map(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
-        .unwrap_or(false)
+    std::env::current_exe().is_ok_and(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
 }

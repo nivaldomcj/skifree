@@ -1,8 +1,5 @@
 mod platform;
 
-use skifree::game::draw::{draw_list, DrawItem};
-use skifree::game::scoring::HIGH_SCORES_CAPTION;
-use skifree::game::state::GameState;
 use macroquad::prelude::*;
 use platform::audio::Audio;
 use platform::input::{GameAction, Input};
@@ -10,6 +7,9 @@ use platform::persistence;
 use platform::renderer::Renderer;
 use platform::timer::GameTimer;
 use platform::window;
+use skifree::game::draw::{draw_list, DrawItem};
+use skifree::game::scoring::HIGH_SCORES_CAPTION;
+use skifree::game::state::GameState;
 
 fn window_conf() -> Conf {
     window::conf()
@@ -32,14 +32,14 @@ const PAUSE_TEXT: &str = "Ski Paused ... Press F3 to continue";
 /// Its normal title (string 1).
 const TITLE_TEXT: &str = "SkiFree";
 
-/// Frame-capture replay (SKIFREE_REPLAY): the real renderer plays a replay
+/// Frame-capture replay (`SKIFREE_REPLAY`): the real renderer plays a replay
 /// scenario at its fixed tick rate, ignoring live input and the clock, and
 /// saves the framebuffer after each tick in `ticks` to `dir` as raw RGBA
 /// (`frame_<tick>_<w>x<h>.rgba`) for tools/vm/frames.py.
 ///
 /// On the web: `?replay=<scenario name>&ticks=<t1,...>` loads
 /// `replays/<name>.json` from the server and hands the frames to the page
-/// (`window.skifreeCapture`, read by tools/web/capture_frames.mjs).
+/// (`window.skifreeCapture`, read by `tools/web/capture_frames.mjs`).
 struct FrameCapture {
     scenario: skifree::replay::Scenario,
     #[cfg(not(target_arch = "wasm32"))]
@@ -53,6 +53,7 @@ fn parse_ticks(list: &str) -> Vec<u32> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[expect(clippy::unused_async, reason = "the same signature as the wasm32 version, which awaits")]
 async fn load_frame_capture() -> Option<FrameCapture> {
     let path = std::env::var("SKIFREE_REPLAY").ok()?;
     let scenario = serde_json::from_str(&std::fs::read_to_string(&path).ok()?).ok()?;
@@ -86,14 +87,14 @@ fn save_frame(cap: &FrameCapture, width: u32, height: u32, rgba: &[u8]) {
 /// Paint one frame of `game` at its client size (sw x sh): sprites, the
 /// pause notice, the status display and the high-score table.
 fn draw_frame(game: &GameState, renderer: &Renderer, items: &[DrawItem], pause_in_window: bool) {
-    let (sw, sh) = (game.screen_w as f32, game.screen_h as f32);
+    let (sw, sh) = (f32::from(game.screen_w), f32::from(game.screen_h));
     // Render
     clear_background(WHITE);
 
     // Sprites in the original's painting order and placement
     // (FUN_00401540 / FUN_004014b0, see game::draw).
     for item in items {
-        renderer.draw_sprite(item.sprite as u32, item.left as f32, item.top as f32);
+        renderer.draw_sprite(u32::from(item.sprite), f32::from(item.left), f32::from(item.top));
     }
 
     // Pause notice: the original shows it only in the window title. Drawn
@@ -107,11 +108,10 @@ fn draw_frame(game: &GameState, renderer: &Renderer, items: &[DrawItem], pause_i
     // the values as last painted, in the OEM fixed font, see
     // renderer::draw_status.
     renderer.draw_status(&game.status_values, sw);
-
 }
 
 /// `ski32.exe nosound` (the whole command line, any case) disables the
-/// original's sound (FUN_004047e0); here it starts the game muted. On the
+/// original's sound (`FUN_004047e0`); here it starts the game muted. On the
 /// web: `?nosound` in the page URL.
 fn nosound() -> bool {
     #[cfg(target_arch = "wasm32")]
@@ -128,6 +128,12 @@ fn clock_ms() -> u32 {
 
 #[macroquad::main(window_conf)]
 async fn main() {
+    run().await;
+}
+
+// Not on `main`: #[macroquad::main] drops the attributes after it.
+#[expect(clippy::too_many_lines, reason = "the frame loop, top to bottom")]
+async fn run() {
     skifree::game::state::set_clock_source(clock_ms);
     let assets = platform::assets::load().await;
     #[cfg(target_arch = "wasm32")]
@@ -155,8 +161,8 @@ async fn main() {
         // screen_width/height report the requested size at once): set the
         // client size directly there. A web page can't resize its canvas:
         // frames are drawn offscreen at the scenario's size anyway.
-        if !platform::os_window::set_client_size(w as f64, h as f64) {
-            request_new_screen_size(w as f32, h as f32);
+        if !platform::os_window::set_client_size(f64::from(w), f64::from(h)) {
+            request_new_screen_size(f32::from(w), f32::from(h));
         }
         #[cfg(not(target_arch = "wasm32"))]
         for _ in 0..120 {
@@ -218,17 +224,15 @@ async fn main() {
             game.resize(view_w, view_h);
         }
 
-
         let live_input = if capture.is_some() { Vec::new() } else { input.poll() };
         if let Some((_, (bx, by, bw, bh))) = &dialog_in_window {
             // The drawn box is modal: only OK (Enter, Space, Esc, or a click
             // on the button) closes it; everything else is dropped.
             let (mx, my) = platform::input::client_mouse_position();
-            let clicked = is_mouse_button_pressed(MouseButton::Left)
-                && mx >= *bx && mx < bx + bw && my >= *by && my < by + bh;
-            let keyed = [KeyCode::Enter, KeyCode::KpEnter, KeyCode::Space, KeyCode::Escape]
-                .iter()
-                .any(|&k| is_key_pressed(k));
+            let clicked =
+                is_mouse_button_pressed(MouseButton::Left) && mx >= *bx && mx < bx + bw && my >= *by && my < by + bh;
+            let keyed =
+                [KeyCode::Enter, KeyCode::KpEnter, KeyCode::Space, KeyCode::Escape].iter().any(|&k| is_key_pressed(k));
             if live_input.iter().any(|a| matches!(a, GameAction::Quit)) && !keyed {
                 running = false;
             }
@@ -339,7 +343,6 @@ async fn main() {
             }
         }
 
-
         // Ticks keep arriving while paused: the game state stays frozen but
         // the wall clock advances (see GameState::wall_ms).
         // F3 / focus loss kill the original's timer and resuming calls
@@ -395,7 +398,12 @@ async fn main() {
         }
         draw_frame(&game, &renderer, &shown_items, pause_in_window);
         if let Some((text, button)) = &mut dialog_in_window {
-            *button = renderer.draw_message_box(HIGH_SCORES_CAPTION, text, game.screen_w as f32, game.screen_h as f32);
+            *button = renderer.draw_message_box(
+                HIGH_SCORES_CAPTION,
+                text,
+                f32::from(game.screen_w),
+                f32::from(game.screen_h),
+            );
         }
 
         if let Some(cap) = &mut capture {
@@ -405,7 +413,10 @@ async fn main() {
                 let target = render_target(game.screen_w as u32, game.screen_h as u32);
                 target.texture.set_filter(FilterMode::Nearest);
                 let mut cam = Camera2D::from_display_rect(Rect::new(
-                    0.0, 0.0, game.screen_w as f32, game.screen_h as f32,
+                    0.0,
+                    0.0,
+                    f32::from(game.screen_w),
+                    f32::from(game.screen_h),
                 ));
                 cam.render_target = Some(target.clone());
                 set_camera(&cam);
@@ -415,7 +426,7 @@ async fn main() {
                 // The render target's rows come out bottom-up: save top-down.
                 let row = img.width as usize * 4;
                 let top_down: Vec<u8> = img.bytes.chunks(row).rev().flatten().copied().collect();
-                save_frame(cap, img.width as u32, img.height as u32, &top_down);
+                save_frame(cap, u32::from(img.width), u32::from(img.height), &top_down);
             }
             cap.tick += 1;
             if cap.ticks.iter().all(|&t| t < cap.tick) {

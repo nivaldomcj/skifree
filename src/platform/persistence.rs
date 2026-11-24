@@ -11,9 +11,7 @@ mod imp {
     use std::path::PathBuf;
 
     fn scores_dir() -> PathBuf {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".skifree")
+        dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".skifree")
     }
 
     fn scores_path() -> PathBuf {
@@ -50,9 +48,7 @@ mod imp {
 }
 
 pub fn load_scores() -> HighScores {
-    imp::read()
-        .and_then(|data| serde_json::from_str(&data).ok())
-        .unwrap_or_default()
+    imp::read().and_then(|data| serde_json::from_str(&data).ok()).unwrap_or_default()
 }
 
 pub fn save_scores(scores: &HighScores) {

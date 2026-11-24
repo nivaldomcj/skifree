@@ -24,7 +24,7 @@ pub struct Rgba {
     pub data: Vec<u8>,
 }
 
-/// Number of bitmap sprites (RT_BITMAP ids 1..=89).
+/// Number of bitmap sprites (`RT_BITMAP` ids 1..=89).
 pub const SPRITE_COUNT: usize = 89;
 /// Number of game sounds (WAVE ids 1..=9).
 pub const SOUND_COUNT: usize = 9;
@@ -105,8 +105,12 @@ fn read_exe(data: &[u8]) -> bytes::Result<ExeAssets> {
 /// Build the asset set from the player's files: `ski32.exe` (sprites and
 /// icon), optionally `ski32sounds.exe` (it has the sprites too, plus the
 /// sounds) and `vgaoem.fon` (the status font), each as is or inside a .zip.
-/// Files are recognised by content, not name. Errors are sentences for the
-/// page.
+/// Files are recognised by content, not name.
+///
+/// # Errors
+///
+/// When the files hold no usable `ski32.exe`: sentences for the page that
+/// say what was wrong with each file.
 pub fn from_files(files: &[(String, Vec<u8>)]) -> Result<AssetSet, String> {
     if files.is_empty() {
         return Err("No files given.".to_owned());
@@ -133,7 +137,7 @@ pub fn from_files(files: &[(String, Vec<u8>)]) -> Result<AssetSet, String> {
             Kind::Ne => match fon::oem_font(data) {
                 Ok(Some(img)) => font = font.or(Some(img)),
                 Ok(None) if name.to_ascii_lowercase().ends_with(".fon") => {
-                    problems.push(format!("{name} has no 12-pixel font."))
+                    problems.push(format!("{name} has no 12-pixel font."));
                 }
                 _ => problems.push(format!(
                     "{name} is a 16-bit Windows program (like SKI.EXE, the Windows 3 version); \
@@ -147,11 +151,8 @@ pub fn from_files(files: &[(String, Vec<u8>)]) -> Result<AssetSet, String> {
     // Sprites from ski32.exe when given (what tools/extract_assets.py
     // prefers), else from any exe that has all 89.
     let is_ski32 = |n: &str| n.rsplit('/').next().is_some_and(|b| b.eq_ignore_ascii_case("ski32.exe"));
-    let main = exes
-        .iter()
-        .filter(|(_, e)| e.has_all_sprites())
-        .min_by_key(|(n, _)| !is_ski32(n))
-        .map(|(n, _)| n.clone());
+    let main =
+        exes.iter().filter(|(_, e)| e.has_all_sprites()).min_by_key(|(n, _)| !is_ski32(n)).map(|(n, _)| n.clone());
     let Some(main) = main else {
         if let Some((n, _)) = exes.first() {
             problems.insert(0, format!("{n} is not SkiFree's ski32.exe (its pictures are missing)."));
@@ -167,7 +168,7 @@ pub fn from_files(files: &[(String, Vec<u8>)]) -> Result<AssetSet, String> {
     let mut sounds = None;
     for (name, found) in exes {
         if sounds.is_none() {
-            sounds = found.sounds.clone();
+            sounds.clone_from(&found.sounds);
         }
         if name == main {
             set.sprites = found.sprites;

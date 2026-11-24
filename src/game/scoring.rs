@@ -1,4 +1,4 @@
-/// Top-10 high-score tables (FUN_00402ec0): one per course, persisted by the
+/// Top-10 high-score tables (`FUN_00402ec0`): one per course, persisted by the
 /// platform layer. The original packs them as space-separated numbers in
 /// entpack.ini (section "Ski", keys "SS"/"GS"/"FS"); times are stored
 /// negated so one descending sort fits both kinds — the port just sorts each
@@ -22,14 +22,14 @@ pub const THATS_YOU: &str = " <-- that's you!";
 pub const TRY_AGAIN: &str = " <-- try again!";
 
 impl HighScores {
-    /// The message box text FUN_00402ec0 shows after a finish (caption
-    /// "High Scores"): one line per entry — a clock string (FUN_00401d70)
+    /// The message box text `FUN_00402ec0` shows after a finish (caption
+    /// "High Scores"): one line per entry — a clock string (`FUN_00401d70`)
     /// for the timed courses, `%9ld` for freestyle — with " <-- that's
     /// you!" on the new entry; when it didn't place, a blank line and the
     /// result with " <-- try again!".
     pub fn finish_text(&self, course: usize, ms: u64, style: i32, rank: Option<usize>) -> String {
         let fmt_time = |ms: u64| format_clock(ms as i32);
-        let fmt_style = |s: i32| format!("{:>9}", s);
+        let fmt_style = |s: i32| format!("{s:>9}");
         let lines: Vec<String> = match course {
             0 => self.slalom_ms.iter().map(|&t| fmt_time(t)).collect(),
             1 => self.giant_slalom_ms.iter().map(|&t| fmt_time(t)).collect(),
@@ -68,21 +68,13 @@ impl HighScores {
     /// Record a course time; returns the 0-based rank, or None when the time
     /// doesn't make the top 10 ("try again").
     pub fn insert_time(&mut self, course: usize, ms: u64) -> Option<usize> {
-        let list = if course == 0 {
-            &mut self.slalom_ms
-        } else {
-            &mut self.giant_slalom_ms
-        };
+        let list = if course == 0 { &mut self.slalom_ms } else { &mut self.giant_slalom_ms };
         Self::insert_time_into(list, ms)
     }
 
     /// Record a freestyle style score; returns the 0-based rank, or None.
     pub fn insert_style(&mut self, score: i32) -> Option<usize> {
-        let rank = self
-            .freestyle_style
-            .iter()
-            .position(|&s| s < score)
-            .unwrap_or(self.freestyle_style.len());
+        let rank = self.freestyle_style.iter().position(|&s| s < score).unwrap_or(self.freestyle_style.len());
         if rank >= HIGH_SCORE_LEN {
             return None;
         }
@@ -92,18 +84,21 @@ impl HighScores {
     }
 }
 
-/// Scoring system (FUN_00403420)
+/// Scoring system (`FUN_00403420`)
 pub struct Scoring {
     pub score: i32,
     pub enabled: bool, // mirrors DAT_0040c954
 }
 
+impl Default for Scoring {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Scoring {
     pub fn new() -> Self {
-        Self {
-            score: 0,
-            enabled: false,
-        }
+        Self { score: 0, enabled: false }
     }
 
     pub fn add(&mut self, points: i32) {
@@ -116,7 +111,7 @@ impl Scoring {
         self.enabled = true;
     }
 
-    /// "%2u:%2.2u:%2.2u.%2.2u" — h:mm:ss.cc (FUN_00401d70). Each part is
+    /// "%2u:%2.2u:%2.2u.%2.2u" — h:mm:ss.cc (`FUN_00401d70`). Each part is
     /// computed with signed, truncating division and masked to 16 bits
     /// before printing, exactly like the original (a negative clock prints
     /// as large unsigned parts rather than being clamped).
@@ -124,17 +119,17 @@ impl Scoring {
         format_clock(ms as i32)
     }
 
-    /// "%5.2dm" — meters, at least 2 digits, field width 5 (FUN_00401b80).
+    /// "%5.2dm" — meters, at least 2 digits, field width 5 (`FUN_00401b80`).
     pub fn format_dist(&self, meters: i32) -> String {
         format!("{}m", c_int(meters, 5, 2))
     }
 
-    /// "%5.2dm/s" (FUN_00401b80).
+    /// "%5.2dm/s" (`FUN_00401b80`).
     pub fn format_speed(&self, speed: i32) -> String {
         format!("{}m/s", c_int(speed, 5, 2))
     }
 
-    /// "%7ld" (FUN_00401b80).
+    /// "%7ld" (`FUN_00401b80`).
     pub fn format_style(&self) -> String {
         format!("{:>7}", self.score)
     }
@@ -193,7 +188,7 @@ mod high_score_tests {
     }
 }
 
-/// FUN_00401d70's clock string.
+/// `FUN_00401d70`'s clock string.
 pub fn format_clock(ms: i32) -> String {
     let part = |v: i32| v as u32 & 0xffff;
     let hundredths = part(ms % 1000) / 10;
@@ -206,8 +201,8 @@ pub fn format_clock(ms: i32) -> String {
 /// to `width` with spaces.
 pub fn c_int(v: i32, width: usize, prec: usize) -> String {
     let digits = format!("{:0prec$}", v.unsigned_abs(), prec = prec);
-    let signed = if v < 0 { format!("-{}", digits) } else { digits };
-    format!("{:>width$}", signed, width = width)
+    let signed = if v < 0 { format!("-{digits}") } else { digits };
+    format!("{signed:>width$}")
 }
 
 #[cfg(test)]

@@ -1,4 +1,4 @@
-//! The original's sound effects (FUN_00402ba0).
+//! The original's sound effects (`FUN_00402ba0`).
 //!
 //! `FUN_004052d0` loads WAVE resources 1-9 into nine slots at startup
 //! (`FUN_00405640`), and each event below plays its slot with

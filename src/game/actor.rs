@@ -1,56 +1,40 @@
 use super::state_table::STATE_TO_SPRITE;
-use super::types::*;
+use super::types::{Actor, ActorClass};
 
-/// Fixed-size actor pool (100 slots, mirrors FUN_00404a00)
+/// Fixed-size actor pool (100 slots, mirrors `FUN_00404a00`)
 pub struct ActorPool {
     actors: Vec<Actor>,
     free: Vec<usize>,
     pub head: Option<usize>, // active linked list head
 }
 
+impl Default for ActorPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ActorPool {
     pub fn new() -> Self {
         let actors = vec![Actor::default(); 100];
         let free = (0..100).rev().collect();
-        Self {
-            actors,
-            free,
-            head: None,
-        }
+        Self { actors, free, head: None }
     }
 
     pub fn alloc(&mut self, class: ActorClass, state: u16) -> Option<usize> {
         let idx = self.free.pop()?;
-        let sprite_id = if (state as usize) < STATE_TO_SPRITE.len() {
-            STATE_TO_SPRITE[state as usize]
-        } else {
-            0
-        };
-        self.actors[idx] = Actor {
-            active: true,
-            class,
-            state,
-            sprite_id,
-            next: self.head,
-            ..Default::default()
-        };
+        let sprite_id = if (state as usize) < STATE_TO_SPRITE.len() { STATE_TO_SPRITE[state as usize] } else { 0 };
+        self.actors[idx] = Actor { active: true, class, state, sprite_id, next: self.head, ..Default::default() };
         self.head = Some(idx);
         Some(idx)
     }
 
-    /// Allocate an actor with a raw sprite id (FUN_004026a0), bypassing the
+    /// Allocate an actor with a raw sprite id (`FUN_004026a0`), bypassing the
     /// state-to-sprite table. Used for class >= 0xb effect actors whose
     /// "state" field is really a sprite id (e.g. the snowboarder jump puff).
     pub fn alloc_with_sprite(&mut self, class: ActorClass, sprite_id: u16) -> Option<usize> {
         let idx = self.free.pop()?;
-        self.actors[idx] = Actor {
-            active: true,
-            class,
-            state: 0,
-            sprite_id,
-            next: self.head,
-            ..Default::default()
-        };
+        self.actors[idx] = Actor { active: true, class, state: 0, sprite_id, next: self.head, ..Default::default() };
         self.head = Some(idx);
         Some(idx)
     }

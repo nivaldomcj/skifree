@@ -10,6 +10,8 @@ __pycache__/
 # by tools/extract_assets.py. assets/README.md (instructions) stays tracked.
 assets/sprites/
 assets/icons/
+assets/fonts/
+assets/sounds/
 assets/strings.json
 assets/meta.json
 .DS_Store

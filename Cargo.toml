@@ -9,8 +9,11 @@ default-run = "skifree"
 macroquad = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-dirs = "5"
 miniz_oxide = "0.8"
+
+# The high-score file's home directory; the web build uses localStorage.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dirs = "5"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
@@ -28,3 +31,31 @@ embed-assets = []
 
 [build-dependencies]
 embed-resource = "3.0.12"
+
+# CI runs Clippy with -D warnings (.github/workflows/ci.yml), so every
+# warning below fails the build. A deliberate exception in the code takes
+# #[expect(lint, reason = "...")], never #[allow].
+[lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+undocumented_unsafe_blocks = "warn"
+unwrap_used = "warn" # tests may unwrap (clippy.toml)
+allow_attributes = "warn" # #[expect] instead: it fails once the lint no longer fires
+allow_attributes_without_reason = "warn"
+
+# Pedantic lints this port leaves off:
+# - The game code mirrors the original's 16-bit stores and signed/unsigned
+#   reinterpretations; those `as` casts are the behavior, and the replay
+#   goldens pin it. Widening casts use From (cast_lossless stays on), so
+#   every remaining `as` between integers is one of these on purpose.
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
+# - Pixel and window sizes go to f32 for macroquad; they are far below
+#   2^24, where f32 starts losing integers.
+cast_precision_loss = "allow"
+# - An internal library for the game binary, the replay tool and the tests,
+#   not a published API: #[must_use] on every getter would be noise.
+must_use_candidate = "allow"

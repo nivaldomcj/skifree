@@ -1,7 +1,7 @@
-use super::types::*;
+use super::types::SpawnEvent;
 
-/// Course strip x-ranges (world units), from FUN_00402c60 / FUN_00403250 /
-/// FUN_00403180 and the zone tests in FUN_004025c0. Identified by the
+/// Course strip x-ranges (world units), from `FUN_00402c60` / `FUN_00403250` /
+/// `FUN_00403180` and the zone tests in `FUN_004025c0`. Identified by the
 /// banner sprites: 61 "Slalom ↙" points at the left strip, 62 "Tree Slalom
 /// ↘" at the right strip, 63 "Free style ↓" at the center strip.
 pub const SLALOM_STRIP: (i16, i16) = (-0x240, -0x140); // -576..-320
@@ -12,7 +12,7 @@ pub const COURSE_START_Y: i16 = 0x280;
 pub const SLALOM_FINISH_Y: i16 = 0x21c0;
 pub const LONG_FINISH_Y: i16 = 0x4100; // tree slalom and freestyle
 
-/// Generate every spawn record for a new game (FUN_00404b50).
+/// Generate every spawn record for a new game (`FUN_00404b50`).
 ///
 /// The original builds all three courses at once — slalom on the left
 /// strip, freestyle in the center, tree slalom on the right — plus the lift
@@ -35,7 +35,7 @@ pub fn generate_course(screen_w: i16, screen_h: i16, rng: &mut super::rng::Rng) 
 }
 
 /// The "↓" banner y used by all three courses: one screen down minus 0x3c,
-/// clamped to 0x208 when that lands past 0x280 (FUN_00404b50:
+/// clamped to 0x208 when that lands past 0x280 (`FUN_00404b50`:
 /// `client_bottom - DAT_0040c5fc + camera_y - 0x3c`, i.e. 2/3 of the client
 /// height at world-build time, minus 0x3c). An earlier "+32 title bar" term
 /// here only compensated for ground-truth runs whose world was built at a
@@ -105,7 +105,14 @@ fn generate_slalom(events: &mut Vec<SpawnEvent>, left: i16, top: i16, screen_h: 
 
 /// Tree slalom (right strip): long timed course, gates only (see the loop
 /// comment — the original's per-row tree is never added).
-fn generate_tree_slalom(events: &mut Vec<SpawnEvent>, left: i16, top: i16, screen_w: i16, screen_h: i16, rng: &mut super::rng::Rng) {
+fn generate_tree_slalom(
+    events: &mut Vec<SpawnEvent>,
+    left: i16,
+    top: i16,
+    screen_w: i16,
+    screen_h: i16,
+    rng: &mut super::rng::Rng,
+) {
     // "Tree Slalom ↘" banner: x = viewport_left + client_w - 0x3c, clamped to <= 0x140.
     let bx = (left + screen_w - 0x3c).min(0x140);
     marker(events, 0x3e, bx, banner_y(top, screen_h));
@@ -153,7 +160,7 @@ fn generate_freestyle(events: &mut Vec<SpawnEvent>, top: i16, screen_h: i16) {
     marker(events, 0x3c, 160, LONG_FINISH_Y);
 }
 
-/// Lift pole line (DAT_0040c738 records): class 0xd scenery with the pole
+/// Lift pole line (`DAT_0040c738` records): class 0xd scenery with the pole
 /// sprite 0x40 at x = -128, every 0x800 across the slope.
 fn generate_lift_poles(events: &mut Vec<SpawnEvent>) {
     let mut y = -0x400i16;
@@ -173,7 +180,7 @@ fn generate_lift_poles(events: &mut Vec<SpawnEvent>) {
     }
 }
 
-/// Ambient mob spawner records (FUN_00404b50): pairs of class-4 proxies every
+/// Ambient mob spawner records (`FUN_00404b50`): pairs of class-4 proxies every
 /// 0x800 units of y, floating at z = 0x20. State 0x27 drifts up (vy = -2) at
 /// x = -112; state 0x29 drifts down (vy = +2) at x = -144. `param` carries
 /// the initial vy for the port's merged actor.
@@ -215,39 +222,67 @@ fn generate_mob_spawns(events: &mut Vec<SpawnEvent>) {
 fn generate_monster_spawns(events: &mut Vec<SpawnEvent>) {
     // Monster from top (type 7)
     events.push(SpawnEvent {
-        actor_idx: None, event_type: 0x07, state: 0x2a, class: 7, sprite: None,
-        x: -16060, y: 0, z: 0, param: 0,
+        actor_idx: None,
+        event_type: 0x07,
+        state: 0x2a,
+        class: 7,
+        sprite: None,
+        x: -16060,
+        y: 0,
+        z: 0,
+        param: 0,
     });
     // Monster from bottom (type 8)
     events.push(SpawnEvent {
-        actor_idx: None, event_type: 0x08, state: 0x2a, class: 8, sprite: None,
-        x: 16060, y: 0, z: 0, param: 0,
+        actor_idx: None,
+        event_type: 0x08,
+        state: 0x2a,
+        class: 8,
+        sprite: None,
+        x: 16060,
+        y: 0,
+        z: 0,
+        param: 0,
     });
     // Monster from left (type 5)
     events.push(SpawnEvent {
-        actor_idx: None, event_type: 0x05, state: 0x2a, class: 5, sprite: None,
-        x: 0, y: -2060, z: 0, param: 0,
+        actor_idx: None,
+        event_type: 0x05,
+        state: 0x2a,
+        class: 5,
+        sprite: None,
+        x: 0,
+        y: -2060,
+        z: 0,
+        param: 0,
     });
     // Monster from right (type 6)
     events.push(SpawnEvent {
-        actor_idx: None, event_type: 0x06, state: 0x2a, class: 6, sprite: None,
-        x: 0, y: 32060, z: 0, param: 0,
+        actor_idx: None,
+        event_type: 0x06,
+        state: 0x2a,
+        class: 6,
+        sprite: None,
+        x: 0,
+        y: 32060,
+        z: 0,
+        param: 0,
     });
 }
 
-/// FUN_00402e30: the value of a quantity at the moment the player crossed
+/// `FUN_00402e30`: the value of a quantity at the moment the player crossed
 /// `line_y`, interpolated between its post-update value `a` (at `y_new`) and
 /// pre-update value `b` (at `y_old`): `a − (a − b)·(y_new − line)/(y_new −
 /// y_old)`, in 32-bit integer arithmetic with truncating division. Used for
 /// the crossing x (start strips, gates) and the crossing time (course clock).
 pub fn interpolate(a: i64, b: i64, y_new: i16, y_old: i16, line_y: i16) -> i64 {
     let (a, b) = (a as i32, b as i32);
-    let num = (a.wrapping_sub(b)).wrapping_mul(y_new as i32 - line_y as i32);
-    let den = y_new as i32 - y_old as i32;
+    let num = (a.wrapping_sub(b)).wrapping_mul(i32::from(y_new) - i32::from(line_y));
+    let den = i32::from(y_new) - i32::from(y_old);
     if den == 0 {
-        return a as i64;
+        return i64::from(a);
     }
-    a.wrapping_sub(num / den) as i64
+    i64::from(a.wrapping_sub(num / den))
 }
 
 #[cfg(test)]

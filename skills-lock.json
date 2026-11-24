@@ -7,6 +7,27 @@
       "sourceType": "github",
       "skillPath": "foundation/conventional-commits/SKILL.md",
       "computedHash": "9ee955406ca87842850f0e920c07e760afc9b6064ed0dd46072ab8649fe9d048"
+    },
+    "github-actions-hardening": {
+      "source": "github/awesome-copilot",
+      "commit": "f10fdb8b2660ce85c98f220b2f1ca24653768a5c",
+      "sourceType": "github",
+      "skillPath": "skills/github-actions-hardening/SKILL.md",
+      "computedHash": "ce7df8e90622480a41ffae4a81c78dbf4de3a6965cc21a91693efdf15fb3284c"
+    },
+    "rust-best-practices": {
+      "source": "apollographql/skills",
+      "commit": "9dda1397730370aeb8df4ff8f2015c34c86b5003",
+      "sourceType": "github",
+      "skillPath": "skills/rust-best-practices/SKILL.md",
+      "computedHash": "7e12e68aa50152eb7ba9ea1f88ca5380c846ea0175f8ab6788bb79b7faf12ca0"
+    },
+    "rust-style-clippy": {
+      "source": "full-stack-skills/rust-skills",
+      "commit": "b8a6af74af28ee86b8cbbbc3075cde0b31a5155e",
+      "sourceType": "github",
+      "skillPath": "skills/rust-style-clippy/SKILL.md",
+      "computedHash": "d95cd1f221c5a9dd3506447a30434830d9a3505b8e97e0dd9a0144bc1bdd8667"
     }
   }
 }

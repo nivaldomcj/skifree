@@ -1,0 +1,71 @@
+# Format, lint and unit-test every push to main and every pull request.
+# CI has no game files: SKIFREE_NO_ASSETS lets build.rs skip its asset gate
+# (see build.rs). =1 builds like a player without the sounds; =sound also
+# compiles the audio code, so Clippy runs once each way. The replay tests
+# need assets/meta.json, so they stay local: run `cargo test` with the
+# extracted assets before merging.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  SKIFREE_NO_ASSETS: "1"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install # the version in rust-toolchain.toml
+      - run: cargo fmt --check
+
+  # Each OS compiles its own platform code (os_window, audio), so Clippy
+  # runs on all three.
+  clippy-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install # the version in rust-toolchain.toml
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Clippy, built like a player without the sounds
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+      - name: Clippy with the audio code (empty stand-in WAVs, never played)
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
+        env:
+          SKIFREE_NO_ASSETS: sound
+      - name: Unit and extract tests (the replay tests need the assets)
+        run: cargo test --locked --all-features --lib --bins --test extract
+
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install # the version in rust-toolchain.toml, with wasm32
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo clippy --locked --target wasm32-unknown-unknown --all-targets -- -D warnings

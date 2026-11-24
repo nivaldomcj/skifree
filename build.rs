@@ -9,6 +9,16 @@
 //! the public one needs no assets at all (players supply their own exe in
 //! the page), and the private one (`--features embed-assets`) embeds them,
 //! through `$OUT_DIR/web_assets.rs`.
+//!
+//! `SKIFREE_NO_ASSETS` skips the gate, for `cargo clippy`, `cargo check`
+//! and `cargo test` where nobody has the game files (CI):
+//! - `=1` builds like a player without the sounds: no audio code at all.
+//! - `=sound` also compiles the audio code, with empty stand-in WAVs
+//!   (`cfg(skifree_no_assets)`), so it is linted too; that build never
+//!   opens a player, so it stays silent.
+//!
+//! The binary still loads `assets/` at run time, so it runs the game where
+//! they exist, only without the build-time checks and embedding.
 
 use std::path::Path;
 
@@ -23,6 +33,8 @@ See README.md, \"Getting the assets\".";
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rustc-check-cfg=cfg(skifree_sound)");
+    println!("cargo:rustc-check-cfg=cfg(skifree_no_assets)");
+    println!("cargo:rerun-if-env-changed=SKIFREE_NO_ASSETS");
     // Any wasm32 target builds the web platform layer: wasm32-unknown-unknown
     // is the browser; wasm32-wasip1 only runs the replay tests
     // (tools/test_wasi.sh), for which cargo builds, but never runs, the game.
@@ -34,6 +46,19 @@ fn main() {
     }
     if embed && !web {
         println!("cargo:warning=embed-assets only applies to the web build (wasm32)");
+    }
+    if let Some(mode) = std::env::var_os("SKIFREE_NO_ASSETS") {
+        assert!(!web, "SKIFREE_NO_ASSETS cannot build the private web version (embed-assets)");
+        match mode.to_str() {
+            Some("1") => {}
+            Some("sound") => {
+                println!("cargo:rustc-cfg=skifree_sound");
+                println!("cargo:rustc-cfg=skifree_no_assets");
+            }
+            _ => panic!("SKIFREE_NO_ASSETS must be 1 (no sound code) or sound (sound code, silent)"),
+        }
+        println!("cargo:warning=SKIFREE_NO_ASSETS: assets not checked, for linting and tests only");
+        return;
     }
 
     check_assets();
@@ -67,9 +92,7 @@ fn main() {
 }
 
 fn sound_count() -> usize {
-    (1..=9)
-        .filter(|i| Path::new(&format!("assets/sounds/sound_{i}.wav")).exists())
-        .count()
+    (1..=9).filter(|i| Path::new(&format!("assets/sounds/sound_{i}.wav")).exists()).count()
 }
 
 fn check_assets() {
@@ -103,23 +126,19 @@ fn check_assets() {
     // The extractor always produces the 89 bitmap sprites, the string
     // tables and the icons.
     let strings_ok = Path::new("assets/strings.json").exists();
-    let icons_ok = std::fs::read_dir("assets/icons")
-        .map(|mut d| d.next().is_some())
-        .unwrap_or(false);
+    let icons_ok = std::fs::read_dir("assets/icons").is_ok_and(|mut d| d.next().is_some());
 
-    if sprite_files < 89 || missing > 0 || !strings_ok || !icons_ok {
-        panic!(
-            "{EXTRACT_HINT}\n\n(details: {} sprite files, {} missing files, strings.json: {}, icons/: {})",
-            sprite_files, missing, strings_ok, icons_ok
-        );
-    }
+    assert!(
+        sprite_files >= 89 && missing == 0 && strings_ok && icons_ok,
+        "{EXTRACT_HINT}\n\n(details: {sprite_files} sprite files, {missing} missing files, strings.json: {strings_ok}, icons/: {icons_ok})"
+    );
 
-    println!("cargo:warning=assets OK: {} sprite files verified", sprite_files);
+    println!("cargo:warning=assets OK: {sprite_files} sprite files verified");
 }
 
 /// The private web build: `$OUT_DIR/web_assets.rs` embeds the 89 sprite
 /// PNGs, the font and icon 3 when present, and the sounds when all nine
-/// are (platform::assets decodes them like the native build's files).
+/// are (`platform::assets` decodes them like the native build's files).
 fn embed_web_assets() {
     for dir in ["assets/sprites", "assets/fonts", "assets/icons", "assets/sounds"] {
         println!("cargo:rerun-if-changed={dir}");

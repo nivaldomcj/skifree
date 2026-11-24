@@ -25,7 +25,7 @@ pub struct GameTimer {
     origin: f64,
     /// Interrupt index of the next expiry.
     next_expiry: u64,
-    /// GetTickCount at the last processed tick (`DAT_0040c698`).
+    /// `GetTickCount` at the last processed tick (`DAT_0040c698`).
     last_tick_count: u32,
 }
 
@@ -40,12 +40,12 @@ impl GameTimer {
         ((get_time() - self.origin) * 1000.0 / RESOLUTION_MS) as u64
     }
 
-    /// GetTickCount at timer interrupt `k` (whole ms, truncated).
+    /// `GetTickCount` at timer interrupt `k` (whole ms, truncated).
     fn tick_count(k: u64) -> u32 {
         (k as f64 * RESOLUTION_MS) as u32
     }
 
-    /// Re-arm from now (the original's SetTimer after a pause or a modal
+    /// Re-arm from now (the original's `SetTimer` after a pause or a modal
     /// dialog): time that passed meanwhile isn't caught up.
     pub fn reset(&mut self) {
         let k = self.interrupt_now();
@@ -54,7 +54,7 @@ impl GameTimer {
     }
 
     /// `Some(delta_ms)` when the timer has fired since the last call: the
-    /// GetTickCount delta the original's tick would compute.
+    /// `GetTickCount` delta the original's tick would compute.
     pub fn poll(&mut self) -> Option<u32> {
         self.poll_at(self.interrupt_now())
     }
@@ -72,8 +72,8 @@ impl GameTimer {
         Some(delta)
     }
 
-    /// The T cheat calls the tick routine directly (FUN_00406780 jumps to
-    /// FUN_00401000): its delta is the GetTickCount time since the last
+    /// The T cheat calls the tick routine directly (`FUN_00406780` jumps to
+    /// `FUN_00401000`): its delta is the `GetTickCount` time since the last
     /// tick, and it becomes the new reference.
     pub fn step(&mut self) -> u32 {
         let tick_count = Self::tick_count(self.interrupt_now());

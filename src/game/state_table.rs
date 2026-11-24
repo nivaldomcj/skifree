@@ -1,4 +1,4 @@
-/// State-to-sprite mapping table (DAT_0040a1ac in the original binary)
+/// State-to-sprite mapping table (`DAT_0040a1ac` in the original binary)
 pub const STATE_TO_SPRITE: [u16; 64] = [
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, // 0x00-0x0f
     17, 18, 19, 20, 21, 22, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, // 0x10-0x1f
@@ -6,8 +6,8 @@ pub const STATE_TO_SPRITE: [u16; 64] = [
     74, 75, 76, 77, 78, 79, 80, 81, 83, 84, 85, 84, 49, 87, 88, 89, // 0x30-0x3f
 ];
 
-/// Skier physics table (DAT_0040a308), 8 i16 per state
-/// Fields: [accel, max_speed, decel, friction_div, direction, ?, sprite_id, ?]
+/// Skier physics table (`DAT_0040a308`), 8 i16 per state
+/// Fields: [accel, `max_speed`, decel, `friction_div`, direction, ?, `sprite_id`, ?]
 pub struct PhysicsEntry {
     pub accel: i16,
     pub max_speed: i16,
@@ -16,6 +16,7 @@ pub struct PhysicsEntry {
     pub direction: i16,
 }
 
+#[rustfmt::skip]
 pub const SKIER_PHYSICS: [PhysicsEntry; 22] = [
     PhysicsEntry { accel: 1, max_speed: 16, decel: 0, friction_div: 0, direction: 0 },  // 0x00
     PhysicsEntry { accel: 1, max_speed: 12, decel: 1, friction_div: 1, direction: -1 }, // 0x01
@@ -41,9 +42,10 @@ pub const SKIER_PHYSICS: [PhysicsEntry; 22] = [
     PhysicsEntry { accel: 1, max_speed: 22, decel: 0, friction_div: 0, direction: 0 },  // 0x15
 ];
 
-/// Per-class initial state for populator-spawned actors (DAT_0040a22c,
+/// Per-class initial state for populator-spawned actors (`DAT_0040a22c`,
 /// classes 0..=10). Classes >= 0xb spawn with a raw sprite instead
-/// (FUN_00402850, see populator.rs).
+/// (`FUN_00402850`, see populator.rs).
+#[rustfmt::skip]
 pub const CLASS_INITIAL_STATE: [u16; 11] = [
     0x06, // 0 skier
     0x16, // 1 dog
@@ -58,7 +60,8 @@ pub const CLASS_INITIAL_STATE: [u16; 11] = [
     0x3c, // 10 lift
 ];
 
-/// Dog physics table (DAT_0040a490), states 0x16-0x1a
+/// Dog physics table (`DAT_0040a490`), states 0x16-0x1a
+#[rustfmt::skip]
 pub const DOG_PHYSICS: [PhysicsEntry; 5] = [
     PhysicsEntry { accel: 1, max_speed: 1, decel: 0, friction_div: 0, direction: 0 },   // 0x16
     PhysicsEntry { accel: 1, max_speed: 1, decel: 1, friction_div: 4, direction: -1 },  // 0x17
@@ -67,7 +70,7 @@ pub const DOG_PHYSICS: [PhysicsEntry; 5] = [
     PhysicsEntry { accel: 0, max_speed: 0, decel: 0, friction_div: 0, direction: 0 },   // 0x1a
 ];
 
-/// Snowboarder physics table (DAT_0040a4e0), states 0x1f-0x26
+/// Snowboarder physics table (`DAT_0040a4e0`), states 0x1f-0x26
 pub const SNOWBOARDER_PHYSICS: [PhysicsEntry; 8] = [
     PhysicsEntry { accel: 2, max_speed: 18, decel: 2, friction_div: 1, direction: -1 }, // 0x1f
     PhysicsEntry { accel: 2, max_speed: 18, decel: 2, friction_div: 1, direction: 1 },  // 0x20
@@ -79,27 +82,25 @@ pub const SNOWBOARDER_PHYSICS: [PhysicsEntry; 8] = [
     PhysicsEntry { accel: 1, max_speed: 4, decel: 0, friction_div: 0, direction: 0 },   // 0x26
 ];
 
-/// Crash landing table (DAT_0040a434), indexed by state 0x0d-0x15
+/// Crash landing table (`DAT_0040a434`), indexed by state 0x0d-0x15
 pub const CRASH_LANDING: [u16; 9] = [0x0, 0x3, 0x6, 0xb, 0xb, 0xb, 0xb, 0xb, 0xb];
 
-/// Skier direction transition table (DAT_0040a258), raw interleaved bytes.
+/// Skier direction transition table (`DAT_0040a258`), raw interleaved bytes.
 /// Each state occupies 8 bytes: a LEFT-transition u32 at +0 and a
 /// RIGHT-transition u32 at +4. This is the flat u32 view (states 0..=10).
 pub const DIRECTION_TRANSITION: [u16; 22] = [1, 4, 2, 0, 3, 1, 7, 2, 0, 5, 4, 6, 5, 8, 3, 2, 5, 6, 9, 2, 5, 10];
 
-/// LEFT-key transition table, one u32 per state (DAT_0040a258 + state*8).
+/// LEFT-key transition table, one u32 per state (`DAT_0040a258` + state*8).
 /// Cycles 0→1→2→3→7 (state 7 = hard carve, also kicks vx).
-pub const LEFT_TRANSITION: [u16; 22] = [
-    1, 2, 3, 7, 0, 4, 5, 3, 5, 9, 5, 3, 3, 0xe, 0x10, 0xd, 0xf, 0xe, 0x14, 0x14, 0x10, 0xd,
-];
+pub const LEFT_TRANSITION: [u16; 22] =
+    [1, 2, 3, 7, 0, 4, 5, 3, 5, 9, 5, 3, 3, 0xe, 0x10, 0xd, 0xf, 0xe, 0x14, 0x14, 0x10, 0xd];
 
-/// RIGHT-key transition table, one u32 per state (DAT_0040a258 + state*8 + 4).
+/// RIGHT-key transition table, one u32 per state (`DAT_0040a258` + state*8 + 4).
 /// Cycles 0→4→5→6→8 (state 8 = hard carve, also kicks vx).
-pub const RIGHT_TRANSITION: [u16; 22] = [
-    4, 0, 1, 2, 5, 6, 8, 2, 6, 2, 0xa, 6, 6, 0xf, 0xd, 0x10, 0xe, 0xf, 0x15, 0x15, 0xd, 0x10,
-];
+pub const RIGHT_TRANSITION: [u16; 22] =
+    [4, 0, 1, 2, 5, 6, 8, 2, 6, 2, 0xa, 6, 6, 0xf, 0xd, 0x10, 0xe, 0xf, 0x15, 0x15, 0xd, 0x10];
 
-/// Mouse steering direction table (FUN_004065e0)
+/// Mouse steering direction table (`FUN_004065e0`)
 /// Returns direction 0-6 based on slope ratio dy/dx
 pub fn mouse_direction(dx: i16, dy: i16) -> u16 {
     if dy <= 0 {
@@ -108,7 +109,7 @@ pub fn mouse_direction(dx: i16, dy: i16) -> u16 {
     if dx == 0 {
         return 0;
     }
-    let ratio = ((dy as i32) << 2) / (dx as i32);
+    let ratio = (i32::from(dy) << 2) / i32::from(dx);
     let r = ratio as i16;
     if r < -11 {
         0
@@ -135,19 +136,27 @@ pub fn mouse_direction(dx: i16, dy: i16) -> u16 {
     }
 }
 
-/// Airborne mouse steering (FUN_00406670): picks a jump pose 0xd-0x10 by
+/// Airborne mouse steering (`FUN_00406670`): picks a jump pose 0xd-0x10 by
 /// the cursor's quadrant relative to the skier and which axis dominates.
 pub fn mouse_air_direction(dx: i16, dy: i16) -> u16 {
     if dx < 0 {
         if dy < 0 {
-            if dy >= dx { 0x0e } else { 0x10 }
+            if dy >= dx {
+                0x0e
+            } else {
+                0x10
+            }
         } else if -dy >= dx {
             0x0e
         } else {
             0x0d
         }
     } else if dy < 0 {
-        if -dy > dx { 0x10 } else { 0x0f }
+        if -dy > dx {
+            0x10
+        } else {
+            0x0f
+        }
     } else if dy <= dx {
         0x0e
     } else {
@@ -166,9 +175,7 @@ mod tests {
     /// Returns None when the (gitignored, copyrighted) binary is absent so the
     /// byte-comparison tests skip instead of failing for contributors.
     fn read_exe() -> Option<Vec<u8>> {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("originals")
-            .join("ski32.exe");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("originals").join("ski32.exe");
         std::fs::read(path).ok()
     }
 

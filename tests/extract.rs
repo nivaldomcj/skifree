@@ -1,5 +1,5 @@
 //! The Rust extractor (`skifree::extract`, used by the public web build)
-//! against tools/extract_assets.py's output in assets/: same sprite pixels
+//! against `tools/extract_assets.py`'s output in assets/: same sprite pixels
 //! and sizes, same icon, same font, same WAV bytes, from the exes and from
 //! the zips they are distributed in.
 //!
@@ -16,16 +16,13 @@ fn root() -> PathBuf {
 
 /// The named files from originals/, or None (skip) if any is missing.
 fn originals(names: &[&str]) -> Option<Vec<(String, Vec<u8>)>> {
-    names
-        .iter()
-        .map(|n| Some((n.to_string(), std::fs::read(root().join("originals").join(n)).ok()?)))
-        .collect()
+    names.iter().map(|n| Some((n.to_string(), std::fs::read(root().join("originals").join(n)).ok()?))).collect()
 }
 
 fn png(rel: &str) -> Option<Rgba> {
     let bytes = std::fs::read(root().join("assets").join(rel)).ok()?;
     let img = Image::from_file_with_format(&bytes, Some(ImageFormat::Png)).expect("decodes");
-    Some(Rgba { width: img.width as u32, height: img.height as u32, data: img.bytes })
+    Some(Rgba { width: u32::from(img.width), height: u32::from(img.height), data: img.bytes })
 }
 
 macro_rules! need {
@@ -46,7 +43,10 @@ fn check_sprites(set: &AssetSet) {
     let mut dims = std::collections::HashMap::new();
     for r in meta["resources"].as_array().unwrap() {
         if r["type"] == 2 {
-            dims.insert(r["id"].as_u64().unwrap() as usize, (r["width"].as_i64().unwrap() as i16, r["height"].as_i64().unwrap() as i16));
+            dims.insert(
+                r["id"].as_u64().unwrap() as usize,
+                (r["width"].as_i64().unwrap() as i16, r["height"].as_i64().unwrap() as i16),
+            );
         }
     }
     assert_eq!(dims.len(), 89);

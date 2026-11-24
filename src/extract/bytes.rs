@@ -4,9 +4,7 @@
 pub type Result<T> = std::result::Result<T, String>;
 
 pub fn slice(data: &[u8], off: usize, len: usize) -> Result<&[u8]> {
-    off.checked_add(len)
-        .and_then(|end| data.get(off..end))
-        .ok_or_else(|| "file is truncated or damaged".to_owned())
+    off.checked_add(len).and_then(|end| data.get(off..end)).ok_or_else(|| "file is truncated or damaged".to_owned())
 }
 
 pub fn u8_at(data: &[u8], off: usize) -> Result<u8> {

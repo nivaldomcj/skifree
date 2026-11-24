@@ -6,11 +6,13 @@
 //! `tools/extract_assets.py` found them (in `ski32sounds.exe`), build.rs
 //! embeds `assets/sounds/sound_1..9.wav` and sets `cfg(skifree_sound)`;
 //! without them nothing here plays and no audio code is compiled.
+//! `SKIFREE_NO_ASSETS=sound` (CI) compiles it with empty stand-ins and
+//! never opens a player (`cfg(skifree_no_assets)`).
 //!
 //! Backends, none of which needs anything at build time:
 //! - Windows: `sndPlaySoundA` itself, with the same bytes and flags.
 //! - macOS: one `NSSound` per WAV; `stop` then `play`.
-//! - Linux: libasound loaded at runtime (like libX11 in os_window), fed by
+//! - Linux: libasound loaded at runtime (like libX11 in `os_window`), fed by
 //!   a player thread; `snd_pcm_drop` cuts.
 //! - Web: Web Audio through `web/skifree.js`. The WAVs come with the
 //!   `AssetSet` (embedded in the private build, extracted from the
@@ -35,8 +37,11 @@ impl Audio {
         let _ = assets;
         Self {
             muted,
+            // No player over the empty stand-in WAVs: sndPlaySoundA would
+            // read a WAV image from an empty slice. open() stays compiled
+            // (and linted) all the same.
             #[cfg(skifree_sound)]
-            player: imp::Player::open(),
+            player: if cfg!(skifree_no_assets) { None } else { imp::Player::open() },
             #[cfg(target_arch = "wasm32")]
             player: imp::Player::open(assets),
         }
@@ -64,6 +69,10 @@ impl Audio {
 
     /// Stop whatever is playing (`sndPlaySoundA(NULL, 0)`, as the original
     /// does on exit).
+    #[cfg_attr(
+        not(any(skifree_sound, target_arch = "wasm32")),
+        expect(clippy::unused_self, reason = "a build without sounds has no player to stop")
+    )]
     pub fn stop(&mut self) {
         #[cfg(any(skifree_sound, target_arch = "wasm32"))]
         if let Some(p) = self.player.as_mut() {
@@ -87,7 +96,7 @@ impl Drop for Audio {
 }
 
 /// The nine WAVs, by resource id - 1.
-#[cfg(skifree_sound)]
+#[cfg(all(skifree_sound, not(skifree_no_assets)))]
 static WAVS: [&[u8]; 9] = [
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/sounds/sound_1.wav")),
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/sounds/sound_2.wav")),
@@ -99,6 +108,11 @@ static WAVS: [&[u8]; 9] = [
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/sounds/sound_8.wav")),
     include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/sounds/sound_9.wav")),
 ];
+
+/// `SKIFREE_NO_ASSETS=sound` (build.rs): compile, lint and test the sound
+/// code without the WAVs. `Audio::new` opens no player in this build.
+#[cfg(all(skifree_sound, skifree_no_assets))]
+static WAVS: [&[u8]; 9] = [&[]; 9];
 
 #[cfg(all(skifree_sound, any(target_os = "windows", target_os = "linux")))]
 fn wav(sound: Sound) -> &'static [u8] {
@@ -120,18 +134,21 @@ mod imp {
 
     pub struct Player;
 
+    #[expect(clippy::unnecessary_wraps, clippy::unused_self, reason = "the same Player API as the other backends")]
     impl Player {
         pub fn open() -> Option<Self> {
             Some(Player)
         }
 
-        /// Exactly the original's call (FUN_00402ba0). The data is static,
-        /// so it outlives the asynchronous playback.
+        /// Exactly the original's call (`FUN_00402ba0`).
         pub fn play(&mut self, sound: Sound) {
+            // SAFETY: SND_MEMORY points winmm at a whole WAV image in memory;
+            // it is static, so it outlives the asynchronous playback.
             unsafe { sndPlaySoundA(wav(sound).as_ptr(), SND_ASYNC | SND_MEMORY) };
         }
 
         pub fn stop(&mut self) {
+            // SAFETY: a null sound with no flags only stops what is playing.
             unsafe { sndPlaySoundA(std::ptr::null(), 0) };
         }
     }
@@ -139,9 +156,9 @@ mod imp {
 
 #[cfg(all(skifree_sound, target_os = "macos"))]
 mod imp {
-    use skifree::game::sound::Sound;
     use super::WAVS;
     use macroquad::miniquad::native::apple::frameworks::{class, msg_send, sel, sel_impl, ObjcId, NO};
+    use skifree::game::sound::Sound;
 
     pub struct Player {
         sounds: Vec<ObjcId>,
@@ -152,6 +169,10 @@ mod imp {
         pub fn open() -> Option<Self> {
             let mut sounds = Vec::new();
             for bytes in WAVS {
+                // SAFETY: NSData wraps the static WAV without copying and
+                // never frees it (freeWhenDone: NO); NSSound alloc +
+                // initWithData: is its documented constructor, null on
+                // failure. Messages go to the classes that define them.
                 unsafe {
                     let data: ObjcId = msg_send![class!(NSData),
                         dataWithBytesNoCopy: bytes.as_ptr() as *mut std::ffi::c_void
@@ -171,6 +192,8 @@ mod imp {
         pub fn play(&mut self, sound: Sound) {
             self.stop();
             let i = sound.id() as usize - 1;
+            // SAFETY: `self.sounds[i]` is an NSSound from `open`, never
+            // released, so it lives as long as the Player.
             unsafe {
                 // `play` refuses a sound that is still playing; it was
                 // stopped above, so this restarts it from the start.
@@ -181,6 +204,7 @@ mod imp {
 
         pub fn stop(&mut self) {
             if let Some(i) = self.current.take() {
+                // SAFETY: as in `play`, an NSSound from `open`.
                 unsafe {
                     let _: bool = msg_send![self.sounds[i], stop];
                 }
@@ -213,27 +237,38 @@ mod imp {
     }
 
     impl Alsa {
-        unsafe fn load() -> Option<Alsa> {
-            let lib = libc::dlopen(c"libasound.so.2".as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL);
-            if lib.is_null() {
-                return None;
+        /// libasound's PCM functions, or None without the library.
+        #[expect(
+            clippy::missing_transmute_annotations,
+            reason = "each sym! lands in a field or binding with an explicit fn-pointer type"
+        )]
+        fn load() -> Option<Alsa> {
+            // SAFETY: dlopen and dlsym take NUL-terminated names. Each symbol
+            // is checked for null, then transmuted to the field's type, its
+            // prototype in alsa/pcm.h. The library is never closed, so the
+            // pointers stay valid.
+            unsafe {
+                let lib = libc::dlopen(c"libasound.so.2".as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL);
+                if lib.is_null() {
+                    return None;
+                }
+                macro_rules! sym {
+                    ($name:literal) => {{
+                        let p = libc::dlsym(lib, concat!($name, "\0").as_ptr().cast::<c_char>());
+                        if p.is_null() {
+                            return None;
+                        }
+                        std::mem::transmute(p)
+                    }};
+                }
+                Some(Alsa {
+                    open: sym!("snd_pcm_open"),
+                    set_params: sym!("snd_pcm_set_params"),
+                    writei: sym!("snd_pcm_writei"),
+                    recover: sym!("snd_pcm_recover"),
+                    drop: sym!("snd_pcm_drop"),
+                })
             }
-            macro_rules! sym {
-                ($name:literal) => {{
-                    let p = libc::dlsym(lib, concat!($name, "\0").as_ptr() as *const c_char);
-                    if p.is_null() {
-                        return None;
-                    }
-                    std::mem::transmute(p)
-                }};
-            }
-            Some(Alsa {
-                open: sym!("snd_pcm_open"),
-                set_params: sym!("snd_pcm_set_params"),
-                writei: sym!("snd_pcm_writei"),
-                recover: sym!("snd_pcm_recover"),
-                drop: sym!("snd_pcm_drop"),
-            })
         }
     }
 
@@ -268,7 +303,7 @@ mod imp {
         if u16_at(f)? != 1 {
             return None; // not PCM
         }
-        let channels = u16_at(f + 2)? as c_uint;
+        let channels = c_uint::from(u16_at(f + 2)?);
         let rate = u32_at(f + 4)?;
         let bits = u16_at(f + 14)?;
         let format = match bits {
@@ -290,16 +325,18 @@ mod imp {
 
     impl Player {
         pub fn open() -> Option<Self> {
-            let alsa = unsafe { Alsa::load() }?;
+            let alsa = Alsa::load()?;
             let mut pcm: *mut Pcm = std::ptr::null_mut();
-            if unsafe { (alsa.open)(&mut pcm, c"default".as_ptr(), SND_PCM_STREAM_PLAYBACK, 0) } < 0 {
+            // SAFETY: snd_pcm_open writes the handle to a live local; the
+            // device name is NUL-terminated.
+            if unsafe { (alsa.open)(&raw mut pcm, c"default".as_ptr(), SND_PCM_STREAM_PLAYBACK, 0) } < 0 {
                 return None;
             }
             let pcm = pcm as usize; // moved to the player thread
             let (tx, rx) = channel();
             std::thread::Builder::new()
                 .name("skifree-audio".into())
-                .spawn(move || run(alsa, pcm as *mut Pcm, rx))
+                .spawn(move || run(&alsa, pcm as *mut Pcm, &rx))
                 .ok()?;
             Some(Player { tx })
         }
@@ -313,7 +350,8 @@ mod imp {
         }
     }
 
-    fn run(alsa: Alsa, pcm: *mut Pcm, rx: Receiver<Cmd>) {
+    /// The player thread. `pcm` is the handle `open` got, used only here.
+    fn run(alsa: &Alsa, pcm: *mut Pcm, rx: &Receiver<Cmd>) {
         let mut next = None;
         loop {
             let cmd = match next.take() {
@@ -323,10 +361,12 @@ mod imp {
                     Err(_) => return,
                 },
             };
+            // SAFETY: `pcm` is open, and only this thread uses it.
             unsafe { (alsa.drop)(pcm) };
             let Cmd::Play(sound) = cmd else { continue };
             let Some(w) = parse_wav(wav(sound)) else { continue };
             // 100 ms of buffer, resampled by ALSA if the device needs it.
+            // SAFETY: as above, `pcm` is this thread's open handle.
             let r = unsafe {
                 (alsa.set_params)(pcm, w.format, SND_PCM_ACCESS_RW_INTERLEAVED, w.channels, w.rate, 1, 100_000)
             };
@@ -343,7 +383,10 @@ mod imp {
                     Err(TryRecvError::Empty) => {}
                 }
                 let frames = (chunk.len() / w.frame_bytes) as c_ulong;
-                let n = unsafe { (alsa.writei)(pcm, chunk.as_ptr() as *const c_void, frames) };
+                // SAFETY: `chunk` holds `frames` whole frames of the format
+                // set above; snd_pcm_writei only reads them.
+                let n = unsafe { (alsa.writei)(pcm, chunk.as_ptr().cast::<c_void>(), frames) };
+                // SAFETY: recovering this thread's open handle from error `n`.
                 if n < 0 && unsafe { (alsa.recover)(pcm, n as c_int, 1) } < 0 {
                     break;
                 }
@@ -365,6 +408,7 @@ mod imp {
     /// press or click: the page drops sounds before that.
     pub struct Player;
 
+    #[expect(clippy::unused_self, reason = "the same Player API as the other backends")]
     impl Player {
         pub fn open(assets: &AssetSet) -> Option<Self> {
             let wavs = assets.sounds.as_ref()?;
@@ -375,7 +419,7 @@ mod imp {
         }
 
         pub fn play(&mut self, sound: Sound) {
-            web::audio_play(sound.id() as u32 - 1);
+            web::audio_play(u32::from(sound.id()) - 1);
         }
 
         pub fn stop(&mut self) {
@@ -384,7 +428,10 @@ mod imp {
     }
 }
 
-#[cfg(all(skifree_sound, not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_arch = "wasm32"))))]
+#[cfg(all(
+    skifree_sound,
+    not(any(target_os = "windows", target_os = "macos", target_os = "linux", target_arch = "wasm32"))
+))]
 mod imp {
     use skifree::game::sound::Sound;
 
