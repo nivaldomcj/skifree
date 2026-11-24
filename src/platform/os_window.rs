@@ -312,33 +312,15 @@ mod imp {
 
     impl X11 {
         /// A connection to the X server, or None without one or without libX11.
-        #[expect(
-            clippy::missing_transmute_annotations,
-            reason = "each sym! lands in a field or binding with an explicit fn-pointer type"
-        )]
         fn open() -> Option<X11> {
             // No X server: Wayland only, or headless.
             std::env::var_os("DISPLAY")?;
-            // SAFETY: dlopen and dlsym take NUL-terminated names. Each symbol
-            // is checked for null, then transmuted to its binding's or
-            // field's type, its prototype in Xlib.h. The library and the
-            // display are never closed, so both stay valid; XOpenDisplay's
+            let lib = super::super::dl::Library::open(c"libX11.so.6")?;
+            // SAFETY: each type is the function's prototype in Xlib.h. The
+            // display is never closed, so it stays valid; XOpenDisplay's
             // null name means $DISPLAY.
             unsafe {
-                let lib = libc::dlopen(c"libX11.so.6".as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL);
-                if lib.is_null() {
-                    return None;
-                }
-                macro_rules! sym {
-                    ($name:literal) => {{
-                        let p = libc::dlsym(lib, concat!($name, "\0").as_ptr().cast::<c_char>());
-                        if p.is_null() {
-                            return None;
-                        }
-                        std::mem::transmute(p)
-                    }};
-                }
-                let open_display: unsafe extern "C" fn(*const c_char) -> *mut Display = sym!("XOpenDisplay");
+                let open_display: unsafe extern "C" fn(*const c_char) -> *mut Display = lib.sym(c"XOpenDisplay")?;
                 let display = open_display(std::ptr::null());
                 if display.is_null() {
                     return None;
@@ -346,15 +328,15 @@ mod imp {
                 Some(X11 {
                     display,
                     window: None,
-                    get_input_focus: sym!("XGetInputFocus"),
-                    query_tree: sym!("XQueryTree"),
-                    get_class_hint: sym!("XGetClassHint"),
-                    store_name: sym!("XStoreName"),
-                    intern_atom: sym!("XInternAtom"),
-                    change_property: sym!("XChangeProperty"),
-                    get_window_property: sym!("XGetWindowProperty"),
-                    free: sym!("XFree"),
-                    flush: sym!("XFlush"),
+                    get_input_focus: lib.sym(c"XGetInputFocus")?,
+                    query_tree: lib.sym(c"XQueryTree")?,
+                    get_class_hint: lib.sym(c"XGetClassHint")?,
+                    store_name: lib.sym(c"XStoreName")?,
+                    intern_atom: lib.sym(c"XInternAtom")?,
+                    change_property: lib.sym(c"XChangeProperty")?,
+                    get_window_property: lib.sym(c"XGetWindowProperty")?,
+                    free: lib.sym(c"XFree")?,
+                    flush: lib.sym(c"XFlush")?,
                 })
             }
         }

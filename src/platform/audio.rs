@@ -241,37 +241,19 @@ mod imp {
 
     impl Alsa {
         /// libasound's PCM functions, or None without the library.
-        #[expect(
-            clippy::missing_transmute_annotations,
-            reason = "each sym! lands in a field or binding with an explicit fn-pointer type"
-        )]
         fn load() -> Option<Alsa> {
-            // SAFETY: dlopen and dlsym take NUL-terminated names. Each symbol
-            // is checked for null, then transmuted to the field's type, its
-            // prototype in alsa/pcm.h. The library is never closed, so the
-            // pointers stay valid.
+            let lib = super::super::dl::Library::open(c"libasound.so.2")?;
+            // SAFETY: each field's type is the function's prototype in
+            // alsa/pcm.h.
             unsafe {
-                let lib = libc::dlopen(c"libasound.so.2".as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL);
-                if lib.is_null() {
-                    return None;
-                }
-                macro_rules! sym {
-                    ($name:literal) => {{
-                        let p = libc::dlsym(lib, concat!($name, "\0").as_ptr().cast::<c_char>());
-                        if p.is_null() {
-                            return None;
-                        }
-                        std::mem::transmute(p)
-                    }};
-                }
                 Some(Alsa {
-                    open: sym!("snd_pcm_open"),
-                    set_params: sym!("snd_pcm_set_params"),
-                    writei: sym!("snd_pcm_writei"),
-                    recover: sym!("snd_pcm_recover"),
-                    drop: sym!("snd_pcm_drop"),
-                    nonblock: sym!("snd_pcm_nonblock"),
-                    close: sym!("snd_pcm_close"),
+                    open: lib.sym(c"snd_pcm_open")?,
+                    set_params: lib.sym(c"snd_pcm_set_params")?,
+                    writei: lib.sym(c"snd_pcm_writei")?,
+                    recover: lib.sym(c"snd_pcm_recover")?,
+                    drop: lib.sym(c"snd_pcm_drop")?,
+                    nonblock: lib.sym(c"snd_pcm_nonblock")?,
+                    close: lib.sym(c"snd_pcm_close")?,
                 })
             }
         }
