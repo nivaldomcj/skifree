@@ -50,11 +50,11 @@ fn check_sprites(set: &AssetSet) {
         }
     }
     assert_eq!(dims.len(), 89);
-    let set_dims = set.sprite_dims();
+    let sizes = set.sprite_sizes();
     for id in 1..=89 {
         let expected = png(&format!("sprites/bitmap_{id:02}.png")).unwrap();
         assert_eq!(set.sprites[id].as_ref(), Some(&expected), "sprite {id} pixels");
-        assert_eq!(set_dims[id], dims[&id], "sprite {id} size");
+        assert_eq!(sizes.get(id as u16), dims[&id], "sprite {id} size");
     }
 }
 

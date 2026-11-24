@@ -170,6 +170,7 @@ async fn run() {
     #[cfg(target_arch = "wasm32")]
     window::set_favicon(&assets);
     let renderer = Renderer::new(&assets);
+    let sprites = assets.sprite_sizes();
     // Where the platform can, stop the user's resize at the minimum, like
     // the original's WM_GETMINMAXINFO; elsewhere enforce_min_size bounces.
     platform::os_window::set_min_client_size(f64::from(window::MIN_WIDTH), f64::from(window::MIN_HEIGHT));
@@ -180,16 +181,17 @@ async fn run() {
 
     // SKIFREE_SEED=<u32> forces a deterministic world for side-by-side
     // testing against the original running a patched seed.
+    let (w, h) = skifree::game::DEFAULT_CLIENT_SIZE;
     let mut game = match std::env::var("SKIFREE_SEED").ok().and_then(|s| s.parse::<u32>().ok()) {
-        Some(seed) => GameState::new_seeded(window::DEFAULT_WIDTH as i16, window::DEFAULT_HEIGHT as i16, seed),
-        None => GameState::new(window::DEFAULT_WIDTH as i16, window::DEFAULT_HEIGHT as i16),
+        Some(seed) => GameState::new_seeded(w, h, seed, sprites.clone()),
+        None => GameState::new(w, h, sprites.clone()),
     };
     game.new_game();
     game.high_scores = persistence::load_scores();
 
     let mut capture = load_frame_capture().await;
     if let Some(cap) = &capture {
-        let (w, h) = (cap.scenario.screen_w.unwrap_or(640), cap.scenario.screen_h.unwrap_or(480));
+        let (w, h) = cap.scenario.client_size();
         // On macOS miniquad's request_new_screen_size sets the window frame,
         // title bar included, so the client would come out short (and
         // screen_width/height report the requested size at once): set the
@@ -205,7 +207,7 @@ async fn run() {
                 break;
             }
         }
-        game = GameState::new_seeded(w, h, cap.scenario.seed);
+        game = GameState::new_seeded(w, h, cap.scenario.seed, sprites);
         game.new_game();
     }
 

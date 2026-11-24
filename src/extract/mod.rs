@@ -14,6 +14,7 @@ mod fon;
 pub mod pe;
 mod zip;
 
+use crate::game::sprites::SpriteSizes;
 use pe::{Kind, Name, RT_BITMAP, RT_ICON};
 
 /// An RGBA8 image, rows top-down.
@@ -46,16 +47,16 @@ impl AssetSet {
         Self { sprites: vec![None; SPRITE_COUNT + 1], ..Default::default() }
     }
 
-    /// Sprite sizes indexed by id, laid out like
-    /// `GameState::load_sprite_dims` (16x16 for ids without a sprite).
-    pub fn sprite_dims(&self) -> Vec<(i16, i16)> {
-        let mut dims = vec![(16i16, 16i16); SPRITE_COUNT + 1];
+    /// The loaded sprites' sizes, for the game logic (16x16 for ids
+    /// without a sprite).
+    pub fn sprite_sizes(&self) -> SpriteSizes {
+        let mut sizes = SpriteSizes::placeholder();
         for (id, sprite) in self.sprites.iter().enumerate() {
-            if let (Some(s), Some(d)) = (sprite, dims.get_mut(id)) {
-                *d = (s.width as i16, s.height as i16);
+            if let (Some(s), Ok(id)) = (sprite, u16::try_from(id)) {
+                sizes.set(id, (s.width as i16, s.height as i16));
             }
         }
-        dims
+        sizes
     }
 }
 

@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use crate::game::cheat::Cheat;
+use crate::game::sprites::SpriteSizes;
 use crate::game::state::GameState;
+use crate::game::DEFAULT_CLIENT_SIZE;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Scenario {
@@ -15,6 +17,14 @@ pub struct Scenario {
     pub screen_h: Option<i16>,
     #[serde(default)]
     pub inputs: Vec<InputEvent>,
+}
+
+impl Scenario {
+    /// The client size the scenario runs at (`DEFAULT_CLIENT_SIZE` unless
+    /// it sets its own).
+    pub fn client_size(&self) -> (i16, i16) {
+        (self.screen_w.unwrap_or(DEFAULT_CLIENT_SIZE.0), self.screen_h.unwrap_or(DEFAULT_CLIENT_SIZE.1))
+    }
 }
 
 fn default_delta_ms() -> u32 {
@@ -188,23 +198,25 @@ pub fn apply_inputs(game: &mut GameState, scenario: &Scenario, tick: u32) -> boo
     stepped
 }
 
-pub fn run_scenario(scenario: &Scenario) -> Vec<TickRecord> {
-    run_scenario_with_size(scenario, scenario.screen_w.unwrap_or(640), scenario.screen_h.unwrap_or(480))
+/// Run `scenario` at its client size with the given sprite sizes (the
+/// real ones, `crate::assets::load_sprite_sizes`, for records that match
+/// the original).
+pub fn run_scenario(scenario: &Scenario, sprites: &SpriteSizes) -> Vec<TickRecord> {
+    let (w, h) = scenario.client_size();
+    run_scenario_observed(scenario, sprites, w, h, |_, _| {})
 }
 
-pub fn run_scenario_with_size(scenario: &Scenario, screen_w: i16, screen_h: i16) -> Vec<TickRecord> {
-    run_scenario_observed(scenario, screen_w, screen_h, |_, _| {})
-}
-
-/// Like [`run_scenario_with_size`], calling `observe(tick, &game)` after each
-/// tick (e.g. to dump the frame the original paints at the end of it).
+/// Like [`run_scenario`] at a given client size, calling
+/// `observe(tick, &game)` after each tick (e.g. to dump the frame the
+/// original paints at the end of it).
 pub fn run_scenario_observed(
     scenario: &Scenario,
+    sprites: &SpriteSizes,
     screen_w: i16,
     screen_h: i16,
     mut observe: impl FnMut(u32, &GameState),
 ) -> Vec<TickRecord> {
-    let mut game = GameState::new_seeded(screen_w, screen_h, scenario.seed);
+    let mut game = GameState::new_seeded(screen_w, screen_h, scenario.seed, sprites.clone());
     game.new_game();
 
     let mut records = Vec::with_capacity(scenario.ticks as usize);
@@ -284,14 +296,14 @@ mod tests {
 
     #[test]
     fn run_is_deterministic() {
-        let a = run_scenario(&base_scenario());
-        let b = run_scenario(&base_scenario());
+        let a = run_scenario(&base_scenario(), &SpriteSizes::placeholder());
+        let b = run_scenario(&base_scenario(), &SpriteSizes::placeholder());
         assert_eq!(a, b);
     }
 
     #[test]
     fn jsonl_round_trip() {
-        let records = run_scenario(&base_scenario());
+        let records = run_scenario(&base_scenario(), &SpriteSizes::placeholder());
         let text = records_to_jsonl(&records);
         let parsed = parse_jsonl(&text).expect("golden text parses");
         assert_eq!(records, parsed);

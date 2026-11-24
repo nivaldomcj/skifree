@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use skifree::game::sprites::SpriteSizes;
 use skifree::replay::{parse_jsonl, records_to_jsonl, run_scenario, Scenario};
 
 fn scenario_path(name: &str) -> String {
@@ -15,9 +16,12 @@ fn golden_path(name: &str) -> String {
         .into_owned()
 }
 
+/// The real sprite sizes: the goldens were recorded with them.
+fn sprites() -> SpriteSizes {
+    skifree::assets::load_sprite_sizes().unwrap_or_else(|e| panic!("the replay tests need the extracted assets: {e}"))
+}
+
 fn load_scenario(name: &str) -> Scenario {
-    let meta = skifree::game::assets::asset_root().join("meta.json");
-    assert!(meta.is_file(), "{} missing: the replay tests need the extracted assets", meta.display());
     let text =
         std::fs::read_to_string(scenario_path(name)).unwrap_or_else(|e| panic!("cannot read {name} scenario: {e}"));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("bad {name} scenario: {e}"))
@@ -31,7 +35,7 @@ fn load_golden(name: &str) -> Vec<skifree::replay::TickRecord> {
 fn check(name: &str) {
     let scenario = load_scenario(name);
     let golden = load_golden(name);
-    let records = run_scenario(&scenario);
+    let records = run_scenario(&scenario, &sprites());
     if records != golden {
         let divergence = records
             .iter()
@@ -56,7 +60,7 @@ fn golden_descend_matches() {
 fn descend_moves_skier_downhill() {
     // Pressing DOWN must actually move the skier downhill (+y).
     let scenario = load_scenario("descend");
-    let records = run_scenario(&scenario);
+    let records = run_scenario(&scenario, &sprites());
     let first = records.first().unwrap();
     let last = records.last().unwrap();
     let y0 = first.player.as_ref().unwrap().y;
@@ -75,7 +79,7 @@ fn live_actors_never_exceed_the_original_limit() {
     // nodes off screen don't count, as in the original).
     let scenario = load_scenario("steer_and_jump");
     for (w, h) in [(640, 480), (5120, 2880)] {
-        skifree::replay::run_scenario_observed(&scenario, w, h, |tick, game| {
+        skifree::replay::run_scenario_observed(&scenario, &sprites(), w, h, |tick, game| {
             let live = game.pool.live_count();
             assert!(live <= skifree::game::actor::LIVE_ACTORS, "{live} live actors at tick {tick} ({w}x{h})");
         });
@@ -85,8 +89,8 @@ fn live_actors_never_exceed_the_original_limit() {
 #[test]
 fn deterministic_across_runs() {
     let scenario = load_scenario("steer_and_jump");
-    let a = run_scenario(&scenario);
-    let b = run_scenario(&scenario);
+    let a = run_scenario(&scenario, &sprites());
+    let b = run_scenario(&scenario, &sprites());
     assert_eq!(a, b);
     let c = records_to_jsonl(&a);
     let d = records_to_jsonl(&b);

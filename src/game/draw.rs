@@ -50,7 +50,7 @@ pub fn draw_list(game: &GameState) -> Vec<DrawItem> {
         if a.sprite_id == 0 {
             continue;
         }
-        let Some(&(w, h)) = game.sprite_dims.get(a.sprite_id as usize) else { continue };
+        let Some((w, h)) = game.sprites.lookup(a.sprite_id) else { continue };
         if w <= 0 || h <= 0 {
             continue;
         }
@@ -70,13 +70,14 @@ pub fn draw_list(game: &GameState) -> Vec<DrawItem> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::sprites::SpriteSizes;
     use crate::game::types::ActorClass;
 
     #[test]
     fn bottom_centre_anchor_and_y_order() {
-        let mut game = GameState::new_seeded(640, 480, 0);
-        game.sprite_dims = vec![(16, 16); 90];
-        game.sprite_dims[0x1b] = (64, 32);
+        let mut sprites = SpriteSizes::placeholder();
+        sprites.set(0x1b, (64, 32));
+        let mut game = GameState::new_seeded(640, 480, 0, sprites);
         game.camera.cx = 0;
         game.camera.cy = 0;
         game.pool = crate::game::actor::ActorPool::new();
@@ -99,8 +100,7 @@ mod tests {
 
     #[test]
     fn a_mob_node_without_its_actor_is_not_drawn() {
-        let mut game = GameState::new_seeded(640, 480, 0);
-        game.sprite_dims = vec![(16, 16); 90];
+        let mut game = GameState::new_seeded(640, 480, 0, SpriteSizes::placeholder());
         game.pool = crate::game::actor::ActorPool::new();
         let node = game.pool.alloc_with_sprite(ActorClass::MonsterDownhill, 2).unwrap();
         assert!(draw_list(&game).is_empty(), "off screen: a bare node");
