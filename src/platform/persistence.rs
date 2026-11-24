@@ -23,12 +23,18 @@ mod imp {
         scores_dir().join("scores.json")
     }
 
+    /// The table, or None when there is none yet. A file that exists but
+    /// can't be read is kept aside like an unparsable one, not overwritten.
     pub fn read() -> Option<String> {
-        let path = scores_path();
-        if !path.exists() {
-            return None;
+        match fs::read_to_string(scores_path()) {
+            Ok(data) => Some(data),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => {
+                eprintln!("high scores unreadable ({e}); kept aside, starting a new table");
+                set_aside();
+                None
+            }
         }
-        fs::read_to_string(&path).ok()
     }
 
     pub fn write(data: &str) {

@@ -67,7 +67,11 @@ fn linux_backend() -> miniquad::conf::LinuxBackend {
 pub fn enforce_min_size() {
     let w = screen_width().max(MIN_WIDTH as f32);
     let h = screen_height().max(MIN_HEIGHT as f32);
-    if screen_width() < MIN_WIDTH as f32 || screen_height() < MIN_HEIGHT as f32 {
+    // Set the client area itself where the platform can: on macOS
+    // request_new_screen_size sets the frame, title bar included.
+    if (screen_width() < MIN_WIDTH as f32 || screen_height() < MIN_HEIGHT as f32)
+        && !super::os_window::set_client_size(f64::from(w), f64::from(h))
+    {
         request_new_screen_size(w, h);
     }
 }

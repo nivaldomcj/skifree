@@ -17,6 +17,7 @@ extern "C" {
     fn skifree_take(dst: *mut u8, len: usize);
     fn skifree_set_title(ptr: *const u8, len: usize);
     fn skifree_is_fullscreen() -> u32;
+    fn skifree_now() -> f64;
     fn skifree_storage_get(key: *const u8, key_len: usize) -> i32;
     fn skifree_storage_set(key: *const u8, key_len: usize, val: *const u8, val_len: usize);
     fn skifree_url_param(name: *const u8, len: usize) -> i32;
@@ -26,6 +27,7 @@ extern "C" {
     fn skifree_set_favicon(size: u32, ptr: *const u8, len: usize);
     fn skifree_capture_frame(tick: u32, w: u32, h: u32, ptr: *const u8, len: usize);
     fn skifree_capture_done();
+    fn skifree_capture_error(ptr: *const u8, len: usize);
     #[cfg_attr(feature = "embed-assets", expect(dead_code, reason = "the public build's file input"))]
     fn skifree_request_files();
     #[cfg_attr(feature = "embed-assets", expect(dead_code, reason = "the public build's file input"))]
@@ -40,10 +42,16 @@ extern "C" {
 
 /// The plugin's version check (miniquad's `init_plugins` compares it with
 /// the `version` of the JS plugin named "skifree"). 2: `skifree_take`
-/// takes the buffer length.
+/// takes the buffer length; 3: `skifree_now`.
 #[no_mangle]
 pub extern "C" fn skifree_crate_version() -> u32 {
-    2
+    3
+}
+
+/// Monotonic seconds (`performance.now()`), for the game timer.
+pub fn monotonic_secs() -> f64 {
+    // SAFETY: no arguments; it only reads performance.now().
+    unsafe { skifree_now() }
 }
 
 fn take(len: i32) -> Option<Vec<u8>> {
@@ -66,7 +74,8 @@ pub fn set_title(title: &str) {
     unsafe { skifree_set_title(title.as_ptr(), title.len()) }
 }
 
-/// Whether the page is in fullscreen (no tab title on screen).
+/// Whether the page fills the screen, by element fullscreen (Fullscreen API)
+/// or the browser's own (F11): either way no tab title is on screen.
 pub fn is_fullscreen() -> bool {
     // SAFETY: no arguments; it only reads the document.
     unsafe { skifree_is_fullscreen() != 0 }
@@ -117,6 +126,12 @@ pub fn set_favicon(size: u32, rgba: &[u8]) {
 pub fn capture_frame(tick: u32, width: u32, height: u32, rgba: &[u8]) {
     // SAFETY: the import reads (copies) `rgba` before it returns and keeps no pointer.
     unsafe { skifree_capture_frame(tick, width, height, rgba.as_ptr(), rgba.len()) }
+}
+
+/// Frame capture can't start: the page's capture tool reports `message`.
+pub fn capture_error(message: &str) {
+    // SAFETY: the import reads `message` before it returns and keeps no pointer.
+    unsafe { skifree_capture_error(message.as_ptr(), message.len()) }
 }
 
 /// Frame capture finished.

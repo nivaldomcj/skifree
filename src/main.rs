@@ -48,8 +48,8 @@ struct FrameCapture {
     tick: u32,
 }
 
-fn parse_ticks(list: &str) -> Vec<u32> {
-    list.split(',').filter_map(|t| t.trim().parse().ok()).collect()
+fn parse_ticks(list: &str) -> Result<Vec<u32>, String> {
+    list.split(',').map(|t| t.trim().parse().map_err(|_| format!("bad tick {t:?} in {list:?}"))).collect()
 }
 
 /// `SKIFREE_REPLAY` set but the capture can't start: say why and exit,
@@ -74,27 +74,42 @@ fn frame_capture(path: &str) -> Result<FrameCapture, String> {
     let scenario = serde_json::from_str(&text).map_err(|e| format!("bad scenario {path}: {e}"))?;
     let var = |name: &str| std::env::var(name).map_err(|_| format!("{name} is not set"));
     let dir = std::path::PathBuf::from(var("SKIFREE_FRAMES")?);
-    let ticks = parse_ticks(&var("SKIFREE_FRAME_TICKS")?);
+    let ticks = parse_ticks(&var("SKIFREE_FRAME_TICKS")?)?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
     Ok(FrameCapture { scenario, dir, ticks, tick: 0 })
 }
 
 #[cfg(target_arch = "wasm32")]
 async fn load_frame_capture() -> Option<FrameCapture> {
-    use platform::web::url_param;
-    let name = url_param("replay")?;
-    let ticks = parse_ticks(&url_param("ticks")?);
-    let text = load_string(&format!("replays/{name}.json")).await.ok()?;
-    let scenario = serde_json::from_str(&text).ok()?;
-    Some(FrameCapture { scenario, ticks, tick: 0 })
+    let name = platform::web::url_param("replay")?;
+    match web_frame_capture(&name).await {
+        Ok(cap) => Some(cap),
+        Err(e) => {
+            // tools/web/capture_frames.mjs reads it and fails at once.
+            platform::web::capture_error(&e);
+            None
+        }
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+async fn web_frame_capture(name: &str) -> Result<FrameCapture, String> {
+    let ticks = parse_ticks(&platform::web::url_param("ticks").ok_or("no ticks in the address")?)?;
+    let path = format!("replays/{name}.json");
+    let text = load_string(&path).await.map_err(|e| format!("cannot load {path}: {e:?}"))?;
+    let scenario = serde_json::from_str(&text).map_err(|e| format!("bad scenario {path}: {e}"))?;
+    Ok(FrameCapture { scenario, ticks, tick: 0 })
 }
 
 /// Hand one captured frame (RGBA rows top-down) to the capture's sink.
 fn save_frame(cap: &FrameCapture, width: u32, height: u32, rgba: &[u8]) {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let name = format!("frame_{}_{}x{}.rgba", cap.tick, width, height);
-        let _ = std::fs::write(cap.dir.join(name), rgba);
+        let path = cap.dir.join(format!("frame_{}_{}x{}.rgba", cap.tick, width, height));
+        if let Err(e) = std::fs::write(&path, rgba) {
+            eprintln!("SKIFREE_FRAMES: cannot write {}: {e}", path.display());
+            std::process::exit(1);
+        }
     }
     #[cfg(target_arch = "wasm32")]
     platform::web::capture_frame(cap.tick, width, height, rgba);
@@ -155,6 +170,9 @@ async fn run() {
     #[cfg(target_arch = "wasm32")]
     window::set_favicon(&assets);
     let renderer = Renderer::new(&assets);
+    // Where the platform can, stop the user's resize at the minimum, like
+    // the original's WM_GETMINMAXINFO; elsewhere enforce_min_size bounces.
+    platform::os_window::set_min_client_size(f64::from(window::MIN_WIDTH), f64::from(window::MIN_HEIGHT));
     let mut timer = GameTimer::new();
     let mut input = Input::new();
     let mut audio = Audio::new(nosound(), &assets);
@@ -219,11 +237,12 @@ async fn run() {
             // The box takes the focus: the window goes inactive (timer
             // stopped, input dropped) until OK, like the original.
             game.set_active(false);
-            let opened = get_time();
+            let opened = platform::timer::now_secs();
             if platform::os_window::message_box(HIGH_SCORES_CAPTION, &text) {
-                game.add_wall_time(((get_time() - opened) * 1000.0) as u32);
+                game.add_wall_time(((platform::timer::now_secs() - opened) * 1000.0) as u32);
                 game.set_active(true);
-                timer.reset();
+                // The box's own measure covers the gap: don't count it twice.
+                let _ = timer.reset();
             } else {
                 dialog_in_window = Some((text, (0.0, 0.0, 0.0, 0.0)));
             }
@@ -294,21 +313,11 @@ async fn run() {
                 GameAction::SteerRight => game.steer_keyboard(false, true, false, false),
                 GameAction::SteerUp => game.steer_keyboard(false, false, true, false),
                 GameAction::SteerDown => game.steer_keyboard(false, false, false, true),
-                GameAction::FastForward => {
-                    game.fast_forward = !game.fast_forward;
-                }
-                GameAction::StepTick => {
-                    // Single-step one tick even when paused
-                    game.step_tick(timer.step());
-                }
                 GameAction::ToggleMute => audio.toggle_mute(),
-                GameAction::Repaint => {
-                    // Force repaint — no-op in macroquad (always repaints)
+                // A t step runs for the GetTickCount time since the last tick.
+                GameAction::Cheat(cheat) => {
+                    game.cheat(cheat, || timer.step());
                 }
-                GameAction::TeleportLeft => game.teleport(-2, 0),
-                GameAction::TeleportRight => game.teleport(2, 0),
-                GameAction::TeleportUp => game.teleport(0, -2),
-                GameAction::TeleportDown => game.teleport(0, 2),
                 GameAction::MouseSteer(mx, my) => {
                     game.mouse_move(mx as i16, my as i16);
                 }
@@ -339,21 +348,26 @@ async fn run() {
             }
         }
 
-        // Ticks keep arriving while paused: the game state stays frozen but
-        // the wall clock advances (see GameState::wall_ms).
-        // F3 / focus loss kill the original's timer and resuming calls
-        // SetTimer again (FUN_00404ad0): re-arm on the same edge.
+        // F3 / focus loss kill the original's timer (no WM_TIMER while
+        // stopped) and resuming calls SetTimer again (FUN_00404ad0): re-arm
+        // on the same edge. The wall clock catches up with the stopped time
+        // there (GameState::wall_ms; the meal and the status age see it).
         if game.timer_running && !timer_was_running {
-            timer.reset();
+            let skipped = timer.reset();
+            // A capture's ticks carry their own wall time (GameState::tick
+            // adds it while stopped too), and its timer is never polled.
+            if capture.is_none() {
+                game.add_wall_time(skipped);
+            }
         }
         timer_was_running = game.timer_running;
 
         if let Some(cap) = &capture {
-            if cap.tick < cap.scenario.ticks {
-                skifree::replay::apply_inputs(&mut game, &cap.scenario, cap.tick);
+            // A `t` cheat input steps the game itself: that is the tick.
+            if cap.tick < cap.scenario.ticks && !skifree::replay::apply_inputs(&mut game, &cap.scenario, cap.tick) {
                 game.tick(cap.scenario.delta_ms);
             }
-        } else if let Some(delta) = timer.poll() {
+        } else if let Some(delta) = game.timer_running.then(|| timer.poll()).flatten() {
             // Every 46.875 ms with the original's GetTickCount deltas (see
             // platform::timer), not the rendered frame's duration.
             game.tick(delta);
@@ -374,6 +388,7 @@ async fn run() {
         let pause_in_window = game.paused && !(title_set && platform::os_window::title_visible());
 
         if game.pending_score_save && capture.is_none() {
+            game.rank_finish_in(persistence::load_scores());
             persistence::save_scores(&game.high_scores);
             game.pending_score_save = false;
         }
@@ -433,5 +448,18 @@ async fn run() {
         }
 
         next_frame().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_ticks;
+
+    #[test]
+    fn frame_ticks_parse_strictly() {
+        assert_eq!(parse_ticks("1, 100,300"), Ok(vec![1, 100, 300]));
+        for bad in ["100;200", "100,2OO", ""] {
+            assert!(parse_ticks(bad).is_err(), "{bad:?} accepted");
+        }
     }
 }

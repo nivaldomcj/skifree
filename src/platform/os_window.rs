@@ -59,6 +59,18 @@ mod imp {
         true
     }
 
+    /// The smallest client area the user can drag the window to (like the
+    /// original's `WM_GETMINMAXINFO`), in points: client pixels with
+    /// `high_dpi` off.
+    pub fn set_min_client_size(w: f64, h: f64) -> bool {
+        let Some(window) = ns_window() else { return false };
+        // SAFETY: `window` is the live NSWindow from `ns_window`.
+        unsafe {
+            let () = msg_send![window, setContentMinSize: NSSize { width: w, height: h }];
+        }
+        true
+    }
+
     /// Whether the window is really active: still the key window and not
     /// minimized. miniquad 0.4 reports a window *move* as
     /// `window_minimized_event` (windowDidMove), the same event as a real
@@ -121,6 +133,7 @@ mod imp {
         fn EnumThreadWindows(thread: u32, cb: extern "system" fn(Hwnd, isize) -> i32, param: isize) -> i32;
         fn GetParent(hwnd: Hwnd) -> Hwnd;
         fn GetClassNameW(hwnd: Hwnd, name: *mut u16, len: i32) -> i32;
+        fn GetGUIThreadInfo(thread: u32, info: *mut GuiThreadInfo) -> i32;
         fn SetWindowTextW(hwnd: Hwnd, text: *const u16) -> i32;
         fn GetWindowLongW(hwnd: Hwnd, index: i32) -> i32;
         fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, kind: u32) -> i32;
@@ -175,8 +188,41 @@ mod imp {
         s.encode_utf16().chain(Some(0)).collect()
     }
 
+    /// `GUITHREADINFO`.
+    #[repr(C)]
+    struct GuiThreadInfo {
+        cb_size: u32,
+        flags: u32,
+        hwnds: [Hwnd; 6],
+        rc_caret: [i32; 4],
+    }
+    const GUI_INMOVESIZE: u32 = 0x2;
+    const GUI_INMENUMODE: u32 = 0x4;
+
+    /// Whether this thread is in a modal move/size or menu loop. miniquad
+    /// then draws frames from a `WM_TIMER`, and a `MessageBoxW` opened in
+    /// such a frame would dispatch that timer and re-enter the frame loop
+    /// while it is still running.
+    fn in_modal_loop() -> bool {
+        let mut info = GuiThreadInfo {
+            cb_size: std::mem::size_of::<GuiThreadInfo>() as u32,
+            flags: 0,
+            hwnds: [std::ptr::null_mut(); 6],
+            rc_caret: [0; 4],
+        };
+        // SAFETY: `info` is a GUITHREADINFO with cbSize set, live for the
+        // call; the thread is ours.
+        let ok = unsafe { GetGUIThreadInfo(GetCurrentThreadId(), &raw mut info) } != 0;
+        !ok || info.flags & (GUI_INMOVESIZE | GUI_INMENUMODE) != 0
+    }
+
     /// The same call as the original: MessageBox(main window, ..., `MB_OK`).
+    /// Returns false inside a move/size or menu loop (see `in_modal_loop`):
+    /// the game then draws its own box, which doesn't block.
     pub fn message_box(caption: &str, text: &str) -> bool {
+        if in_modal_loop() {
+            return false;
+        }
         let owner = hwnd().unwrap_or(std::ptr::null_mut());
         let (text, caption) = (wide(text), wide(caption));
         // SAFETY: both strings are NUL-terminated UTF-16 that outlive the
@@ -494,6 +540,18 @@ pub fn window_is_active() -> Option<bool> {
     return imp::window_is_active();
     #[cfg(not(target_os = "macos"))]
     None
+}
+
+/// Stop the user's resize at a w x h client area; false where the platform
+/// has no direct way (the game then bounces the window back to it).
+pub fn set_min_client_size(w: f64, h: f64) -> bool {
+    #[cfg(target_os = "macos")]
+    return imp::set_min_client_size(w, h);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (w, h);
+        false
+    }
 }
 
 /// Resize the client area to w x h; false where the platform has no
