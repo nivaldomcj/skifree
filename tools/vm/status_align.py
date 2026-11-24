@@ -30,7 +30,12 @@ def main():
         last = r["tick"]
         if r.get("status"):
             port.append((r["tick"], r["status"]))
-    end = min(orig[-1][0] if orig else -1, last)
+    if not orig:
+        # An empty capture (a hook that never fired, a run cut short) is a
+        # failed trace, not a match.
+        print("status: the original's trace has no repaints")
+        return 1
+    end = min(orig[-1][0], last)
     o = [p for p in orig if p[0] <= end]
     q = [p for p in port if p[0] <= end]
     for i, (a, b) in enumerate(zip(o, q)):

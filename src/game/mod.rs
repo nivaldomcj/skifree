@@ -4,7 +4,6 @@ pub mod camera;
 pub mod collision;
 pub mod course;
 pub mod draw;
-pub mod hud;
 pub mod mob;
 pub mod monster;
 pub mod physics;

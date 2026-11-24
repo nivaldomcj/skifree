@@ -58,10 +58,4 @@ impl Camera {
         let sy = wy.wrapping_sub(self.cy).wrapping_add(screen_h / 3);
         (sx, sy)
     }
-
-    /// Check if a world-space AABB intersects the viewport
-    pub fn is_visible(&self, x: i16, y: i16, w: i16, h: i16, screen_w: i16, screen_h: i16) -> bool {
-        let (sx, sy) = self.world_to_screen(x, y, screen_w, screen_h);
-        sx + w > 0 && sx < screen_w && sy + h > 0 && sy < screen_h
-    }
 }

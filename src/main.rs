@@ -52,15 +52,31 @@ fn parse_ticks(list: &str) -> Vec<u32> {
     list.split(',').filter_map(|t| t.trim().parse().ok()).collect()
 }
 
+/// `SKIFREE_REPLAY` set but the capture can't start: say why and exit,
+/// rather than open a playable game that the unattended frame tools
+/// (tools/vm/frames.sh) would wait on forever.
 #[cfg(not(target_arch = "wasm32"))]
 #[expect(clippy::unused_async, reason = "the same signature as the wasm32 version, which awaits")]
 async fn load_frame_capture() -> Option<FrameCapture> {
     let path = std::env::var("SKIFREE_REPLAY").ok()?;
-    let scenario = serde_json::from_str(&std::fs::read_to_string(&path).ok()?).ok()?;
-    let dir = std::path::PathBuf::from(std::env::var("SKIFREE_FRAMES").ok()?);
-    let ticks = parse_ticks(&std::env::var("SKIFREE_FRAME_TICKS").ok()?);
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(FrameCapture { scenario, dir, ticks, tick: 0 })
+    match frame_capture(&path) {
+        Ok(cap) => Some(cap),
+        Err(e) => {
+            eprintln!("SKIFREE_REPLAY: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn frame_capture(path: &str) -> Result<FrameCapture, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let scenario = serde_json::from_str(&text).map_err(|e| format!("bad scenario {path}: {e}"))?;
+    let var = |name: &str| std::env::var(name).map_err(|_| format!("{name} is not set"));
+    let dir = std::path::PathBuf::from(var("SKIFREE_FRAMES")?);
+    let ticks = parse_ticks(&var("SKIFREE_FRAME_TICKS")?);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    Ok(FrameCapture { scenario, dir, ticks, tick: 0 })
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -172,7 +188,6 @@ async fn run() {
             }
         }
         game = GameState::new_seeded(w, h, cap.scenario.seed);
-        game.course_type = cap.scenario.course.into();
         game.new_game();
     }
 
@@ -225,6 +240,11 @@ async fn run() {
         }
 
         let live_input = if capture.is_some() { Vec::new() } else { input.poll() };
+        // The frame's input belongs to the box while it is open, including
+        // the key or click that closes it: Esc must not quit the game, nor
+        // a click on OK make the skier jump (in the original they go to the
+        // MessageBoxA, not to the game window).
+        let box_was_open = dialog_in_window.is_some();
         if let Some((_, (bx, by, bw, bh))) = &dialog_in_window {
             // The drawn box is modal: only OK (Enter, Space, Esc, or a click
             // on the button) closes it; everything else is dropped.
@@ -241,7 +261,7 @@ async fn run() {
                 game.set_active(true);
             }
         }
-        let live_input = if dialog_in_window.is_some() { Vec::new() } else { live_input };
+        let live_input = if box_was_open { Vec::new() } else { live_input };
         for action in live_input {
             // While the window is inactive or minimized the original's window
             // procedure drops every key and mouse message (DAT_0040c67c).
@@ -285,34 +305,10 @@ async fn run() {
                 GameAction::Repaint => {
                     // Force repaint — no-op in macroquad (always repaints)
                 }
-                GameAction::TeleportLeft => {
-                    if let Some(idx) = game.player_idx {
-                        if let Some(a) = game.pool.get_mut(idx) {
-                            a.x = a.x.wrapping_sub(2);
-                        }
-                    }
-                }
-                GameAction::TeleportRight => {
-                    if let Some(idx) = game.player_idx {
-                        if let Some(a) = game.pool.get_mut(idx) {
-                            a.x = a.x.wrapping_add(2);
-                        }
-                    }
-                }
-                GameAction::TeleportUp => {
-                    if let Some(idx) = game.player_idx {
-                        if let Some(a) = game.pool.get_mut(idx) {
-                            a.y = a.y.wrapping_sub(2);
-                        }
-                    }
-                }
-                GameAction::TeleportDown => {
-                    if let Some(idx) = game.player_idx {
-                        if let Some(a) = game.pool.get_mut(idx) {
-                            a.y = a.y.wrapping_add(2);
-                        }
-                    }
-                }
+                GameAction::TeleportLeft => game.teleport(-2, 0),
+                GameAction::TeleportRight => game.teleport(2, 0),
+                GameAction::TeleportUp => game.teleport(0, -2),
+                GameAction::TeleportDown => game.teleport(0, 2),
                 GameAction::MouseSteer(mx, my) => {
                     game.mouse_move(mx as i16, my as i16);
                 }

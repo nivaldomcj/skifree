@@ -95,18 +95,11 @@ def main():
         if o.size != p.size:
             print(f"tick {tick}: size differs: original {o.size}, port {p.size}")
             continue
-        a, b = np.asarray(o), np.asarray(p)
-        diff = np.any(a != b, axis=2)
-        faded = (a.astype(np.uint16) + 2 * 255) // 3
-        faded[diff] = (255, 0, 0)
-        Image.fromarray(faded.astype(np.uint8)).save(os.path.join(out, f"diff_{tick}.png"))
         side = Image.new("RGB", (o.width * 2 + 8, o.height), (128, 128, 128))
         side.paste(o, (0, 0))
         side.paste(p, (o.width + 8, 0))
         side.save(os.path.join(out, f"side_{tick}.png"))
-        ys, xs = np.nonzero(diff)
-        box = f" in x {xs.min()}..{xs.max()}, y {ys.min()}..{ys.max()}" if len(xs) else ""
-        print(f"tick {tick}: {int(diff.sum())} pixels differ{box}")
+        print(f"tick {tick}: {compare(o, p, os.path.join(out, f'diff_{tick}.png'))}")
         if tick in window:
             win = window[tick]
             win.save(os.path.join(out, f"win_{tick}.png"))

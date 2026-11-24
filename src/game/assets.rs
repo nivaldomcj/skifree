@@ -4,21 +4,21 @@ use std::sync::OnceLock;
 /// Locate the extracted assets directory: `assets/` under the working
 /// directory in development, `assets/` next to the executable (a Windows or
 /// Linux folder), or `Contents/Resources/assets` relative to the executable
-/// inside a packaged .app bundle.
+/// inside a packaged .app bundle. A directory counts only when it holds the
+/// extractor's `meta.json`, so an unrelated `assets/` folder where the game
+/// happens to be started is skipped.
 pub fn asset_root() -> PathBuf {
     let cwd = PathBuf::from("assets");
-    if cwd.is_dir() {
+    let has_game = |dir: &PathBuf| dir.join("meta.json").is_file();
+    if has_game(&cwd) {
         return cwd;
     }
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let beside = dir.join("assets");
-            if beside.is_dir() {
-                return beside;
-            }
-            let bundled = dir.join("../Resources/assets");
-            if bundled.is_dir() {
-                return bundled;
+            for candidate in [dir.join("assets"), dir.join("../Resources/assets")] {
+                if has_game(&candidate) {
+                    return candidate;
+                }
             }
         }
     }

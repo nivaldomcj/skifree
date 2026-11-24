@@ -71,7 +71,7 @@ verified call-for-call against the original, are in
 `docs/vm-ground-truth.md` item 5. In short, with the skier first:
 
 - **SnowBump**: skier in state 0 → `vz = 1`, state `0x0d`; `vy` halved if > 4.
-- **Tree / Dog / Obstacle / Ambient / Lift / Eating** (solid path): flying
+- **Tree / Dog / Crossing skier / Ambient / Lift / Eating** (solid path): flying
   over (or under) → **+6 style**. Otherwise nothing happens except on the
   **crossing tick** (the tick the skier's y reaches the obstacle's y, using
   both actors' start-of-tick y): a tree hit off-centre by more than half the

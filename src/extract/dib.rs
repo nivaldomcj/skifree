@@ -2,7 +2,7 @@
 //! the game's `RT_BITMAP` sprites and `RT_ICON` images, decoded as
 //! `tools/extract_assets.py` (`Dib`) decodes them.
 
-use super::bytes::{i32_at, slice, u16_at, u32_at, u8_at, Result};
+use super::bytes::{at, i32_at, slice, u16_at, u32_at, u8_at, Result};
 use super::Rgba;
 
 struct Dib<'a> {
@@ -28,7 +28,9 @@ impl<'a> Dib<'a> {
         if u32_at(buf, 16)? != 0 {
             return Err("compressed bitmap".to_owned());
         }
-        if !matches!(bpp, 1 | 4 | 8) || width <= 0 || width > 4096 || height == 0 || height.abs() > 4096 {
+        // The game's largest bitmap is 93x64; 1024 leaves room and keeps a
+        // crafted file from making the decoder allocate gigabytes.
+        if !matches!(bpp, 1 | 4 | 8) || width <= 0 || width > 1024 || height == 0 || height.abs() > 2048 {
             return Err(format!("unsupported bitmap ({width}x{height}, {bpp} bpp)"));
         }
         let mut n_pal = u32_at(buf, 32)? as usize;
@@ -37,7 +39,7 @@ impl<'a> Dib<'a> {
         }
         let palette = (0..n_pal.min(256))
             .map(|i| {
-                let o = hdr + i * 4;
+                let o = at(hdr, i * 4)?;
                 Ok([u8_at(buf, o + 2)?, u8_at(buf, o + 1)?, u8_at(buf, o)?])
             })
             .collect::<Result<Vec<_>>>()?;
@@ -49,7 +51,7 @@ impl<'a> Dib<'a> {
             bpp,
             top_down: height < 0,
             palette,
-            pixels: hdr + n_pal * 4,
+            pixels: at(hdr, n_pal.checked_mul(4).ok_or_else(|| "bitmap header is damaged".to_owned())?)?,
             row_bytes: (width * bpp).div_ceil(32) * 4,
         })
     }

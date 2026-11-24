@@ -2,6 +2,7 @@ use super::actor::ActorPool;
 use super::camera;
 use super::collision;
 use super::course;
+use super::course::Course;
 use super::mob;
 use super::monster;
 use super::physics;
@@ -12,7 +13,7 @@ use super::skier;
 use super::sound::Sound;
 use super::state_table::STATE_TO_SPRITE;
 use super::types::Camera;
-use super::types::{ActorClass, CourseRun, CourseType, FinishRecord, SpawnEvent, SpawnRequest};
+use super::types::{Actor, ActorClass, CourseRun, FinishRecord, SpawnEvent, SpawnRequest};
 
 /// Central game state — replaces all the original's global variables
 #[expect(clippy::struct_excessive_bools, reason = "the original's global flags, one field each")]
@@ -28,19 +29,16 @@ pub struct GameState {
     /// The game timer runs (`DAT_0040c6d0`): ticks only advance the game while
     /// it does. Stopped by F3 and by losing focus / minimizing.
     pub timer_running: bool,
-    /// The window is active (`DAT_0040c694`, from `WM_ACTIVATE`).
-    pub app_active: bool,
     /// Keyboard and mouse input are processed (`DAT_0040c67c`): only while the
     /// window is active and not minimized (`FUN_00405a10`).
     pub input_enabled: bool,
-    pub course_type: CourseType,
     pub spawn_events: Vec<SpawnEvent>,
     /// Freestyle, slalom, tree slalom run states (all three courses exist in
     /// the world at once, on their own x strips).
     pub courses: [CourseRun; 3],
-    /// HUD clock (`DAT_0040c944`): runs only inside freestyle/slalom.
     /// Course clock `DAT_0040c944` (ms, signed: it is `start − now` on the
-    /// start tick).
+    /// start tick). It runs only inside the timed courses (slalom and tree
+    /// slalom); freestyle has none.
     pub course_clock_ms: i64,
     /// Set when a finish line is crossed; the platform layer saves scores.
     pub pending_score_save: bool,
@@ -114,9 +112,7 @@ impl GameState {
             fast_forward: false,
             paused: false,
             timer_running: true,
-            app_active: true,
             input_enabled: true,
-            course_type: CourseType::Freestyle,
             spawn_events: Vec::new(),
             courses: [CourseRun::default(), CourseRun::default(), CourseRun::default()],
             course_clock_ms: 0,
@@ -375,9 +371,9 @@ impl GameState {
                         }
                     }
                 }
-                ActorClass::Obstacle => {
+                ActorClass::CrossingSkier => {
                     if let Some(actor) = self.pool.get_mut(idx) {
-                        mob::update_obstacle(actor, &mut self.rng, self.fast_forward);
+                        mob::update_crossing_skier(actor, &mut self.rng, self.fast_forward);
                     }
                 }
                 // Proxies run in their own pass below (FUN_004040a0), in
@@ -439,7 +435,7 @@ impl GameState {
         self.update_proxies();
 
         // Check collisions
-        if self.log_updates || std::env::var_os("SKIFREE_LOG_PAIRS").is_some() {
+        if self.log_updates || collision::log_pairs() {
             eprintln!("collisions tick={}", self.tick_count);
         }
         let results = collision::check_all_collisions(
@@ -450,7 +446,7 @@ impl GameState {
             self.screen_h,
             &self.sprite_dims,
             &|idx, a| start_pos.get(idx).copied().flatten() != Some((a.x, a.y, a.z, a.class)),
-            &|a| !is_proxy_class(a.class) || a.flags.on_screen,
+            &|a| !a.class.is_mob_node() || a.flags.on_screen,
         );
 
         for result in results {
@@ -463,7 +459,7 @@ impl GameState {
             if result.skier_eaten {
                 if let (Some(player_idx), Some(monster_idx)) = (self.player_idx, result.eaten_by) {
                     if let Some(monster) = self.pool.get_mut(monster_idx) {
-                        monster::eat_skier(monster, player_idx, self.wall_ms);
+                        monster::eat_skier(monster, self.wall_ms);
                     }
                     self.pool.free(player_idx);
                     self.player_idx = None;
@@ -532,7 +528,7 @@ impl GameState {
             let x = self.camera.cx - self.screen_w / 2 + self.rng.rand_range(self.screen_w as u16) as i16;
             let y = self.camera.cy - self.screen_h / 3 - 0x3c;
             self.fulfill_spawn(SpawnRequest {
-                class: ActorClass::Obstacle,
+                class: ActorClass::CrossingSkier,
                 state: Some(0x1f),
                 sprite: None,
                 x,
@@ -585,10 +581,10 @@ impl GameState {
         self.pool.free(idx);
     }
 
-    /// Course start/finish/gate detection (`FUN_00402c60` freestyle,
-    /// `FUN_00403250` slalom, `FUN_00403180` tree slalom). The original
-    /// interpolates the exact crossing point; the port uses the
-    /// post-tick position.
+    /// Course start/finish/gate detection (`FUN_00402c60` slalom,
+    /// `FUN_00403250` tree slalom, `FUN_00403180` freestyle). Like the
+    /// original, it interpolates the crossing point and time between the
+    /// pre- and post-tick positions (`course::interpolate`, `FUN_00402e30`).
     fn check_course_crossings(&mut self, old_x: i16, old_y: i16, delta_ms: u32) {
         const START_Y: i16 = 0x280;
         let Some(pi) = self.player_idx else { return };
@@ -601,15 +597,9 @@ impl GameState {
         // pre- and post-update positions (FUN_00402e30).
         let cross = |a: i64, b: i64, line_y: i16| course::interpolate(a, b, py, old_y, line_y);
 
-        // courses[0] = slalom (left, timed, gated, DAT_0040c95c),
-        // courses[1] = tree slalom (right, timed, gated, DAT_0040c958),
-        // courses[2] = freestyle (center, style only, DAT_0040c954).
-        for ci in 0..3 {
-            let ((xmin, xmax), finish, has_clock) = match ci {
-                0 => (course::SLALOM_STRIP, course::SLALOM_FINISH_Y, true),
-                1 => (course::TREE_SLALOM_STRIP, course::LONG_FINISH_Y, true),
-                _ => (course::FREESTYLE_STRIP, course::LONG_FINISH_Y, false),
-            };
+        for c in Course::ALL {
+            let ci = c.index();
+            let ((xmin, xmax), finish, has_clock) = (c.strip(), c.finish_y(), c.is_timed());
             if !self.courses[ci].active {
                 // Start: crossing y = 0x280 downward, with the crossing x
                 // (interpolated) inside the strip.
@@ -633,20 +623,18 @@ impl GameState {
             }
             if py > finish {
                 self.courses[ci].active = false;
-                self.courses[ci].finished = true;
                 if has_clock {
                     self.course_clock_ms = cross(now, prev, finish) - self.courses[ci].start_ms;
                 }
                 let clock = self.course_clock_ms.max(0) as u64;
-                self.courses[ci].finish_ms = clock;
                 // High-score entry (FUN_00402ec0): time for slalom/giant
                 // slalom, style for freestyle.
-                let rank = if ci == 2 {
+                let rank = if c == Course::Freestyle {
                     self.high_scores.insert_style(self.scoring.score)
                 } else {
-                    self.high_scores.insert_time(ci, clock)
+                    self.high_scores.insert_time(c, clock)
                 };
-                self.last_finish = Some(FinishRecord { course: ci, ms: clock, style: self.scoring.score, rank });
+                self.last_finish = Some(FinishRecord { course: c, ms: clock, style: self.scoring.score, rank });
                 self.pending_score_save = true;
                 self.show_high_scores = true;
                 // The skier stands after finishing (FUN_00402e80), unless
@@ -665,18 +653,18 @@ impl GameState {
                 // Skied back above the start line: the run is abandoned.
                 self.courses[ci].active = false;
             } else if has_clock {
-                self.check_gate_pass(ci, px, old_x, py, old_y);
+                self.check_gate_pass(c, px, old_x, py, old_y);
             }
         }
 
         // Style points accumulate only inside the freestyle course
         // (FUN_00403420 gates on DAT_0040c954, the freestyle flag).
-        self.scoring.enabled = self.courses[2].active;
+        self.scoring.enabled = self.courses[Course::Freestyle.index()].active;
     }
 
     /// First gate record index within a course strip (`DAT_0040c94c/c950`).
     fn first_gate_index(&self, xmin: i16, xmax: i16) -> Option<usize> {
-        self.spawn_events.iter().position(|e| e.class == 0x0c && e.x >= xmin && e.x <= xmax)
+        self.spawn_events.iter().position(|e| e.class == ActorClass::Gate as u16 && e.x >= xmin && e.x <= xmax)
     }
 
     /// Gate passing (`FUN_00402c60` / `FUN_00403250` tail + `FUN_00403130`): once
@@ -685,7 +673,8 @@ impl GameState {
     /// of the gate's (x > gate x), sprite 0x18 when it is left of it
     /// (x < gate x). The flag turns sprite 0x19 (passed) or 0x1a (missed, and
     /// the course start moves back 5 s). One gate per tick.
-    fn check_gate_pass(&mut self, ci: usize, px: i16, old_x: i16, py: i16, old_y: i16) {
+    fn check_gate_pass(&mut self, c: Course, px: i16, old_x: i16, py: i16, old_y: i16) {
+        let ci = c.index();
         let Some(gi) = self.courses[ci].next_gate else { return };
         let Some(gate) = self.spawn_events.get(gi) else { return };
         if py <= gate.y {
@@ -710,13 +699,13 @@ impl GameState {
                 a.sprite_id = new_sprite;
             }
         }
-        let (xmin, xmax) = if ci == 0 { course::SLALOM_STRIP } else { course::TREE_SLALOM_STRIP };
+        let (xmin, xmax) = c.strip();
         self.courses[ci].next_gate = self
             .spawn_events
             .iter()
             .enumerate()
             .skip(gi + 1)
-            .find(|(_, e)| e.class == 0x0c && e.x >= xmin && e.x <= xmax)
+            .find(|(_, e)| e.class == ActorClass::Gate as u16 && e.x >= xmin && e.x <= xmax)
             .map(|(i, _)| i);
     }
 
@@ -731,12 +720,9 @@ impl GameState {
         let Some(pi) = self.player_idx else { return 0 };
         let Some(p) = self.pool.get(pi) else { return 0 };
         // 16-bit arithmetic like the original (`movsx eax, di`).
-        let units = if self.courses[0].active {
-            0x21c0i16.wrapping_sub(p.y)
-        } else if self.courses[1].active || self.courses[2].active {
-            0x4100i16.wrapping_sub(p.y)
-        } else {
-            p.y
+        let units = match Course::ALL.into_iter().find(|c| self.courses[c.index()].active) {
+            Some(c) => c.finish_y().wrapping_sub(p.y),
+            None => p.y,
         };
         i32::from(units) / 16
     }
@@ -767,18 +753,16 @@ impl GameState {
         }
     }
 
-    /// Consume spawn events that the player has scrolled past (`FUN_004046e0`)
     /// Proxy classes (4-8): ambient mobs and monsters, which the original
     /// runs as mob nodes with an actor only while on screen.
     fn is_proxy(&self, idx: usize) -> bool {
-        self.pool.get(idx).is_some_and(|a| is_proxy_class(a.class))
+        self.pool.get(idx).is_some_and(|a| a.class.is_mob_node())
     }
 
     /// Window activation changed (`WM_ACTIVATE` / `WM_SIZE` -> `FUN_00405a10`):
     /// input is processed only while active; losing focus or minimizing
     /// stops the game timer, regaining it restarts it — unless F3-paused.
     pub fn set_active(&mut self, active: bool) {
-        self.app_active = active;
         self.input_enabled = active;
         if active {
             self.resume_timer();
@@ -864,6 +848,9 @@ impl GameState {
                 self.fulfill_spawn(req);
             }
             let (camera, sw, sh) = (self.camera.clone(), self.screen_w, self.screen_h);
+            // Coming on screen takes a live actor: none when the original's
+            // 100 are in use (its allocation fails and the node stays bare).
+            let room = self.pool.has_live_room();
             if let Some(a) = self.pool.get_mut(idx) {
                 if a.proxy_unlink {
                     // Culled last cull pass: the link drops only now, and the
@@ -871,6 +858,7 @@ impl GameState {
                     a.proxy_unlink = false;
                     a.flags.on_screen = false;
                 } else if !a.flags.on_screen
+                    && room
                     && collision::in_event_window(a.y, &camera, sw, sh)
                     && collision::in_padded_view(a.x, a.y, a.z, 0, 0, &camera, sw, sh)
                 {
@@ -880,6 +868,7 @@ impl GameState {
         }
     }
 
+    /// Consume spawn events that the player has scrolled past (`FUN_004046e0`).
     fn consume_spawn_events(&mut self) {
         for (event_pos, event) in self.spawn_events.iter_mut().enumerate() {
             if event.actor_idx.is_some() {
@@ -938,13 +927,16 @@ impl GameState {
         }
     }
 
+    /// The player's actor, while the skier is present.
+    fn player_mut(&mut self) -> Option<&mut Actor> {
+        self.player_idx.and_then(|idx| self.pool.get_mut(idx))
+    }
+
     /// Handle keyboard steering
     #[expect(clippy::fn_params_excessive_bools, reason = "the four arrow keys, held or not")]
     pub fn steer_keyboard(&mut self, left: bool, right: bool, up: bool, down: bool) {
-        if let Some(idx) = self.player_idx {
-            if let Some(actor) = self.pool.get_mut(idx) {
-                skier::steer_keyboard(actor, left, right, up, down);
-            }
+        if let Some(actor) = self.player_mut() {
+            skier::steer_keyboard(actor, left, right, up, down);
         }
     }
 
@@ -958,28 +950,22 @@ impl GameState {
             return;
         }
         let (dx, dy) = (x - self.screen_w / 2, y - self.screen_h / 3);
-        if let Some(idx) = self.player_idx {
-            if let Some(actor) = self.pool.get_mut(idx) {
-                skier::steer_mouse(actor, dx, dy);
-            }
+        if let Some(actor) = self.player_mut() {
+            skier::steer_mouse(actor, dx, dy);
         }
     }
 
     /// Keyboard jump (Insert / numpad0): smaller hop that scrubs speed.
     pub fn jump_keyboard(&mut self) {
-        if let Some(idx) = self.player_idx {
-            if let Some(actor) = self.pool.get_mut(idx) {
-                skier::jump_keyboard(actor);
-            }
+        if let Some(actor) = self.player_mut() {
+            skier::jump_keyboard(actor);
         }
     }
 
     /// Diagonal steering: set a skiing state directly (1/4 slight, 3/6 hard).
     pub fn steer_absolute(&mut self, target_state: u16) {
-        if let Some(idx) = self.player_idx {
-            if let Some(actor) = self.pool.get_mut(idx) {
-                skier::steer_absolute(actor, target_state);
-            }
+        if let Some(actor) = self.player_mut() {
+            skier::steer_absolute(actor, target_state);
         }
     }
 
@@ -990,37 +976,18 @@ impl GameState {
 
     /// Handle click (`FUN_004066d0`): jump on the ground, cycle tricks mid-air.
     pub fn click(&mut self) {
-        if let Some(idx) = self.player_idx {
-            if let Some(actor) = self.pool.get_mut(idx) {
-                if actor.state == 0x0b {
-                    return; // crashed
-                }
-                if actor.z == 0 {
-                    actor.vz = 4; // jump (mouse uses vz=4, unlike keyboard's 2)
-                    physics::change_state(actor, 0x0d);
-                } else if actor.state != 0x11 {
-                    let next = match actor.state {
-                        0x0d => 0x12,
-                        0x0e => 0x14,
-                        0x0f => 0x15,
-                        0x12 => 0x13,
-                        0x13 => 0x0d,
-                        _ => actor.state,
-                    };
-                    physics::change_state(actor, next);
-                }
-            }
+        if let Some(actor) = self.player_mut() {
+            skier::click(actor);
         }
     }
 
-    /// Get player position for HUD
-    pub fn player_pos(&self) -> Option<(i16, i16, i16)> {
-        self.player_idx.and_then(|idx| self.pool.get(idx)).map(|a| (a.x, a.y, a.z))
-    }
-
-    /// Get player velocity for HUD
-    pub fn player_velocity(&self) -> Option<(i16, i16, i16)> {
-        self.player_idx.and_then(|idx| self.pool.get(idx)).map(|a| (a.vx, a.vy, a.vz))
+    /// The X/Y teleport cheat: move the skier by (dx, dy), wrapping like the
+    /// original's 16-bit position.
+    pub fn teleport(&mut self, dx: i16, dy: i16) {
+        if let Some(actor) = self.player_mut() {
+            actor.x = actor.x.wrapping_add(dx);
+            actor.y = actor.y.wrapping_add(dy);
+        }
     }
 }
 
@@ -1040,18 +1007,6 @@ fn clock_seed() -> u32 {
         return clock_ms();
     }
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u32
-}
-
-/// Mob-node classes (4-8): ambient mobs and the four monsters.
-fn is_proxy_class(class: ActorClass) -> bool {
-    matches!(
-        class,
-        ActorClass::AmbientMob
-            | ActorClass::MonsterLeft
-            | ActorClass::MonsterRight
-            | ActorClass::MonsterTop
-            | ActorClass::MonsterBottom
-    )
 }
 
 #[cfg(test)]
@@ -1112,15 +1067,7 @@ mod tests {
             .active_indices()
             .into_iter()
             .filter_map(|i| g.pool.get(i))
-            .filter(|a| {
-                matches!(
-                    a.class,
-                    ActorClass::MonsterLeft
-                        | ActorClass::MonsterRight
-                        | ActorClass::MonsterTop
-                        | ActorClass::MonsterBottom
-                )
-            })
+            .filter(|a| a.class.is_monster())
             .map(|a| a.flags.on_screen)
             .collect();
         assert_eq!(monsters.len(), 4, "monster nodes exist from world build");
@@ -1271,7 +1218,7 @@ mod tests {
     fn fulfill_spawn_by_state_uses_sprite_table() {
         let mut g = GameState::new_seeded(640, 480, 1);
         g.fulfill_spawn(SpawnRequest {
-            class: ActorClass::Obstacle,
+            class: ActorClass::CrossingSkier,
             state: Some(0x21),
             sprite: None,
             x: -112,
@@ -1279,7 +1226,7 @@ mod tests {
             z: 0x20,
         });
         let a = g.pool.get(g.pool.head.unwrap()).unwrap();
-        assert_eq!(a.class, ActorClass::Obstacle);
+        assert_eq!(a.class, ActorClass::CrossingSkier);
         assert_eq!(a.state, 0x21);
         assert_eq!(a.sprite_id, crate::game::state_table::STATE_TO_SPRITE[0x21]);
         assert_eq!((a.x, a.y, a.z), (-112, 498, 0x20));
@@ -1332,7 +1279,6 @@ mod tests {
         let mut g = GameState::new_seeded(640, 480, 1);
         g.spawn_events.push(SpawnEvent {
             actor_idx: None,
-            event_type: 0x04,
             state: 0x27,
             class: 4,
             sprite: None,
@@ -1457,12 +1403,11 @@ mod course_tests {
         place_player(&mut g, -400, 0x21bf, 4);
         g.tick(40);
         assert!(!g.courses[0].active);
-        assert!(g.courses[0].finished);
         assert!(g.pending_score_save);
         // High-score entry (FUN_00402ec0): slalom time recorded at rank 0,
         // and the skier stands (FUN_00402e80).
         let f = g.last_finish.expect("finish recorded");
-        assert_eq!(f.course, 0);
+        assert_eq!(f.course, Course::Slalom);
         assert_eq!(f.rank, Some(0));
         assert_eq!(g.high_scores.slalom_ms.len(), 1);
         assert_eq!(g.pool.get(g.player_idx.unwrap()).unwrap().state, 3);
@@ -1479,7 +1424,7 @@ mod course_tests {
         place_player(&mut g, 0, 0x4100 - 1, 4);
         g.tick(40);
         let f = g.last_finish.expect("finish recorded");
-        assert_eq!(f.course, 2);
+        assert_eq!(f.course, Course::Freestyle);
         assert_eq!(f.style, -22);
         assert_eq!(g.high_scores.freestyle_style, vec![-22]);
         assert_eq!(g.high_scores.slalom_ms, Vec::<u64>::new());

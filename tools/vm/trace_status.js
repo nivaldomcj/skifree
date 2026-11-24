@@ -3,7 +3,7 @@
 // call it happened in, or — for a repaint between ticks (the first paint
 // when the window shows, a resize moving the status window) — the next
 // call, matching the port's records (`after` keeps its historical name).
-// Compare with the port's TickRecord `hud` field (tools/vm/status_align.py).
+// Compare with the port's TickRecord `status` field (tools/vm/status_align.py).
 //
 // The call index counts FUN_00401000 entries (the timer callback, the only
 // caller of FUN_00401e50) instead of hooking FUN_00401e50 itself: under the

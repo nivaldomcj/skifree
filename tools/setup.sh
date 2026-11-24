@@ -43,8 +43,9 @@ fi
 
 step "Agent skills"
 if command -v npx >/dev/null 2>&1; then
-  npx -y skills experimental_install --agent claude-code codex --frozen-lockfile \
-    || warn "Skill restore failed; run it again later: npx skills experimental_install"
+  # Pinned: npx would otherwise fetch and run whatever release is newest.
+  npx -y skills@1.9.0 experimental_install --agent claude-code codex --frozen-lockfile \
+    || warn "Skill restore failed; run it again later: npx skills@1.9.0 experimental_install"
 else
   warn "npx not found; install Node.js to restore skills from skills-lock.json."
 fi

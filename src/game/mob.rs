@@ -1,7 +1,7 @@
 use super::physics;
 use super::rng::Rng;
 use super::sound::Sound;
-use super::state_table::{DOG_PHYSICS, SNOWBOARDER_PHYSICS};
+use super::state_table::{CROSSING_SKIER_PHYSICS, DOG_PHYSICS};
 use super::types::{Actor, ActorClass, SpawnRequest};
 
 /// Dog behavior (`FUN_00403540`, class 1)
@@ -122,7 +122,7 @@ pub fn update_ambient(actor: &mut Actor, rng: &mut Rng, materialized: bool) -> O
     // rolled only while the mob is inside the viewport window.
     if materialized && actor.state == 0x27 && rng.rand_range(1000) == 0 {
         let req = SpawnRequest {
-            class: ActorClass::Obstacle,
+            class: ActorClass::CrossingSkier,
             state: Some(0x21),
             sprite: None,
             x: actor.x,
@@ -175,8 +175,9 @@ pub fn update_lift(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
     }
 }
 
-/// Obstacle behavior (`FUN_00403910`, class 3)
-pub fn update_obstacle(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
+/// Crossing-skier behavior (`FUN_00403910`, class 3): the skier who cuts
+/// across the slope.
+pub fn update_crossing_skier(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
     let state = actor.state;
     if !(0x1f..=0x26).contains(&state) {
         return;
@@ -184,8 +185,8 @@ pub fn update_obstacle(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
 
     physics::integrate(actor, fast_forward);
 
-    if (state as usize) >= 0x1f && (state as usize) < 0x1f + SNOWBOARDER_PHYSICS.len() {
-        let entry = &SNOWBOARDER_PHYSICS[state as usize - 0x1f];
+    if (state as usize) >= 0x1f && (state as usize) < 0x1f + CROSSING_SKIER_PHYSICS.len() {
+        let entry = &CROSSING_SKIER_PHYSICS[state as usize - 0x1f];
         physics::apply_steering(actor, entry.accel, entry.max_speed, entry.decel, entry.friction_div, entry.direction);
     }
 
@@ -273,7 +274,7 @@ mod tests {
         let mut a = ambient(-112, 500, 0x20, 0x27, -2);
         let req = update_ambient(&mut a, &mut rng, true).expect("should request a spawn");
         // Mob integrated first (y 500 -> 498), then spawned at its position.
-        assert_eq!(req.class, ActorClass::Obstacle);
+        assert_eq!(req.class, ActorClass::CrossingSkier);
         assert_eq!(req.state, Some(0x21));
         assert_eq!(req.sprite, None);
         assert_eq!((req.x, req.y, req.z), (-112, 498, 0x20));

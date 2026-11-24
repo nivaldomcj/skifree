@@ -12,6 +12,47 @@ pub const COURSE_START_Y: i16 = 0x280;
 pub const SLALOM_FINISH_Y: i16 = 0x21c0;
 pub const LONG_FINISH_Y: i16 = 0x4100; // tree slalom and freestyle
 
+/// The three courses, in the order of `GameState::courses` (the original's
+/// run flags `DAT_0040c95c`, `DAT_0040c958` and `DAT_0040c954`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Course {
+    /// Left strip: timed, gated, short.
+    Slalom,
+    /// Right strip: timed, gated, long (the high scores' "giant slalom").
+    TreeSlalom,
+    /// Center strip: style-scored, no clock, no gates.
+    Freestyle,
+}
+
+impl Course {
+    pub const ALL: [Course; 3] = [Course::Slalom, Course::TreeSlalom, Course::Freestyle];
+
+    /// Index into `GameState::courses`.
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    pub fn strip(self) -> (i16, i16) {
+        match self {
+            Course::Slalom => SLALOM_STRIP,
+            Course::TreeSlalom => TREE_SLALOM_STRIP,
+            Course::Freestyle => FREESTYLE_STRIP,
+        }
+    }
+
+    pub fn finish_y(self) -> i16 {
+        match self {
+            Course::Slalom => SLALOM_FINISH_Y,
+            Course::TreeSlalom | Course::Freestyle => LONG_FINISH_Y,
+        }
+    }
+
+    /// Timed and gated (slalom and tree slalom); freestyle scores style.
+    pub fn is_timed(self) -> bool {
+        self != Course::Freestyle
+    }
+}
+
 /// Generate every spawn record for a new game (`FUN_00404b50`).
 ///
 /// The original builds all three courses at once — slalom on the left
@@ -50,31 +91,11 @@ fn banner_y(top: i16, screen_h: i16) -> i16 {
 }
 
 fn marker(events: &mut Vec<SpawnEvent>, sprite: u16, x: i16, y: i16) {
-    events.push(SpawnEvent {
-        actor_idx: None,
-        event_type: 0x11,
-        state: 0,
-        class: 0x11,
-        sprite: Some(sprite),
-        x,
-        y,
-        z: 0,
-        param: 0,
-    });
+    events.push(SpawnEvent { actor_idx: None, state: 0, class: 0x11, sprite: Some(sprite), x, y, z: 0, param: 0 });
 }
 
 fn gate(events: &mut Vec<SpawnEvent>, sprite: u16, x: i16, y: i16) {
-    events.push(SpawnEvent {
-        actor_idx: None,
-        event_type: 0x0c,
-        state: 0,
-        class: 0x0c,
-        sprite: Some(sprite),
-        x,
-        y,
-        z: 0,
-        param: 0,
-    });
+    events.push(SpawnEvent { actor_idx: None, state: 0, class: 0x0c, sprite: Some(sprite), x, y, z: 0, param: 0 });
 }
 
 /// Slalom (left strip): short timed course with flag gates.
@@ -167,7 +188,6 @@ fn generate_lift_poles(events: &mut Vec<SpawnEvent>) {
     while y < 0x5c01 {
         events.push(SpawnEvent {
             actor_idx: None,
-            event_type: 0x0d,
             state: 0,
             class: 0x0d,
             sprite: Some(0x40),
@@ -191,7 +211,6 @@ fn generate_mob_spawns(events: &mut Vec<SpawnEvent>) {
         if y > -0x400 {
             events.push(SpawnEvent {
                 actor_idx: None,
-                event_type: 0x04,
                 state: 0x27,
                 class: 4,
                 sprite: None,
@@ -205,7 +224,6 @@ fn generate_mob_spawns(events: &mut Vec<SpawnEvent>) {
         if y < 0x5c00 {
             events.push(SpawnEvent {
                 actor_idx: None,
-                event_type: 0x04,
                 state: 0x29,
                 class: 4,
                 sprite: None,
@@ -221,53 +239,13 @@ fn generate_mob_spawns(events: &mut Vec<SpawnEvent>) {
 
 fn generate_monster_spawns(events: &mut Vec<SpawnEvent>) {
     // Monster from top (type 7)
-    events.push(SpawnEvent {
-        actor_idx: None,
-        event_type: 0x07,
-        state: 0x2a,
-        class: 7,
-        sprite: None,
-        x: -16060,
-        y: 0,
-        z: 0,
-        param: 0,
-    });
+    events.push(SpawnEvent { actor_idx: None, state: 0x2a, class: 7, sprite: None, x: -16060, y: 0, z: 0, param: 0 });
     // Monster from bottom (type 8)
-    events.push(SpawnEvent {
-        actor_idx: None,
-        event_type: 0x08,
-        state: 0x2a,
-        class: 8,
-        sprite: None,
-        x: 16060,
-        y: 0,
-        z: 0,
-        param: 0,
-    });
+    events.push(SpawnEvent { actor_idx: None, state: 0x2a, class: 8, sprite: None, x: 16060, y: 0, z: 0, param: 0 });
     // Monster from left (type 5)
-    events.push(SpawnEvent {
-        actor_idx: None,
-        event_type: 0x05,
-        state: 0x2a,
-        class: 5,
-        sprite: None,
-        x: 0,
-        y: -2060,
-        z: 0,
-        param: 0,
-    });
+    events.push(SpawnEvent { actor_idx: None, state: 0x2a, class: 5, sprite: None, x: 0, y: -2060, z: 0, param: 0 });
     // Monster from right (type 6)
-    events.push(SpawnEvent {
-        actor_idx: None,
-        event_type: 0x06,
-        state: 0x2a,
-        class: 6,
-        sprite: None,
-        x: 0,
-        y: 32060,
-        z: 0,
-        param: 0,
-    });
+    events.push(SpawnEvent { actor_idx: None, state: 0x2a, class: 6, sprite: None, x: 0, y: 32060, z: 0, param: 0 });
 }
 
 /// `FUN_00402e30`: the value of a quantity at the moment the player crossed

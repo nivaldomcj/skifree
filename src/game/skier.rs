@@ -186,6 +186,28 @@ pub fn steer_mouse(actor: &mut Actor, dx: i16, dy: i16) {
 }
 
 /// One step toward 0.
+/// Click (`FUN_004066d0`): jump on the ground, cycle the trick poses in the
+/// air; nothing while crashed or after a botched landing.
+pub fn click(actor: &mut Actor) {
+    if actor.state == 0x0b {
+        return; // crashed
+    }
+    if actor.z == 0 {
+        actor.vz = 4; // jump (mouse uses vz=4, unlike keyboard's 2)
+        physics::change_state(actor, 0x0d);
+    } else if actor.state != 0x11 {
+        let next = match actor.state {
+            0x0d => 0x12,
+            0x0e => 0x14,
+            0x0f => 0x15,
+            0x12 => 0x13,
+            0x13 => 0x0d,
+            _ => actor.state,
+        };
+        physics::change_state(actor, next);
+    }
+}
+
 fn decelerate(v: i16) -> i16 {
     v - v.signum()
 }

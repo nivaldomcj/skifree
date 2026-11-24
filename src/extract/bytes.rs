@@ -21,6 +21,12 @@ pub fn u32_at(data: &[u8], off: usize) -> Result<u32> {
     Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
 }
 
+/// `base + off`, or the damaged-file error when the sum overflows (header
+/// fields are attacker-chosen, and `usize` is 32 bits on wasm32).
+pub fn at(base: usize, off: usize) -> Result<usize> {
+    base.checked_add(off).ok_or_else(|| "file is truncated or damaged".to_owned())
+}
+
 pub fn i32_at(data: &[u8], off: usize) -> Result<i32> {
     Ok(u32_at(data, off)? as i32)
 }

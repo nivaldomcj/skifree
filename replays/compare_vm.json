@@ -1,6 +1,5 @@
 {
   "seed": 0,
-  "course": "freestyle",
   "ticks": 700,
   "delta_ms": 40,
   "inputs": [

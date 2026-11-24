@@ -127,7 +127,10 @@ may be gone after a reboot. To regenerate: configure Ghidra 12.x
   the original's mob node + actor pair, with `flags.on_screen` standing in
   for "the node has a live actor" (materialization, culling, density and
   collisions all honor it). Observable behavior — down to every RNG call —
-  matches; internal structure does not.
+  matches; internal structure does not. The pool reserves the nodes' slots
+  on top of the original's 100 actors and counts a node as live only while
+  it is on screen, so the 100-actor limit falls where the original's does
+  (it is reached only on windows above 4K).
 - **Collisions** now follow the original exactly — both pair orders, the
   crossing flag, every first-actor class (see `docs/vm-ground-truth.md`).
 - **Diagonal keys** map through the cardinal transitions rather than setting

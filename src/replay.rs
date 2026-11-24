@@ -1,13 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use crate::game::state::GameState;
-use crate::game::types::CourseType;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Scenario {
     pub seed: u32,
-    #[serde(default = "default_course")]
-    pub course: CourseKind,
     pub ticks: u32,
     #[serde(default = "default_delta_ms")]
     pub delta_ms: u32,
@@ -19,30 +16,8 @@ pub struct Scenario {
     pub inputs: Vec<InputEvent>,
 }
 
-fn default_course() -> CourseKind {
-    CourseKind::Freestyle
-}
-
 fn default_delta_ms() -> u32 {
     40
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CourseKind {
-    Freestyle,
-    Slalom,
-    TreeSlalom,
-}
-
-impl From<CourseKind> for CourseType {
-    fn from(k: CourseKind) -> Self {
-        match k {
-            CourseKind::Freestyle => CourseType::Freestyle,
-            CourseKind::Slalom => CourseType::Slalom,
-            CourseKind::TreeSlalom => CourseType::TreeSlalom,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -211,7 +186,6 @@ pub fn run_scenario_observed(
     mut observe: impl FnMut(u32, &GameState),
 ) -> Vec<TickRecord> {
     let mut game = GameState::new_seeded(screen_w, screen_h, scenario.seed);
-    game.course_type = scenario.course.into();
     game.new_game();
 
     let mut records = Vec::with_capacity(scenario.ticks as usize);
@@ -286,15 +260,7 @@ mod tests {
     use super::*;
 
     fn base_scenario() -> Scenario {
-        Scenario {
-            seed: 1,
-            course: CourseKind::Freestyle,
-            ticks: 100,
-            delta_ms: 40,
-            screen_w: None,
-            screen_h: None,
-            inputs: vec![],
-        }
+        Scenario { seed: 1, ticks: 100, delta_ms: 40, screen_w: None, screen_h: None, inputs: vec![] }
     }
 
     #[test]
