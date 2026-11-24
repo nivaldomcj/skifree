@@ -176,11 +176,19 @@
         if (!box) return;
         box.querySelector(".error").textContent = message || "";
         box.hidden = false;
+        // gl.js's keydown handler eats Tab: keep the canvas out of the tab
+        // order while the box is up, so the file picker can be reached.
+        canvas.tabIndex = -1;
+        if (document.activeElement === canvas) {
+            const picker = box.querySelector("input[type=file]");
+            if (picker) picker.focus({ preventScroll: true });
+        }
     }
 
     function hideDrop() {
         const box = dropBox();
         if (box) box.hidden = true;
+        canvas.tabIndex = 1;
         canvas.focus();
     }
 
@@ -198,7 +206,15 @@
                 showDrop(f.name + " is too big to be a SkiFree file.");
                 return null;
             }
-            files.push({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) });
+            let bytes;
+            try {
+                bytes = new Uint8Array(await f.arrayBuffer());
+            } catch (e) {
+                // A dropped folder, or a file gone since it was picked.
+                showDrop("Couldn't read " + f.name + ": drop the files themselves, not a folder.");
+                return null;
+            }
+            files.push({ name: f.name, bytes });
         }
         return files;
     }
@@ -240,8 +256,10 @@
         const box = dropBox();
         if (!box) return;
         const picker = box.querySelector("input[type=file]");
+        // A copy of the list: the picker's FileList empties when its value
+        // is reset, before readFiles' first await returns.
         const take = async (fileList) => {
-            const files = await readFiles(fileList);
+            const files = await readFiles(Array.from(fileList));
             if (files && files.length) offered = { files, cached: false };
         };
         box.addEventListener("dragover", (e) => {
@@ -255,8 +273,9 @@
         });
         if (picker) {
             picker.addEventListener("change", () => {
-                take(picker.files);
+                const files = Array.from(picker.files);
                 picker.value = "";
+                take(files);
             });
         }
     }
@@ -269,6 +288,7 @@
     window.skifreeCapture = {
         frames: {},
         done: false,
+        error: null,
         base64(tick) {
             const f = this.frames[tick];
             if (!f) return null;
@@ -316,11 +336,16 @@
             held = null;
         };
 
+        env.skifree_now = () => performance.now() / 1000;
         env.skifree_set_title = (ptr, len) => {
             document.title = str(ptr, len);
         };
+        // Element fullscreen (Fullscreen API) or the browser's own (F11),
+        // which is the one a player can enter: no tab title on screen.
+        const displayFullscreen = window.matchMedia && window.matchMedia("(display-mode: fullscreen)");
         env.skifree_is_fullscreen = () =>
-            (document.fullscreenElement || document.webkitFullscreenElement) ? 1 : 0;
+            (document.fullscreenElement || document.webkitFullscreenElement ||
+                (displayFullscreen && displayFullscreen.matches)) ? 1 : 0;
 
         env.skifree_storage_get = (ptr, len) => {
             try {
@@ -367,6 +392,9 @@
         env.skifree_capture_frame = (tick, w, h, ptr, len) => {
             window.skifreeCapture.frames[tick] = { w, h, data: view(ptr, len).slice() };
         };
+        env.skifree_capture_error = (ptr, len) => {
+            window.skifreeCapture.error = str(ptr, len);
+        };
         env.skifree_capture_done = () => {
             window.skifreeCapture.done = true;
         };
@@ -399,6 +427,6 @@
         window.addEventListener("touchend", unlockAudio, true);
     }
 
-    // Version 2: skifree_take takes the buffer length.
-    miniquad_add_plugin({ register_plugin, on_init, name: "skifree", version: 2 });
+    // Version 2: skifree_take takes the buffer length; 3: skifree_now.
+    miniquad_add_plugin({ register_plugin, on_init, name: "skifree", version: 3 });
 })();

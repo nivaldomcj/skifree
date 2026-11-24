@@ -2,7 +2,8 @@
 # Prepare a fresh checkout or worktree so it builds and agents have their skills.
 #
 #   1. Link the local-only files (originals/, TODO.md) from the main checkout.
-#   2. Extract the game assets from originals/ski32.exe.
+#   2. Extract the game assets from the exe in originals/ (ski32.exe or
+#      ski32sounds.exe).
 #   3. Restore agent skills from skills-lock.json.
 #   4. Fetch the Rust dependencies.
 #
@@ -35,11 +36,11 @@ else
 fi
 
 step "Game assets"
-if [[ -f originals/ski32.exe ]]; then
-  python3 tools/extract_assets.py
-else
-  warn "originals/ski32.exe missing: the build will fail until you add it and run tools/extract_assets.py (see README.md)."
-fi
+# The extractor finds the exe itself (ski32.exe or ski32sounds.exe) and
+# says what's wrong when it can't.
+python3 tools/extract_assets.py \
+  || warn "Asset extraction failed (see above): the build will fail until originals/ holds your ski32.exe or ski32sounds.exe and tools/extract_assets.py succeeds (see README.md)."
+
 
 step "Agent skills"
 if command -v npx >/dev/null 2>&1; then

@@ -27,16 +27,19 @@ else
     set_list="$DEFAULT_SET"
     out="${1:-}"
 fi
-out="${out:-$(mktemp -d -t skifree-frames)}"
+out="${out:-$(mktemp -d "${TMPDIR:-/tmp}/skifree-frames.XXXXXX")}"
 
-[ -f dist/web-private/skifree.wasm ] || { echo "no private web build: run tools/build_web.sh --private" >&2; exit 1; }
+# Fresh builds on both sides, and no frames left from an earlier run.
+tools/build_web.sh --private >/dev/null
 cargo build --quiet
+target_dir=$(tools/target_dir.sh)
+rm -rf "$out/native" "$out/web"
 fail=0
 total=0
 while read -r scenario ticks; do
     [ -n "$scenario" ] || continue
     SKIFREE_REPLAY="replays/$scenario.json" SKIFREE_FRAMES="$out/native/$scenario" \
-        SKIFREE_FRAME_TICKS="$ticks" ./target/debug/skifree >/dev/null 2>&1
+        SKIFREE_FRAME_TICKS="$ticks" "$target_dir/debug/skifree" >/dev/null 2>&1
     node tools/web/capture_frames.mjs dist/web-private "$scenario" "$ticks" "$out/web/$scenario" >/dev/null
     for tick in ${ticks//,/ }; do
         total=$((total + 1))

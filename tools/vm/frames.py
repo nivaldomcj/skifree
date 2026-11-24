@@ -79,7 +79,10 @@ def compare(a_img, b_img, out_png):
 
 def main():
     out = sys.argv[1]
-    window = load_window(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[2] == "--window" else {}
+    if len(sys.argv) not in (2, 4) or (len(sys.argv) == 4 and sys.argv[2] != "--window"):
+        sys.exit(__doc__)
+    window_dir = sys.argv[3] if len(sys.argv) == 4 else None
+    window = load_window(window_dir) if window_dir else {}
     orig = load_orig(out)
     port = {}
     for line in open(os.path.join(out, "port_draw.jsonl")):
@@ -100,14 +103,18 @@ def main():
         side.paste(p, (o.width + 8, 0))
         side.save(os.path.join(out, f"side_{tick}.png"))
         print(f"tick {tick}: {compare(o, p, os.path.join(out, f'diff_{tick}.png'))}")
-        if tick in window:
-            win = window[tick]
-            win.save(os.path.join(out, f"win_{tick}.png"))
-            if win.size != o.size:
-                print(f"  window: size {win.size}")
-                continue
-            print(f"  window vs original:  {compare(o, win, os.path.join(out, f'diffwin_{tick}.png'))}")
-            print(f"  window vs composite: {compare(p, win, os.path.join(out, f'diffwc_{tick}.png'))}")
+        if window_dir is None:
+            continue
+        if tick not in window:
+            print("  window: missing window frame")
+            continue
+        win = window[tick]
+        win.save(os.path.join(out, f"win_{tick}.png"))
+        if win.size != o.size:
+            print(f"  window: size {win.size}")
+            continue
+        print(f"  window vs original:  {compare(o, win, os.path.join(out, f'diffwin_{tick}.png'))}")
+        print(f"  window vs composite: {compare(p, win, os.path.join(out, f'diffwc_{tick}.png'))}")
 
 
 if __name__ == "__main__":

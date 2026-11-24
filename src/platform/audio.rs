@@ -222,6 +222,7 @@ mod imp {
 
     type Pcm = c_void;
     const SND_PCM_STREAM_PLAYBACK: c_int = 0;
+    const SND_PCM_NONBLOCK: c_int = 1;
     const SND_PCM_FORMAT_U8: c_int = 1;
     const SND_PCM_FORMAT_S16_LE: c_int = 2;
     const SND_PCM_ACCESS_RW_INTERLEAVED: c_int = 3;
@@ -234,6 +235,8 @@ mod imp {
         writei: unsafe extern "C" fn(*mut Pcm, *const c_void, c_ulong) -> c_long,
         recover: unsafe extern "C" fn(*mut Pcm, c_int, c_int) -> c_int,
         drop: unsafe extern "C" fn(*mut Pcm) -> c_int,
+        nonblock: unsafe extern "C" fn(*mut Pcm, c_int) -> c_int,
+        close: unsafe extern "C" fn(*mut Pcm) -> c_int,
     }
 
     impl Alsa {
@@ -267,6 +270,8 @@ mod imp {
                     writei: sym!("snd_pcm_writei"),
                     recover: sym!("snd_pcm_recover"),
                     drop: sym!("snd_pcm_drop"),
+                    nonblock: sym!("snd_pcm_nonblock"),
+                    close: sym!("snd_pcm_close"),
                 })
             }
         }
@@ -327,9 +332,21 @@ mod imp {
         pub fn open() -> Option<Self> {
             let alsa = Alsa::load()?;
             let mut pcm: *mut Pcm = std::ptr::null_mut();
+            // Opened non-blocking: a busy device (another program holding
+            // it) fails at once instead of hanging the game at startup; the
+            // game then runs silent. The player thread needs blocking
+            // writes, so switch back once it is open.
             // SAFETY: snd_pcm_open writes the handle to a live local; the
             // device name is NUL-terminated.
-            if unsafe { (alsa.open)(&raw mut pcm, c"default".as_ptr(), SND_PCM_STREAM_PLAYBACK, 0) } < 0 {
+            if unsafe { (alsa.open)(&raw mut pcm, c"default".as_ptr(), SND_PCM_STREAM_PLAYBACK, SND_PCM_NONBLOCK) } < 0
+            {
+                return None;
+            }
+            // SAFETY: `pcm` is the handle just opened; on failure it is
+            // closed and never used again.
+            if unsafe { (alsa.nonblock)(pcm, 0) } < 0 {
+                // SAFETY: closes the handle just opened, used no further.
+                unsafe { (alsa.close)(pcm) };
                 return None;
             }
             let pcm = pcm as usize; // moved to the player thread

@@ -121,6 +121,8 @@ async function main() {
 
         const start = Date.now();
         while (!(await evaluate("!!(window.skifreeCapture && window.skifreeCapture.done)"))) {
+            const error = await evaluate("window.skifreeCapture && window.skifreeCapture.error");
+            if (error) throw new Error(`capture failed: ${error}`);
             if (Date.now() - start > TIMEOUT_MS) throw new Error("timed out waiting for the capture");
             await new Promise((r) => setTimeout(r, 250));
         }
@@ -140,6 +142,8 @@ async function main() {
             written++;
         }
         console.log(`${scenario}: ${written} frame(s) -> ${outDir}`);
+        const wanted = ticks.split(",").map((t) => t.trim()).filter(Boolean).length;
+        if (written < wanted) throw new Error(`${wanted - written} of ${wanted} frame(s) missing`);
         cdp.socket.close();
     } finally {
         const exited = new Promise((r) => chrome.once("exit", r));

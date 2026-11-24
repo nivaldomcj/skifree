@@ -1,6 +1,7 @@
 pub mod actor;
 pub mod assets;
 pub mod camera;
+pub mod cheat;
 pub mod collision;
 pub mod course;
 pub mod draw;

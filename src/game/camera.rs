@@ -26,11 +26,11 @@ impl Camera {
         self.cy = target_y;
     }
 
-    /// Center camera on the skier, applying discrete scroll steps
-    /// Mirrors the scroll logic in `FUN_00401e50`
-    pub fn follow(&mut self, target_x: i16, target_y: i16) -> ScrollSteps {
-        self.track(target_x, target_y);
-
+    /// The 0x3c scroll boundaries crossed since the last drain
+    /// (`FUN_00401e50`'s end-of-tick loops). It runs every tick, with or
+    /// without a player: on the tick the yeti eats the skier the camera has
+    /// already moved with him.
+    pub fn drain_steps(&mut self) -> ScrollSteps {
         let mut steps = ScrollSteps::default();
         while self.scroll_y > SCROLL_STEP {
             self.scroll_y -= SCROLL_STEP;
@@ -57,5 +57,20 @@ impl Camera {
         let sx = wx.wrapping_sub(self.cx).wrapping_add(screen_w / 2);
         let sy = wy.wrapping_sub(self.cy).wrapping_add(screen_h / 3);
         (sx, sy)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn steps_drain_without_a_new_track() {
+        // The catch tick: the camera moved with the skier, who is gone by
+        // the drain; the steps still come out.
+        let mut c = Camera::default();
+        c.track(0, 130);
+        assert_eq!(c.drain_steps(), ScrollSteps { down: 2, ..Default::default() });
+        assert_eq!(c.drain_steps(), ScrollSteps::default());
     }
 }

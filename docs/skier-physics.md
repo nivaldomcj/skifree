@@ -53,15 +53,16 @@ Each cardinal key is a discrete event:
 | Key | Action |
 |-----|--------|
 | **Down** (`0x28`/numpad2) | On the ground → **state 0** (ski straight down). In the air → cycle jump-trick poses (`0xd→0x13→0x12→0xd`, `0x14→0xe`, `0x15→0xf`). |
-| **Up** (`0x26`/numpad8) | On the ground → snowplow brake into state 9/10 with `vy = -4`. In the air → cycle trick poses the other way. |
+| **Up** (`0x26`/numpad8) | On the ground, only when stopped (`vy == 0`): from state 3, 7 or `0xc` → state 9, from 6 or 8 → state 10, with `vy = -4`. This is a sidestep about 10 units uphill (y −4, −3, −2, −1 as vy comes back to 0); it also gets a fallen skier (`0xc`) back up. While moving it does nothing, so holding Up walks uphill one step every 4 ticks. In the air → cycle trick poses the other way. |
 | **Left** (`0x25`/numpad4) | Step through `LEFT_TRANSITION`: `0→1→2→3→7`. Reaching state 7 also kicks `vx = max(vx - 8, -8)`. |
 | **Right** (`0x27`/numpad6) | Step through `RIGHT_TRANSITION`: `0→4→5→6→8`. Reaching state 8 also kicks `vx = min(vx + 8, 8)`. |
 
 The transition tables are stored interleaved at `DAT_0040a258` (8 bytes per
 state: LEFT u32 then RIGHT u32). States 0–6 are the direction fan (straight,
 slight/medium/hard left, slight/medium/hard right); 7 and 8 are hard-carve
-snaps that `update_skier` immediately settles back to 3 and 6; 9/10 are brake
-states; `0xb`/`0xc` are crash/stopped; `0xd`–`0x15` are jump/trick poses.
+snaps that `update_skier` immediately settles back to 3 and 6; 9/10 are the
+uphill sidestep, which also settles back to 3 and 6 on the same tick;
+`0xb`/`0xc` are crash/stopped; `0xd`–`0x15` are jump/trick poses.
 
 Diagonal keys set a skiing state directly (only on the ground):
 
@@ -79,6 +80,8 @@ The two jump triggers differ, and both are ported:
 - **Mouse click** (`FUN_004066d0`): on the ground → `vz = 4`, state `0xd`. In
   mid-air (and not in the flip state `0x11`) → cycles the trick poses
   (`0xd→0x12→0x13→0xd`, `0xe→0x14`, `0xf→0x15`). Does nothing while crashed.
+  Once the yeti has eaten the skier, a click starts a new game, like Enter
+  (it jumps to `FUN_00406500`).
 - **Keyboard** (Insert/numpad0, in `FUN_00406170`): `vz = 2`, state `0xd`, and
   scrubs downhill speed (`vy -= 4` when `vy > 4`).
 
@@ -107,10 +110,16 @@ relative to the skier's screen anchor (`dx = x − w/2`, `dy = y − h/3`):
 
 Every tick, after the skier's state update, the new state earns style points
 (byte table at `0x402b88`): pose `0x10` → +2, `0x12`/`0x13` → +4,
-`0x14`/`0x15` → +8. A landing that turns into a crash-landing (`0x11`, from
-the landing table) costs −64. Like all style points they only count while
-the freestyle course runs (`DAT_0040c954`). Holding a trick pose through a
-long jump is therefore worth a lot — and landing it badly costs a lot.
+`0x14`/`0x15` → +8. Like all style points they only count while the
+freestyle course runs (`DAT_0040c954`). Holding a trick pose through a long
+jump is therefore worth a lot.
+
+On touchdown the landing table (`0x40a434`) sends `0x0d`/`0x0e`/`0x0f` to
+0/3/6 and every other air state (the trick poses `0x10`, `0x12`–`0x15`, and
+the crash-landing `0x11`) to crash `0xb`. No entry is `0x11`, so the −64 /
+sound 1 branch at `0x402ad0` never runs, in the original or in the port.
+Every landing plays sound 4 and costs no style; landing in a trick pose only
+crashes the skier.
 
 ## Controls parity
 
@@ -124,14 +133,14 @@ the click that re-activates the window is swallowed (see
 
 | Input | Original | Port |
 |-------|----------|------|
-| ← → ↑ ↓ / numpad 4 6 8 2 | turn / brake / straight down | same |
+| ← → ↑ ↓ / numpad 4 6 8 2 | turn / step uphill / straight down | same |
 | numpad 1 3 7 9, Home End PgUp PgDn | direct diagonal states | same |
 | Insert / numpad0 | keyboard jump (vz=2) | same |
-| mouse move / click | steer / jump + tricks | same |
+| mouse move / click | steer / jump + tricks; a new game once the skier is gone | same |
 | F2 | restart anytime | same |
 | Enter | restart only once the skier is gone | same |
 | F3 | pause | same |
-| F, T, R, X, Y | fast-forward, step, repaint, teleport | same |
+| f, t, r (lowercase only); x/X, y/Y | fast-forward, step, repaint; teleport right/left, down/up (`WM_CHAR`, repeats while held) | same |
 | Esc | **minimize window** | mapped to **quit** (see note) |
 
 Note: the original maps Esc to `ShowWindow(hwnd, SW_MINIMIZE)`. The port maps

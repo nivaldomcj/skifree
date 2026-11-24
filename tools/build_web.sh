@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 usage() {
-    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
     exit 2
 }
 
@@ -41,7 +41,10 @@ else
 fi
 
 cargo build --locked --release --target wasm32-unknown-unknown ${features[@]+"${features[@]}"}
-wasm=target/wasm32-unknown-unknown/release/skifree.wasm
+# Where cargo put it: CARGO_TARGET_DIR and build.target-dir move target/.
+target_dir=$(tools/target_dir.sh)
+wasm="$target_dir/wasm32-unknown-unknown/release/skifree.wasm"
+[ -f "$wasm" ] || { echo "no $wasm after the build" >&2; exit 1; }
 
 # gl.js from the miniquad version in Cargo.lock (its loader must match the
 # crate), with its licence.
@@ -60,8 +63,15 @@ cp web/index.html web/skifree.js "$out/"
 cp "$miniquad_dir/js/gl.js" "$out/gl.js"
 cp "$miniquad_dir/LICENSE-MIT" "$out/gl.js.LICENSE-MIT"
 cp "$miniquad_dir/LICENSE-APACHE" "$out/gl.js.LICENSE-APACHE"
+# The fallback status font is CC BY-SA 4.0: its credit and licence ship too.
+mkdir -p "$out/fonts"
+cp resources/fonts/README.md resources/fonts/LICENSE.txt "$out/fonts/"
 if command -v wasm-opt >/dev/null 2>&1; then
-    wasm-opt -O2 "$wasm" -o "$out/skifree.wasm"
+    # strip = true drops the target_features section, so name the features
+    # rustc uses for wasm32-unknown-unknown; wasm-opt doesn't detect them.
+    wasm-opt -O2 --enable-bulk-memory --enable-nontrapping-float-to-int --enable-sign-ext \
+        --enable-mutable-globals --enable-reference-types --enable-multivalue \
+        "$wasm" -o "$out/skifree.wasm"
 else
     cp "$wasm" "$out/skifree.wasm"
 fi

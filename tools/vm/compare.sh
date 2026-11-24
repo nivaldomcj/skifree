@@ -23,24 +23,28 @@ SSH_DEST=${SKIFREE_VM_SSH:-$SKIFREE_VM_HOST}
 FRIDA_PY=${FRIDA_PY:-"$HOME/Library/Application Support/pipx/venvs/frida-tools/bin/python"}
 
 if [ "$1" = "--suite" ]; then
-    out=${2:?out-dir}; mkdir -p "$out"
+    out=${2:?out-dir}; mkdir -p "$out"; failed=
     # scenario:seconds (seconds cover the scenario's ticks at ~19 ticks/s
-    # under Frida; the whole suite takes ~16 minutes)
-    for entry in compare_vm:32 compare_steer:32 compare_size_640x480:34 \
-                 compare_size_1024x700:34 compare_slalom:66 \
+    # under Frida; the whole suite takes ~22 minutes)
+    for entry in compare_vm:42 compare_steer:42 compare_size_640x480:42 \
+                 compare_size_1024x700:42 compare_slalom:66 \
                  compare_tree_slalom:66 compare_slalom_timed:68 \
                  compare_tree_slalom_timed:68 compare_freestyle:68 \
                  compare_mouse:68 compare_restart:40 compare_focus:40 compare_resize:42 \
                  compare_monster:72 compare_sounds:42 \
+                 compare_crash_landing:32 compare_collision_order:50 \
+                 compare_cheats:34 compare_step:56 compare_catch:175 \
                  compare_long:240; do
         name=${entry%%:*}; secs=${entry#*:}
         echo "== $name"
-        "$0" "replays/$name.json" "$out/$name" "$secs"
+        "$0" "replays/$name.json" "$out/$name" "$secs" || failed="$failed $name"
     done
+    [ -z "$failed" ] || { echo "diverged:$failed"; exit 1; }
     exit 0
 fi
 
 scenario=$1; prefix=$2; secs=${3:-30}
+seed=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1])).get('seed', 0))" "$scenario")
 size=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print('%dx%d' % (d.get('screen_w', 640), d.get('screen_h', 480)))" "$scenario")
 python3 tools/vm/scenario_inputs.py "$scenario" > "$prefix.inputs.js"
 ssh -o BatchMode=yes "$SSH_DEST" 'taskkill /f /im ski32-autoplay.exe' >/dev/null 2>&1 || true
@@ -49,7 +53,10 @@ ssh -o BatchMode=yes "$SSH_DEST" 'taskkill /f /im ski32-autoplay.exe' >/dev/null
     tools/vm/fixed_clock.js tools/vm/no_dialogs.js "$prefix.inputs.js" > "$prefix.orig.txt" 2>&1
 cargo build -q --features rng_sites --bin replay
 SKIFREE_LOG_RNG=1 ./target/debug/replay "$scenario" 2> "$prefix.port_rng.txt" > "$prefix.port.jsonl"
-python3 tools/vm/rng_align.py "$prefix.orig.txt" "$prefix.port_rng.txt" 10
-python3 tools/vm/player_align.py "$prefix.orig.txt" "$prefix.port.jsonl" 6
-python3 tools/vm/status_align.py "$prefix.orig.txt" "$prefix.port.jsonl" || true
-python3 tools/vm/sound_align.py "$prefix.orig.txt" "$prefix.port.jsonl" || true
+# Every report prints; any divergence (or an empty trace) fails the run.
+rc=0
+python3 tools/vm/rng_align.py "$prefix.orig.txt" "$prefix.port_rng.txt" 10 "$seed" || rc=1
+python3 tools/vm/player_align.py "$prefix.orig.txt" "$prefix.port.jsonl" 6 || rc=1
+python3 tools/vm/status_align.py "$prefix.orig.txt" "$prefix.port.jsonl" || rc=1
+python3 tools/vm/sound_align.py "$prefix.orig.txt" "$prefix.port.jsonl" || rc=1
+exit $rc

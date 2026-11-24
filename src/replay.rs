@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+use crate::game::cheat::Cheat;
 use crate::game::state::GameState;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -63,6 +64,13 @@ pub enum InputKind {
     Resize {
         w: i16,
         h: i16,
+    },
+    /// A cheat key (`WM_CHAR`, `FUN_00406780`): `x`/`X` move the skier
+    /// right/left, `y`/`Y` down/up, `t` runs one tick on the spot (that
+    /// tick's record is the stepped one, which takes the timer's place),
+    /// `r` repaints. `f` is [`InputKind::FastForward`].
+    Cheat {
+        key: char,
     },
 }
 
@@ -147,7 +155,10 @@ pub const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 
 /// Feed the scenario's inputs for `tick` to the game, like the original's
 /// window procedure would before that main tick.
-pub fn apply_inputs(game: &mut GameState, scenario: &Scenario, tick: u32) {
+///
+/// Returns whether a `t` cheat stepped the game: that step is this tick.
+pub fn apply_inputs(game: &mut GameState, scenario: &Scenario, tick: u32) -> bool {
+    let mut stepped = false;
     for input in scenario.inputs.iter().filter(|i| i.tick == tick) {
         // The original's window procedure drops keyboard and mouse
         // messages while the window is inactive (DAT_0040c67c).
@@ -160,13 +171,21 @@ pub fn apply_inputs(game: &mut GameState, scenario: &Scenario, tick: u32) {
             InputKind::Jump => game.jump_keyboard(),
             InputKind::Click => game.click(),
             InputKind::Mouse { x, y } => game.mouse_move(*x, *y),
-            InputKind::FastForward => game.fast_forward = !game.fast_forward,
+            InputKind::FastForward => {
+                game.cheat(Cheat::FastForward, || scenario.delta_ms);
+            }
             InputKind::Restart => game.new_game(),
             InputKind::Pause => game.toggle_pause(),
             InputKind::Focus { active } => game.set_active(*active),
             InputKind::Resize { w, h } => game.resize(*w, *h),
+            InputKind::Cheat { key } => {
+                if let Some(cheat) = Cheat::from_char(*key) {
+                    stepped |= game.cheat(cheat, || scenario.delta_ms);
+                }
+            }
         }
     }
+    stepped
 }
 
 pub fn run_scenario(scenario: &Scenario) -> Vec<TickRecord> {
@@ -192,9 +211,9 @@ pub fn run_scenario_observed(
     let mut hash = FNV_OFFSET_BASIS;
 
     for tick in 0..scenario.ticks {
-        apply_inputs(&mut game, scenario, tick);
-
-        game.tick(scenario.delta_ms);
+        if !apply_inputs(&mut game, scenario, tick) {
+            game.tick(scenario.delta_ms);
+        }
 
         let player = game.player_idx.and_then(|idx| {
             game.pool.get(idx).map(|a| PlayerSnapshot {

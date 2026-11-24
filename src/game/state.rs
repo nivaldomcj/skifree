@@ -1,5 +1,4 @@
 use super::actor::ActorPool;
-use super::camera;
 use super::collision;
 use super::course;
 use super::course::Course;
@@ -14,6 +13,16 @@ use super::sound::Sound;
 use super::state_table::STATE_TO_SPRITE;
 use super::types::Camera;
 use super::types::{Actor, ActorClass, CourseRun, FinishRecord, SpawnEvent, SpawnRequest};
+
+/// What the collision pass's "moved this tick" test compares: position,
+/// class and sprite at the start of the tick.
+type MovedSnapshot = (i16, i16, i16, ActorClass, u16);
+
+/// What the collision pass's "moved this tick" test compares (the original's
+/// flag 0x20: set on a position change and on a sprite change).
+fn moved_snapshot(a: &Actor) -> MovedSnapshot {
+    (a.x, a.y, a.z, a.class, a.sprite_id)
+}
 
 /// Central game state — replaces all the original's global variables
 #[expect(clippy::struct_excessive_bools, reason = "the original's global flags, one field each")]
@@ -46,6 +55,16 @@ pub struct GameState {
     pub high_scores: crate::game::scoring::HighScores,
     /// The most recent finish, for the high-score display.
     pub last_finish: Option<FinishRecord>,
+    /// Every finish since the scores were last saved (`rank_finish_in`):
+    /// the original saves each one (`FUN_00402ec0` runs once per finish).
+    unsaved_finishes: Vec<FinishRecord>,
+    /// Sprite area the original's density sum `DAT_0040c6fc` keeps after a
+    /// collision removes an actor (a collected rock, the eaten skier):
+    /// `FUN_00401350` never subtracts it, only a new game resets the sum.
+    pub removed_area: i32,
+    /// Game time when the timer last stopped (`DAT_0040c600`), to take the
+    /// T steps made while stopped back off the course clock at the restart.
+    pause_ref_ms: u32,
     /// A finish just happened: the platform shows the high-score message
     /// box (`FUN_00402ec0`'s `MessageBoxA`) and clears this.
     pub show_high_scores: bool,
@@ -119,6 +138,9 @@ impl GameState {
             pending_score_save: false,
             high_scores: crate::game::scoring::HighScores::default(),
             last_finish: None,
+            removed_area: 0,
+            pause_ref_ms: 0,
+            unsaved_finishes: Vec::new(),
             show_high_scores: false,
             elapsed_ms: 0,
             wall_ms: 0,
@@ -175,6 +197,7 @@ impl GameState {
         // FUN_00404970 re-seeds on every new game, F2 restarts included.
         self.rng = Rng::new(self.fixed_seed.unwrap_or_else(clock_seed));
         self.pool = ActorPool::new();
+        self.removed_area = 0; // 0x404998
         self.scoring = Scoring::new();
         self.fast_forward = false;
         // F2 unpauses (FUN_00406500 -> FUN_00405760) and the new game starts
@@ -188,6 +211,7 @@ impl GameState {
         self.course_clock_ms = 0;
         self.pending_score_save = false;
         self.last_finish = None;
+        self.unsaved_finishes.clear();
         self.show_high_scores = false;
         self.camera = Camera::default();
 
@@ -312,12 +336,13 @@ impl GameState {
         // they cannot re-materialize within the same tick.
         let mut spawn_requests: Vec<SpawnRequest> = Vec::new();
         let mut unlinked_events: Vec<usize> = Vec::new();
-        // Positions at the start of the tick, for the collision pass's
-        // "moved this tick" test (the original's flag 0x20, cleared in this
-        // loop and set by FUN_00402390 on any position change). Actors
-        // created during the tick count as moved.
-        let start_pos: Vec<Option<(i16, i16, i16, ActorClass)>> =
-            (0..100).map(|i| self.pool.get(i).map(|a| (a.x, a.y, a.z, a.class))).collect();
+        // Positions and sprites at the start of the tick, for the collision
+        // pass's "moved this tick" test: the original's flag 0x20, cleared in
+        // this loop and set by FUN_00402390 on a position change and by
+        // FUN_00402180 on a sprite change. Actors created during the tick
+        // count as moved. Every pool slot, node slots included.
+        let start_pos: Vec<Option<MovedSnapshot>> =
+            (0..self.pool.slots()).map(|i| self.pool.get(i).map(moved_snapshot)).collect();
         // Previous-position copies for the collision crossing test.
         for idx in self.pool.active_indices() {
             if let Some(a) = self.pool.get_mut(idx) {
@@ -382,19 +407,19 @@ impl GameState {
                     clippy::match_same_arms,
                     reason = "proxies update in their own pass below; classes >= 0xb never do"
                 )]
-                ActorClass::AmbientMob
-                | ActorClass::MonsterLeft
-                | ActorClass::MonsterRight
-                | ActorClass::MonsterTop
-                | ActorClass::MonsterBottom => {}
-                ActorClass::Eating => {
+                ActorClass::LiftChair
+                | ActorClass::MonsterUphill
+                | ActorClass::MonsterDownhill
+                | ActorClass::MonsterLeftEdge
+                | ActorClass::MonsterRightEdge => {}
+                ActorClass::BurningTree => {
                     if let Some(actor) = self.pool.get_mut(idx) {
-                        mob::update_eating(actor, self.fast_forward);
+                        mob::update_burning_tree(actor, self.fast_forward);
                     }
                 }
-                ActorClass::Lift => {
+                ActorClass::WalkingTree => {
                     if let Some(actor) = self.pool.get_mut(idx) {
-                        mob::update_lift(actor, &mut self.rng, self.fast_forward);
+                        mob::update_walking_tree(actor, &mut self.rng, self.fast_forward);
                     }
                 }
                 // Classes >= 0xb get no behavior update in the original
@@ -445,7 +470,7 @@ impl GameState {
             self.screen_w,
             self.screen_h,
             &self.sprite_dims,
-            &|idx, a| start_pos.get(idx).copied().flatten() != Some((a.x, a.y, a.z, a.class)),
+            &|idx, a| start_pos.get(idx).copied().flatten() != Some(moved_snapshot(a)),
             &|a| !a.class.is_mob_node() || a.flags.on_screen,
         );
 
@@ -461,38 +486,22 @@ impl GameState {
                     if let Some(monster) = self.pool.get_mut(monster_idx) {
                         monster::eat_skier(monster, self.wall_ms);
                     }
+                    self.leak_area(player_idx);
                     self.pool.free(player_idx);
                     self.player_idx = None;
                 }
             }
-            if result.skier_crash {
-                if let Some(player_idx) = self.player_idx {
-                    if let Some(actor) = self.pool.get_mut(player_idx) {
-                        physics::change_state(actor, 0x0b);
-                    }
-                }
-            }
-            if let Some(state) = result.skier_state {
-                if let Some(player_idx) = self.player_idx {
-                    if let Some(actor) = self.pool.get_mut(player_idx) {
-                        physics::change_state(actor, state);
-                    }
-                }
-            }
             if let Some(idx) = result.free_actor {
+                self.leak_area(idx);
                 self.pool.free(idx);
             }
         }
 
-        // Update camera to follow player; each 0x3c of travel spawns one
-        // actor at the entering edge (FUN_004025c0), in the original's
-        // order: bottom, top, right, left.
-        let mut steps = camera::ScrollSteps::default();
-        if let Some(player_idx) = self.player_idx {
-            if let Some(player) = self.pool.get(player_idx) {
-                steps = self.camera.follow(player.x, player.y);
-            }
-        }
+        // The camera moved with the player during its update (track); each
+        // 0x3c of that travel spawns one actor at the entering edge
+        // (FUN_004025c0), in the original's order: bottom, top, right, left.
+        // Drained every tick, even the one the skier was eaten in.
+        let steps = self.camera.drain_steps();
         for (edge, count) in [
             (populator::Edge::Bottom, steps.down),
             (populator::Edge::Top, steps.up),
@@ -500,16 +509,18 @@ impl GameState {
             (populator::Edge::Left, steps.left),
         ] {
             for _ in 0..count {
-                // DAT_0040c6fc sums live actors only: off-screen proxies
-                // are bare mob nodes in the original and do not count.
-                let weight = populator::sprite_weight(
-                    self.pool
-                        .active_indices()
-                        .into_iter()
-                        .filter(|&i| !self.is_proxy(i) || self.pool.get(i).is_some_and(|a| a.flags.on_screen))
-                        .filter_map(|i| self.pool.get(i)),
-                    &self.sprite_dims,
-                );
+                // DAT_0040c6fc: live actors (off-screen proxies are bare mob
+                // nodes in the original and don't count), plus the areas the
+                // original never subtracts (`removed_area`).
+                let weight = self.removed_area
+                    + populator::sprite_weight(
+                        self.pool
+                            .active_indices()
+                            .into_iter()
+                            .filter(|&i| !self.is_proxy(i) || self.pool.get(i).is_some_and(|a| a.flags.on_screen))
+                            .filter_map(|i| self.pool.get(i)),
+                        &self.sprite_dims,
+                    );
                 if let Some(req) =
                     populator::pick_spawn(edge, &self.camera, self.screen_w, self.screen_h, weight, &mut self.rng)
                 {
@@ -520,13 +531,19 @@ impl GameState {
 
         // Random crossing-skier spawn, 1-in-666 per tick (FUN_00401e50 tail):
         // class 3 state 0x1f entering above the viewport's top edge at a
-        // random x across the window (FUN_00402350 direction 2), so it
-        // overtakes the player from behind. The original's Win32 window-frame
-        // offsets (DAT_0040c704/DAT_0040c5fc) are 0 in the port's camera
-        // model, which tracks the viewport center.
+        // random x across the window (FUN_004024f0 direction 2, the populator's
+        // edge position), so it overtakes the player from behind. The view
+        // anchor DAT_0040c704/DAT_0040c5fc is (w/2, h/3) from FUN_00406060,
+        // as in the port's camera; the client-rect origin
+        // DAT_0040c6b0/DAT_0040c6b4 it adds is always 0.
         if self.rng.rand_range(0x29a) == 0 {
-            let x = self.camera.cx - self.screen_w / 2 + self.rng.rand_range(self.screen_w as u16) as i16;
-            let y = self.camera.cy - self.screen_h / 3 - 0x3c;
+            let (x, y) = populator::edge_position(
+                populator::Edge::Top,
+                &self.camera,
+                self.screen_w,
+                self.screen_h,
+                &mut self.rng,
+            );
             self.fulfill_spawn(SpawnRequest {
                 class: ActorClass::CrossingSkier,
                 state: Some(0x1f),
@@ -629,12 +646,10 @@ impl GameState {
                 let clock = self.course_clock_ms.max(0) as u64;
                 // High-score entry (FUN_00402ec0): time for slalom/giant
                 // slalom, style for freestyle.
-                let rank = if c == Course::Freestyle {
-                    self.high_scores.insert_style(self.scoring.score)
-                } else {
-                    self.high_scores.insert_time(c, clock)
-                };
-                self.last_finish = Some(FinishRecord { course: c, ms: clock, style: self.scoring.score, rank });
+                let rank = self.high_scores.insert(c, clock, self.scoring.score);
+                let finish = FinishRecord { course: c, ms: clock, style: self.scoring.score, rank };
+                self.last_finish = Some(finish);
+                self.unsaved_finishes.push(finish);
                 self.pending_score_save = true;
                 self.show_high_scores = true;
                 // The skier stands after finishing (FUN_00402e80), unless
@@ -753,7 +768,7 @@ impl GameState {
         }
     }
 
-    /// Proxy classes (4-8): ambient mobs and monsters, which the original
+    /// Proxy classes (4-8): chairlift chairs and monsters, which the original
     /// runs as mob nodes with an actor only while on screen.
     fn is_proxy(&self, idx: usize) -> bool {
         self.pool.get(idx).is_some_and(|a| a.class.is_mob_node())
@@ -791,17 +806,30 @@ impl GameState {
         }
     }
 
-    /// `FUN_004057c0`: kill the game timer. The course clock needs no
-    /// compensation here: `elapsed_ms` doesn't advance while stopped, which
-    /// is what `FUN_00404ad0`'s shift of `DAT_0040c948` achieves in the original.
+    /// `FUN_004057c0`: kill the game timer, noting the game time it stopped
+    /// at (`DAT_0040c600`).
     fn stop_timer(&mut self) {
+        if self.timer_running {
+            self.pause_ref_ms = self.elapsed_ms;
+        }
         self.timer_running = false;
     }
 
     /// `FUN_00404ad0`: restart the game timer, unless it runs or F3 paused it.
+    /// `elapsed_ms` stands still while stopped, so the course clock skips the
+    /// pause by itself; the original also shifts the course start
+    /// (`DAT_0040c948`) by the time the T steps added while stopped, so the
+    /// clock drops back to where it stood at the pause.
     fn resume_timer(&mut self) {
         if !self.timer_running && !self.paused {
             self.timer_running = true;
+            let stepped = i64::from(self.elapsed_ms.wrapping_sub(self.pause_ref_ms));
+            for c in Course::ALL {
+                if c.is_timed() && self.courses[c.index()].active {
+                    self.courses[c.index()].start_ms += stepped;
+                }
+            }
+            self.pause_ref_ms = self.elapsed_ms;
         }
     }
 
@@ -812,7 +840,7 @@ impl GameState {
     /// padded viewport (nodes carry the empty sprite-table entry 0, 0x0 —
     /// verified via Frida). The live actor persists until the cull pass
     /// drops it by its real sprite box. Nodes are visited in world-build
-    /// order: ambient mobs, then monsters.
+    /// order: chairlift chairs, then monsters.
     fn update_proxies(&mut self) {
         let nodes: Vec<usize> =
             self.spawn_events.iter().filter(|e| (4..=8).contains(&e.class)).filter_map(|e| e.actor_idx).collect();
@@ -823,14 +851,14 @@ impl GameState {
                 match actor.class {
                     // The original rolls only while the node has a live actor
                     // ([node+0] != 0 in FUN_00404290).
-                    ActorClass::AmbientMob => {
+                    ActorClass::LiftChair => {
                         let live = actor.flags.on_screen;
-                        request = mob::update_ambient(actor, &mut self.rng, live);
+                        request = mob::update_lift_chair(actor, &mut self.rng, live);
                     }
-                    ActorClass::MonsterLeft
-                    | ActorClass::MonsterRight
-                    | ActorClass::MonsterTop
-                    | ActorClass::MonsterBottom => {
+                    ActorClass::MonsterUphill
+                    | ActorClass::MonsterDownhill
+                    | ActorClass::MonsterLeftEdge
+                    | ActorClass::MonsterRightEdge => {
                         monster::update_monster(
                             actor,
                             player.as_ref(),
@@ -875,7 +903,7 @@ impl GameState {
                 continue; // already spawned
             }
 
-            // Proxy classes (4-8: ambient mobs, monsters) are allocated from
+            // Proxy classes (4-8: chairlift chairs, monsters) are allocated from
             // world build: in the original their mob nodes update (drift,
             // wrap, roll RNG) globally wherever the player is; whether they
             // count as "on screen" is decided per tick by in_padded_view.
@@ -904,7 +932,7 @@ impl GameState {
                         actor.x = event.x;
                         actor.y = event.y;
                         actor.z = event.z;
-                        if class == ActorClass::AmbientMob {
+                        if class == ActorClass::LiftChair {
                             // param carries the proxy's initial vy (-2/+2)
                             actor.vy = event.param;
                         }
@@ -924,6 +952,34 @@ impl GameState {
                     event.actor_idx = Some(idx);
                 }
             }
+        }
+    }
+
+    /// `FUN_00402ec0` re-reads the stored high scores at every finish
+    /// (0x402f09) and ranks the finish in that table, not in one kept from
+    /// startup, so another instance's scores survive. `stored` is that
+    /// table; the platform layer reads it and saves the result. Every finish
+    /// since the last save goes in, in order (two can land in one frame),
+    /// and the last one's rank is the one the box shows.
+    pub fn rank_finish_in(&mut self, stored: crate::game::scoring::HighScores) {
+        if self.unsaved_finishes.is_empty() {
+            return;
+        }
+        self.high_scores = stored;
+        let mut rank = None;
+        for f in std::mem::take(&mut self.unsaved_finishes) {
+            rank = self.high_scores.insert(f.course, f.ms, f.style);
+        }
+        if let Some(last) = self.last_finish.as_mut() {
+            last.rank = rank;
+        }
+    }
+
+    /// Keep actor `idx`'s area in the density sum: the original removes it
+    /// from the world but not from `DAT_0040c6fc`.
+    fn leak_area(&mut self, idx: usize) {
+        if let Some(a) = self.pool.get(idx) {
+            self.removed_area += populator::sprite_weight(std::iter::once(a), &self.sprite_dims);
         }
     }
 
@@ -974,19 +1030,45 @@ impl GameState {
         self.player_idx.is_some()
     }
 
-    /// Handle click (`FUN_004066d0`): jump on the ground, cycle tricks mid-air.
+    /// Handle click (`FUN_004066d0`): with no skier (eaten) it starts a new
+    /// game like Enter (it jumps to `FUN_00406500`); otherwise it jumps on
+    /// the ground and cycles tricks mid-air.
     pub fn click(&mut self) {
-        if let Some(actor) = self.player_mut() {
-            skier::click(actor);
+        match self.player_mut() {
+            Some(actor) => skier::click(actor),
+            None => self.new_game(),
         }
     }
 
-    /// The X/Y teleport cheat: move the skier by (dx, dy), wrapping like the
-    /// original's 16-bit position.
+    /// A cheat key (`FUN_00406780`). `step_ms` gives the time a `t` step
+    /// runs for, read only for a step. Returns whether it stepped.
+    pub fn cheat(&mut self, cheat: super::cheat::Cheat, step_ms: impl FnOnce() -> u32) -> bool {
+        use super::cheat::Cheat;
+        match cheat {
+            Cheat::Teleport(dx, dy) => self.teleport(dx, dy),
+            Cheat::FastForward => self.fast_forward = !self.fast_forward,
+            // The port repaints every frame.
+            Cheat::Repaint => {}
+            Cheat::Step => {
+                self.step_tick(step_ms());
+                return true;
+            }
+        }
+        false
+    }
+
+    /// The x/X/y/Y teleport cheat: move the skier by (dx, dy), wrapping like
+    /// the original's 16-bit position.
     pub fn teleport(&mut self, dx: i16, dy: i16) {
         if let Some(actor) = self.player_mut() {
             actor.x = actor.x.wrapping_add(dx);
             actor.y = actor.y.wrapping_add(dy);
+            let (x, y) = (actor.x, actor.y);
+            // FUN_00402390 -> FUN_00402470: the camera jumps with the skier
+            // between ticks, outside FUN_00401e50's scroll accounting, so a
+            // teleport spawns nothing.
+            self.camera.cx = x;
+            self.camera.cy = y;
         }
     }
 }
@@ -1145,6 +1227,85 @@ mod tests {
     }
 
     #[test]
+    fn a_finish_is_ranked_in_the_stored_table() {
+        // FUN_00402ec0 ranks against the table it re-reads, so another
+        // instance's better time pushes this one down.
+        let mut g = game_with_player();
+        let first = FinishRecord { course: Course::Freestyle, ms: 0, style: 120, rank: Some(0) };
+        let last = FinishRecord { course: Course::TreeSlalom, ms: 5000, style: 120, rank: Some(0) };
+        g.unsaved_finishes = vec![first, last];
+        g.last_finish = Some(last);
+        let mut stored = crate::game::scoring::HighScores::default();
+        stored.insert_time(Course::TreeSlalom, 4000);
+        g.rank_finish_in(stored);
+        assert_eq!(g.last_finish.map(|f| f.rank), Some(Some(1)));
+        assert_eq!(g.high_scores.giant_slalom_ms, vec![4000, 5000]);
+        // Two finishes before a save (cheats can do it): both are kept.
+        assert_eq!(g.high_scores.freestyle_style, vec![120]);
+        assert_eq!(g.unsaved_finishes, []);
+    }
+
+    #[test]
+    fn click_without_a_skier_starts_a_new_game() {
+        // FUN_004066d0 jumps to FUN_00406500 when the skier is gone.
+        let mut g = game_with_player();
+        for _ in 0..5 {
+            g.tick(40);
+        }
+        let idx = g.player_idx.take().unwrap();
+        g.pool.free(idx);
+        g.click();
+        assert!(g.has_player());
+        assert_eq!(g.tick_count, 0);
+    }
+
+    #[test]
+    fn teleport_moves_the_camera_without_scrolling() {
+        // FUN_00402390 -> FUN_00402470: the camera jumps with the skier,
+        // outside the scroll accounting, so the jump spawns nothing.
+        let mut g = game_with_player();
+        let scroll = (g.camera.scroll_x, g.camera.scroll_y);
+        for _ in 0..31 {
+            g.teleport(2, 2);
+        }
+        let p = g.pool.get(g.player_idx.unwrap()).unwrap();
+        assert_eq!((g.camera.cx, g.camera.cy), (p.x, p.y));
+        assert_eq!((g.camera.scroll_x, g.camera.scroll_y), scroll);
+    }
+
+    #[test]
+    fn removed_actors_stay_in_the_density_sum_until_a_new_game() {
+        let mut g = game_with_player();
+        g.sprite_dims = vec![(8, 11); 100];
+        let rock = g.pool.alloc_with_sprite(ActorClass::Rock, 0x56).unwrap();
+        g.leak_area(rock);
+        g.pool.free(rock);
+        assert_eq!(g.removed_area, 88);
+        g.new_game();
+        assert_eq!(g.removed_area, 0, "0x404998 resets the sum");
+    }
+
+    #[test]
+    fn t_steps_during_a_pause_come_off_the_course_clock() {
+        // FUN_00404ad0 shifts the course start by the time since the pause
+        // (DAT_0040c600), T steps included.
+        let mut g = game_with_player();
+        g.tick(40);
+        let p = g.player_idx.unwrap();
+        g.pool.get_mut(p).unwrap().y = 0x300; // past the start line
+        g.courses[0].active = true;
+        g.courses[0].start_ms = i64::from(g.elapsed_ms);
+        g.tick(40);
+        assert_eq!(g.course_clock_ms, 40);
+        g.toggle_pause();
+        g.step_tick(5000);
+        assert_eq!(g.course_clock_ms, 5040, "the step shows while paused");
+        g.toggle_pause();
+        g.tick(47);
+        assert_eq!(g.course_clock_ms, 87, "the restart takes the step back off");
+    }
+
+    #[test]
     fn click_crashed_does_nothing() {
         let mut g = game_with_player();
         let idx = g.player_idx.unwrap();
@@ -1275,7 +1436,7 @@ mod tests {
     }
 
     #[test]
-    fn ambient_spawn_event_applies_initial_vy() {
+    fn lift_chair_spawn_event_applies_initial_vy() {
         let mut g = GameState::new_seeded(640, 480, 1);
         g.spawn_events.push(SpawnEvent {
             actor_idx: None,
@@ -1293,8 +1454,8 @@ mod tests {
             .active_indices()
             .into_iter()
             .filter_map(|i| g.pool.get(i))
-            .find(|a| a.class == ActorClass::AmbientMob)
-            .expect("ambient mob materialized");
+            .find(|a| a.class == ActorClass::LiftChair)
+            .expect("chairlift chair materialized");
         assert_eq!(mob.vy, -2);
         assert_eq!(mob.z, 0x20);
         // It drifted up this tick (proxy integration, no gravity).

@@ -2,14 +2,14 @@
 """Align the original's rand() calls with the port's, call by call.
 
 Usage:
-  rng_align.py <original-run.txt> <port-rng-log.txt> [context]
+  rng_align.py <original-run.txt> <port-rng-log.txt> [context] [seed]
 
 <original-run.txt>: output of spawn_locked.py with trace_ticks.js +
 trace_rand.js. <port-rng-log.txt>: stderr of
   SKIFREE_LOG_RNG=1 cargo run --features rng_sites --bin replay -- replays/compare_vm.json
 
 Every original call's post-call LCG state is mapped to its stream index
-(seed 0), so the two sides are compared by stream position: same index,
+from the scenario's seed (default 0; compare.sh passes it), so the two sides are compared by stream position: same index,
 same modulus. Prints the first divergence with surrounding context: the
 original's caller address (tick = main-tick call index, = port tick) next to
 the port's file:line.
@@ -18,7 +18,7 @@ import ast
 import sys
 
 
-def original_calls(path):
+def original_calls(path, seed=0):
     calls, ticks = [], 0
     for line in open(path):
         line = line.strip()
@@ -34,7 +34,7 @@ def original_calls(path):
             # Prefer the main-tick index; older captures only have the
             # integrated-tick count (which stalls while the skier is crashed).
             calls.append((d.get("call", ticks), d["ra"], d["n"], d["s"]))
-    need, idx, s = {c[3] for c in calls}, {}, 0
+    need, idx, s = {c[3] for c in calls}, {}, seed
     for i in range(1, 50_000_000):
         s = (s * 214013 + 2531011) % 2**32
         if s in need:
@@ -57,8 +57,12 @@ def main():
     if len(sys.argv) < 3:
         sys.exit(__doc__)
     ctx = int(sys.argv[3]) if len(sys.argv) > 3 else 10
-    o, p = original_calls(sys.argv[1]), port_calls(sys.argv[2])
+    seed = int(sys.argv[4]) if len(sys.argv) > 4 else 0
+    o, p = original_calls(sys.argv[1], seed), port_calls(sys.argv[2])
     print(f"original calls: {len(o)}  port calls: {len(p)}")
+    if not o:
+        print("the original's trace has no rand() calls")
+        return 1
     # Walk both logs. Calls the original makes inside an injected input
     # handler (an F2 world rebuild) are invisible to trace_rand.js — Frida
     # does not fire hooks for calls made from inside a hook callback. Those
@@ -86,7 +90,7 @@ def main():
         break
     if i >= len(o) or j >= len(p):
         print(f"identical for all {i} common calls" + (f" (+{hidden} verified by stream position)" if hidden else ""))
-        return
+        return 0
     print(f"first divergence at original call {i} / port call {j}")
     for d in range(-ctx, ctx):
         a, b = i + d, j + d
@@ -96,7 +100,8 @@ def main():
         _, pn, site = p[b]
         mark = ">>" if d == 0 else "  "
         print(f"{mark}{a:5d} | orig t{t:<4} {ra} n={on:<5} | port n={pn:<5} {site}")
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

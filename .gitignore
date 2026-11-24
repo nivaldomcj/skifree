@@ -5,15 +5,16 @@ __pycache__/
 # Original game binaries — private property (Microsoft / Chris Pirih).
 # Supply your own copies here; never committed. See README.md.
 /originals
+# Never commit a copy left outside originals/ by mistake (any case:
+# core.ignorecase is false on Linux).
+*.[eE][xX][eE]
+*.[zZ][iI][pP]
+*.[fF][oO][nN]
 
 # Assets extracted from ski32.exe — derived copyrighted content, regenerated
 # by tools/extract_assets.py. assets/README.md (instructions) stays tracked.
-assets/sprites/
-assets/icons/
-assets/fonts/
-assets/sounds/
-assets/strings.json
-assets/meta.json
+/assets/*
+!/assets/README.md
 .DS_Store
 dist/
 

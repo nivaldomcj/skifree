@@ -15,12 +15,12 @@ src/
   bin/replay.rs     # CLI: run a scenario, print/check/update golden logs
   game/             # pure game logic — macroquad-free, fully deterministic
     state.rs        # GameState: actor pool, tick loop, input entry points
-    actor.rs        # 100-slot actor pool (free list), mirrors FUN_00404a00
+    actor.rs        # actor pool (free list): the original's 100 + mob-node slots
     types.rs        # Actor, ActorClass, SpawnEvent, Camera, CourseType
     physics.rs      # integrator (FUN_00402be0) + steering (FUN_00403430)
     skier.rs        # skier state machine + steering (FUN_00406170)
     monster.rs      # yeti (FUN_004041c0 + FUN_00404350)
-    mob.rs          # dog/snowboarder/obstacle/ambient/lift/eating
+    mob.rs          # dog/snowboarder/crossing skier/lift chair/walking + burning tree
     course.rs       # course + spawn-event generation (FUN_00404b50)
     collision.rs    # actor collision (FUN_00403a00 subset)
     rng.rs          # MSVC LCG (FUN_00406cda), with call counter
@@ -73,19 +73,22 @@ cargo run --bin replay -- replays/descend.json --update-golden replays/golden/de
   assert `STATE_TO_SPRITE`, `SKIER_PHYSICS`, `LEFT/RIGHT_TRANSITION`,
   `CRASH_LANDING`, dog/snowboarder physics byte-for-byte. (These need a local
   `ski32.exe`; see "Copyrighted files" below.)
-- **Level 2 — deterministic replay.** Golden logs + invariants (pool ≤ 100,
-  RNG monotonic, run-to-run identical).
+- **Level 2 — deterministic replay.** Golden logs, plus sanity checks (≤ 100
+  live actors, off-screen mob nodes excluded; run-to-run identical) that add
+  little beyond the golden comparison until a golden is regenerated.
 - **Level 3 — visual playtest** against the original (Wine/VM). Not done yet.
 
 ## Recovered model highlights
 
 - **Units:** positions/velocities in **1/16-meter** units; one tick = the 40 ms
   timer (ID 666) as Windows delivers it, every 46.875 ms (≈ 21.3/s;
-  replays use a fixed 40 ms). Freestyle course is `0x21c0` units ≈ 540 m.
+  replays use a fixed 40 ms). Slalom course is `0x21c0` units = 540 m; tree
+  slalom and freestyle are `0x4100` = 1040 m.
 - **Actor struct (80 bytes):** `next=+0x00, class=+0x18, state=+0x1c,
   x=+0x40, y=+0x42, z=+0x44, vx=+0x46, vy=+0x48, vz=+0x4a, flags=+0x4c`.
-- **Mover proxy struct (monsters + ambient mobs):** `class=+0xc, state=+0x10,
-  x=+0x14, y=+0x16, z=+0x18, vx=+0x1a, vy=+0x1c, vz=+0x1e, timestamp=+0x20`.
+- **Mover proxy struct (monsters + chairlift chairs):** `class=+0xc,
+  state=+0x10, x=+0x14, y=+0x16, z=+0x18, vx=+0x1a, vy=+0x1c, vz=+0x1e,
+  timestamp=+0x20`.
   `FUN_004041c0` integrates it; a behavior routine sets velocity/state; the
   result is synced to a visible actor. The port folds this into one actor but
   keeps the same per-tick math.
@@ -121,16 +124,30 @@ may be gone after a reboot. To regenerate: configure Ghidra 12.x
     stand-ins for linting, and never opens a player.
   - **Additions:** M mutes and unmutes; the original's `nosound` command line
     starts the game muted.
-- **Ambient-mob secondary spawn** (1-in-1000) and the **snowboarder jump
+- **Chairlift rider falling off** (1-in-1000) and the **snowboarder jump
   effect** are ported via `SpawnRequest` (see `docs/monster-mob-physics.md`).
 - **Monster/mob proxy vs actor**: the port uses one merged actor instead of
   the original's mob node + actor pair, with `flags.on_screen` standing in
-  for "the node has a live actor" (materialization, culling, density and
+  for "the node has a live actor" (materialization, culling, drawing, density and
   collisions all honor it). Observable behavior — down to every RNG call —
   matches; internal structure does not. The pool reserves the nodes' slots
   on top of the original's 100 actors and counts a node as live only while
-  it is on screen, so the 100-actor limit falls where the original's does
-  (it is reached only on windows above 4K).
+  it is on screen.
+- **Running out of actors (very large windows only).** The original's 100
+  slots also hold the paint's shadow copies (`FUN_00402220`: one per drawn
+  actor on any tick it moves or the view scrolls, freed by the paint at
+  `0x401212`–`0x40122f`), and culled actors keep their slots until the sweep
+  at `0x401f26`. So it runs out at about live + on-screen actors = 100, far
+  sooner than at 100 live actors (an estimate from port replays puts it
+  around a 3840×2160 client; it was not run in the VM). Every allocation
+  from the empty free list then shows a modal "Assertion Failed" box
+  (`V:\hack\ski32\ski2.c line 857`, `FUN_00401240`; Cancel closes the game)
+  and toggles pause (`FUN_00405760`). The port models neither: it counts
+  only live actors (`LIVE_ACTORS`, a safety cap first reached around
+  7680×4320), keeps going, and drops a spawn silently when the cap is hit;
+  from there its RNG use and slot reuse differ slightly from the original's
+  (for one, it frees a culled actor's slot at once). No replay comes near
+  either limit.
 - **Collisions** now follow the original exactly — both pair orders, the
   crossing flag, every first-actor class (see `docs/vm-ground-truth.md`).
 - **Diagonal keys** map through the cardinal transitions rather than setting
@@ -256,9 +273,19 @@ version in `Cargo.lock`.
 
 ## Copyrighted files (not in this repo)
 
-`SKI.EXE`, `ski.zip`, `ski32.exe`, `ski32.zip`, `ski32sounds.exe` and everything extracted from
-them (all of `assets/` except `assets/README.md`) are Microsoft/Chris Pirih
-property and are **gitignored and scrubbed from history**. Place a `ski32.exe`
-in the repo root and run `python3 tools/extract_assets.py` to regenerate
-`assets/`. The `state_table` byte-comparison tests also need that file; they
-skip gracefully when it's absent.
+`SKI.EXE`, `ski.zip`, `ski32.exe`, `ski32.zip`, `ski32sounds.exe`, Windows'
+`vgaoem.fon` and everything extracted from them are Microsoft/Chris Pirih
+property and are **scrubbed from history**. Keep them in `originals/`, which
+is gitignored; the extractor's outputs under `assets/` are gitignored too,
+and only `assets/README.md` is tracked.
+
+Put `ski32.exe` in `originals/` (optionally with `ski32sounds.exe` and
+`vgaoem.fon`; see README.md, "Getting the assets") and run
+`python3 tools/extract_assets.py` to regenerate `assets/`. With no argument
+it reads the exe in `originals/` (`ski32.exe` when there are several) and
+writes `sprites/`, `icons/`, `strings.json` and `meta.json`; it also writes
+`fonts/oem_fixed.png` when `originals/vgaoem.fon` is there, and
+`sounds/sound_1.wav` … `sound_9.wav` when an exe in `originals/` has WAVE
+resources (`ski32sounds.exe` does, the shipped `ski32.exe` doesn't). The
+`state_table` and `extract` tests read their files from `originals/` and
+skip gracefully when they're absent.

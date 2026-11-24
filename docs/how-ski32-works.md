@@ -39,17 +39,20 @@ Reverse-engineered with [REA](https://github.com/morluto/rea) 6.10.1 + Ghidra 12
 | `WM_CHAR` | `FUN_00406780` | **Cheat/debug keys** (below) |
 | `WM_GETMINMAXINFO` | — | Forces min window 320×300 |
 
-Cheat keys (`WM_CHAR` handler):
-- **`F`** — toggles `DAT_0040c670`, making the physics integrator (`FUN_00402be0`) apply velocity **twice per frame** (fast-forward)
-- **`T`** — single-steps one game tick (slow motion)
-- **`R`** — forces a repaint
-- **`X`/`Y`/`x`/`y`** — teleport the skier ±2 px
+Cheat keys (`WM_CHAR` handler, so case-sensitive, and they repeat while
+held at the keyboard's repeat rate):
+- **`f`** — toggles `DAT_0040c670`, making the physics integrator (`FUN_00402be0`) apply velocity **twice per frame** (fast-forward)
+- **`t`** — runs one game tick on the spot (it calls the timer callback), even while paused
+- **`r`** — forces a repaint
+- **`x`** / **`X`** — teleport the skier 2 units right / left; **`y`** / **`Y`** — 2 units down / up. The view jumps with him (`FUN_00402390` → `FUN_00402470`), outside the scroll accounting, so a teleport spawns nothing at the screen edges
+
+Uppercase F, R and T do nothing.
 
 ### Physics & world
 
 - Integrator `FUN_00402be0`: `position += velocity` per axis, gravity decrementing z
 - Movement `FUN_00403430` and steering `FUN_00406170` are ported faithfully — vy is the downhill speed (accelerates toward `max_speed`), vx is lateral and coupled to vy via a friction term. See `docs/skier-physics.md` for the full model.
-- Distances in **1/16-meter units** — e.g. slalom course length constant `0x4100` = 16640 units = 1040 m; freestyle counts down from `0x21c0`
+- Distances in **1/16-meter units** — e.g. the slalom finishes at `0x21c0` = 8640 units = 540 m; tree slalom and freestyle finish at `0x4100` = 16640 units = 1040 m (the HUD's Dist counts down to the active course's finish)
 
 ### Rendering
 
@@ -79,10 +82,10 @@ fails and the game has always been silent.
 
 | Id | Slot | When it plays | Call site |
 |---|---|---|---|
-| 1 | `0x40c6c0` | A hit that costs 32 style; a crash landing (−64) | `0x403e48`, `0x402aeb` |
+| 1 | `0x40c6c0` | A hit that costs 32 style (the landing code at `0x402aeb` also has a −64 crash-landing branch, but it never runs: the landing table has no `0x11`) | `0x403e48` |
 | 2 | `0x40c768` | The ramp, the automatic hop over a large rock, an airborne bounce off a rock or a large rock | `0x403ccb`, `0x403be8` |
 | 3 | `0x40c5d0` | A snowboarder knocked down by anything moving | `0x403fa8` |
-| 4 | `0x40c718` | A clean landing (landing table result is not `0x11`) | `0x402aeb` |
+| 4 | `0x40c718` | Every landing (the landing table never yields `0x11`) | `0x402aeb` |
 | 5 | `0x40c750` | A crossing skier (class 3) launched by a bump or a ramp | `0x403ef3` |
 | 6 | `0x40c628` | A dog knocked over, by anything | `0x403f5f` |
 | 7 | `0x40c6e0` | The monster catches the player | `0x403b1e` |

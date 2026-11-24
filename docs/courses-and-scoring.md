@@ -13,9 +13,9 @@ strips:
 
 | Course | Strip (world x) | Finish (y) | Gates | Scored by |
 |--------|-----------------|-----------|-------|-----------|
-| Slalom | [-0x240, -0x140] | 0x21c0 (540 m) | 22 flag gates | **time** |
-| Tree slalom | [0x140, 0x200] | 0x4100 (4160 m) | gates (trees come from the populator) | **time** |
-| Freestyle | [-0xa0, 0xa0] | 0x4100 (4160 m) | none | **style** |
+| Slalom | [-0x240, -0x140] | 0x21c0 (540 m) | 24 flag gates | **time** |
+| Tree slalom | [0x140, 0x200] | 0x4100 (1040 m) | 39 gates (trees come from the populator) | **time** |
+| Freestyle | [-0xa0, 0xa0] | 0x4100 (1040 m) | none | **style** |
 
 Course identity is settled by the entrance banner sprites: 61 "Slalom ↙"
 (left), 62 "Tree Slalom ↘" (right), 63 "Free style ↓" (center). Records:
@@ -36,7 +36,7 @@ Course identity is settled by the entrance banner sprites: 61 "Slalom ↙"
   populator's zone-B picker.
 - **Finish posts** (sprites 59/60) at the finish line.
 - **Lift poles** (class 0xd, sprite 64) at x=-128 every 0x800 — the pole
-  line the lift chairs ride.
+  line the chairlift chairs (class 4, sprites 65–67) ride.
 
 ## Course timing
 
@@ -123,9 +123,9 @@ can show a nonzero Style while the Dist row reads "free-skiing". The port
 mirrors this by gating `Scoring.add` on the freestyle course flag.
 
 Sources of style points: tricks held in the air (+2/+4/+8 per tick by pose,
-see `docs/skier-physics.md`), a botched landing (−64), hopping bumps and
-rocks (+1), flying over obstacles (+6, +1000 over the eating yeti), breaking
-the dead tree (+16), collecting a flipped rock (+100), knocking into a dog
+see `docs/skier-physics.md`), hopping bumps and rocks (+1), flying over
+obstacles (+6, +1000 over a burning dead tree, which puts it out), setting a
+dead tree on fire by crash-landing into it (+16), collecting a flipped rock (+100), knocking into a dog
 (+20), snowboarder (+3) or crossing skier (+20), and crashes (−32); the
 snowboarder's jump puff costs −16.
 
@@ -153,8 +153,12 @@ The two pauses differ (window procedure + `FUN_00405a10`):
   which survives the focus change. The click that re-activates the window
   is swallowed (`WM_MOUSEACTIVATE` → `MA_ACTIVATEANDEAT`), so clicking back
   into the game doesn't make the skier jump.
-- The **T** cheat steps one tick even while paused (it calls the timer
-  callback directly).
+- The **t** cheat steps one tick even while paused (it calls the timer
+  callback directly). The steps show on the course clock while paused, but
+  the restart takes them back off: `FUN_004057c0` notes the last tick's
+  time (`DAT_0040c600`) and `FUN_00404ad0` shifts the course start
+  (`DAT_0040c948`) by the time since, steps included. So after the pause the
+  clock carries on from where it stood when F3 was pressed.
 
 The port reproduces all of this: miniquad's focus events (it reports focus
 loss as "minimized" on Windows, macOS and X11) drive

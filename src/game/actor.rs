@@ -4,7 +4,7 @@ use super::types::{Actor, ActorClass};
 /// The original's actor pool size (`FUN_00404a00`): at most this many live
 /// actors.
 pub const LIVE_ACTORS: usize = 100;
-/// Slots for the mob nodes (ambient mobs and monsters, classes 4-8; a world
+/// Slots for the mob nodes (chairlift chairs and monsters, classes 4-8; a world
 /// has 28). The original keeps them outside the actor pool and gives a node
 /// a pool actor only while it is on screen; the port merges node and actor,
 /// so it reserves their slots here and counts a node as live only while
@@ -129,6 +129,11 @@ impl ActorPool {
         result
     }
 
+    /// Every slot, free or not (the live actors' and the mob nodes').
+    pub fn slots(&self) -> usize {
+        self.actors.len()
+    }
+
     pub fn active_count(&self) -> usize {
         self.active_indices().len()
     }
@@ -142,11 +147,14 @@ mod tests {
     fn pool_with_nodes() -> ActorPool {
         let mut pool = ActorPool::new();
         for _ in 0..24 {
-            pool.alloc(ActorClass::AmbientMob, 0x27).unwrap();
+            pool.alloc(ActorClass::LiftChair, 0x27).unwrap();
         }
-        for class in
-            [ActorClass::MonsterLeft, ActorClass::MonsterRight, ActorClass::MonsterTop, ActorClass::MonsterBottom]
-        {
+        for class in [
+            ActorClass::MonsterUphill,
+            ActorClass::MonsterDownhill,
+            ActorClass::MonsterLeftEdge,
+            ActorClass::MonsterRightEdge,
+        ] {
             pool.alloc(class, 0x2a).unwrap();
         }
         pool

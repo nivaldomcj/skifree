@@ -42,6 +42,11 @@ pub fn draw_list(game: &GameState) -> Vec<DrawItem> {
     let mut items: Vec<(i16, DrawItem)> = Vec::new();
     for idx in game.pool.active_indices() {
         let Some(a) = game.pool.get(idx) else { continue };
+        // A mob node without its live actor (only at the pool limit) isn't
+        // drawn: the original has no actor to paint for it.
+        if a.class.is_mob_node() && !a.flags.on_screen {
+            continue;
+        }
         if a.sprite_id == 0 {
             continue;
         }
@@ -90,5 +95,16 @@ mod tests {
         assert_eq!(order, vec![0x1b, 2, 1]);
         // (x, y) = (0, 20) is at screen (320, 160 + 20): box (312, 164).
         assert_eq!(list[2], DrawItem { sprite: 1, left: 312, top: 164 });
+    }
+
+    #[test]
+    fn a_mob_node_without_its_actor_is_not_drawn() {
+        let mut game = GameState::new_seeded(640, 480, 0);
+        game.sprite_dims = vec![(16, 16); 90];
+        game.pool = crate::game::actor::ActorPool::new();
+        let node = game.pool.alloc_with_sprite(ActorClass::MonsterDownhill, 2).unwrap();
+        assert!(draw_list(&game).is_empty(), "off screen: a bare node");
+        game.pool.get_mut(node).unwrap().flags.on_screen = true;
+        assert_eq!(draw_list(&game).len(), 1);
     }
 }
