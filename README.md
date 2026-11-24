@@ -107,7 +107,8 @@ your user (Wayland shows app icons from desktop entries);
 `--uninstall` removes them.
 
 Controls are faithful to the original (arrows/numpad steer, Insert/numpad0 or
-click to jump, F2 restart, F3 pause, F fast-forward, T step, X/Y teleport),
+click to jump, F2 restart, F3 pause, and the cheats: f fast-forward, t step,
+x/X and y/Y teleport),
 plus M to mute in builds with sound.
 See `docs/skier-physics.md` for the full map.
 

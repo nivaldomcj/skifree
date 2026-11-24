@@ -1,7 +1,7 @@
 # Course populator (dynamic obstacle spawning)
 
-How the original fills the slope with trees, rocks, dogs, snowboarders, lifts,
-snow bumps and rainbow ramps — and how the port reproduces it. Ported from
+How the original fills the slope with trees, rocks, dogs, snowboarders,
+walking trees, snow bumps and rainbow ramps — and how the port reproduces it. Ported from
 `FUN_004025c0` and friends (Ghidra 12.2 decompilation).
 
 ## The edge spawner
@@ -25,8 +25,8 @@ top, right, left. Each call:
 |------|---------|---------|--------|---------|
 | A (slalom strip) | [-0x240, -0x140] | [0x280, 0x21c0] | `FUN_00402770` | 100% snow bumps |
 | B (tree-slalom strip) | [0x140, 0x200] | [0x280, 0x4100] | `FUN_004027a0` | 63/64 trees, 1/64 snowboarder |
-| C (freestyle strip) | [-0xa0, 0xa0] | [0x280, 0x4100] | `FUN_004027e0` | 18% tree, 30% large rock, 10% bump, 20% rock, 20% banner, 2% lift |
-| default | everything else | | `FUN_004026f0` | 45% tree, 20% large rock, 5% bump, 20% rock, 2% banner, 5% lift, 2% dog, 1% snowboarder |
+| C (freestyle strip) | [-0xa0, 0xa0] | [0x280, 0x4100] | `FUN_004027e0` | 18% tree, 30% large rock, 10% bump, 20% rock, 20% banner, 2% walking tree |
+| default | everything else | | `FUN_004026f0` | 45% tree, 20% large rock, 5% bump, 20% rock, 2% banner, 5% walking tree, 2% dog, 1% snowboarder |
 
 (The course strips are named after the banner sprites at each course's
 entrance: 61 "Slalom ↙" left, 62 "Tree Slalom ↘" right, 63 "Free style ↓"
@@ -36,8 +36,13 @@ settle it. See `docs/courses-and-scoring.md`.)
 ## Density cap
 
 `DAT_0040c6fc` = sum of **sprite areas** (width × height, sprite-table entry
-`+0xe`) over all live actors — mob nodes without a live actor (off-screen
-ambient mobs and monsters) don't count. Compared against `DAT_0040c748` =
+`+0xe`), kept as a running total: a new actor or a sprite change adds and
+subtracts, and the cull (`0x401ed5`) subtracts an actor that leaves the
+padded view. Mob nodes without a live actor (off-screen chairlift chairs and
+monsters) don't count. A collision that removes an actor, though
+(`FUN_00401350`: a collected flat rock at `0x403d1c`, the eaten skier at
+`0x403b36`), never subtracts its area, so that area stays in the sum until
+the next new game resets it (`0x404998`). Compared against `DAT_0040c748` =
 `(client_w + 0xf0) × (client_h + 0xf0)` (the viewport padded by 0x78):
 
 - Zone A: cap `area / 64`
@@ -45,8 +50,9 @@ ambient mobs and monsters) don't count. Compared against `DAT_0040c748` =
 - Zone C: cap `area / 32`
 - Default: cap `area / 32`
 
-The port computes the sum on demand per spawn (≤100 actors) instead of
-maintaining the global incrementally.
+The port computes the live part on demand per spawn (≤100 actors) instead
+of maintaining the global incrementally, and adds `GameState::removed_area`
+for the removals the original never subtracts.
 
 ## Scenery classes (11–16) and their sprites
 
@@ -71,15 +77,17 @@ verified call-for-call against the original, are in
 `docs/vm-ground-truth.md` item 5. In short, with the skier first:
 
 - **SnowBump**: skier in state 0 → `vz = 1`, state `0x0d`; `vy` halved if > 4.
-- **Tree / Dog / Crossing skier / Ambient / Lift / Eating** (solid path): flying
-  over (or under) → **+6 style**. Otherwise nothing happens except on the
-  **crossing tick** (the tick the skier's y reaches the obstacle's y, using
-  both actors' start-of-tick y): a tree hit off-centre by more than half the
-  wider sprite only halves `vy`; anything else downs the skier — grounded
-  and still → crash `0x0b`, otherwise crash-landing `0x11` — for **−32
-  style**. The **dead tree (sprite 50)** breaks instead (+16, class-9
-  breaking animation `0x38`); hurdling the **eating monster** scores +1000
-  and leaves a dead tree.
+- **Tree / Dog / Crossing skier / Chairlift chair / Walking tree / Burning
+  tree** (solid path): flying over (or under) → **+6 style**. Otherwise
+  nothing happens except on the **crossing tick** (the tick the skier's y
+  reaches the obstacle's y, using both actors' start-of-tick y, and the next
+  tick too if it lands exactly on that y): a tree hit off-centre by more
+  than half the wider sprite only halves `vy`; anything else downs the
+  skier — grounded and still → crash `0x0b`, otherwise crash-landing `0x11`
+  — for **−32 style**. The **dead tree (sprite 50)** catches fire instead (+16; class-9
+  burning tree, states `0x38–0x3b`, sprites 83/84/85/84). Flying over a
+  burning tree scores **+1000** and puts it out (back to class 0xd, sprite
+  50).
 - **Rock (0xe)**: grounded → the solid path, where an uphill hit (`vy < 0`)
   on sprite 46 flips it flat (sprite 86) and downs the skier without the
   −32; airborne above its top → a flipped rock is collected (**+100**);
@@ -97,7 +105,8 @@ Other first actors: a **dog** yelps/flees (`0x19`/`0x1a`, +20 if it was the
 player), a **snowboarder** falls (`0x1d`, +3 if the player) when hit by
 something moving, a **crossing skier** falls (`0x22`; +20 if the player) on
 dogs/skiers/trees/rocks or jumps (`vz = vy/2`, state `0x21`) off large rocks
-and the ramp, a **lift chair** stops (`vx = 0`, state `0x3c`).
+and the ramp, a **walking tree** stops (`vx = 0`, state `0x3c`: back to the
+plain pine, sprite 49).
 
 ## Culling and re-materialization
 

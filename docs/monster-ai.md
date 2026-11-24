@@ -1,8 +1,8 @@
 # The monster (yeti) AI in `ski32.exe`
 
 > **Note:** a few details below are superseded by the deeper analysis in
-> `docs/monster-mob-physics.md` (4-direction sprites, the arrival *hop* rather
-> than a pause, and the rubber-band step being the window dimensions). Read
+> `docs/monster-mob-physics.md` (4-direction sprites, the standing-still *hop*
+> rather than a pause, and the rubber-band step being the window dimensions). Read
 > that doc for the authoritative physics; this one remains a good overview.
 
 How the SkiFree monster works, from the Ghidra decompilation. Key functions: `0x404350.c` (monster brain), `0x404b50.c` (course generator), `0x403a00.c` (collisions), `0x4041c0.c` / `0x404290.c` (mover dispatchers), in `/tmp/ski32_decomp2/functions/`.
@@ -11,7 +11,7 @@ How the SkiFree monster works, from the Ghidra decompilation. Key functions: `0x
 
 Everything that moves is an **actor** in a fixed pool of **100 slots** of 80 bytes each, built as a free list on new game (`FUN_00404a00`). Each actor has a **behavior class** (field at `+0xc`) that picks its "brain". The per-frame dispatcher `FUN_004041c0` integrates position (`x += vx`, `y += vy`, `z += vz`) and calls the behavior routine:
 
-- class 4 → `FUN_00404290`: ambient mobs (dogs, snowboarders crossing the slope)
+- class 4 → `FUN_00404290`: the chairlift chairs (riding the lift-pole line)
 - **classes 5–8 → `FUN_00404350`: the monster** — four variants, one per approach direction
 
 The course is a set of **spawn-event lists** generated at new-game time (`FUN_00404b50`), consumed by `FUN_004046e0` as the player scrolls past each event's y coordinate.
@@ -24,10 +24,10 @@ The RNG is the classic MSVC LCG: `seed = seed*0x343FD + 0x269EC3`, output `(seed
 
 | Type | Spawn position | Arms when | Chases when |
 |------|---------------|-----------|-------------|
-| 5 (from left) | y = −2060 | monster.y < −1999 | player.y < −2000 (**~125 m back above the start**) |
-| 6 (from right) | y = 32060 | monster.y > 31999 | player.y > 32000 (**the famous 2000 m yeti**) |
-| 7 (from top) | x = −16060, y = 0 | always (dormant off-screen) | player.x < −16000 (**1000 m too far left**) |
-| 8 (from bottom) | x = +16060, y = 0 | always (dormant off-screen) | player.x > 16000 (**1000 m too far right**) |
+| 5 (guards uphill) | y = −2060 | monster.y < −1999 | player.y < −2000 (**~125 m back above the start**) |
+| 6 (guards downhill) | y = 32060 | monster.y > 31999 | player.y > 32000 (**the famous 2000 m yeti**) |
+| 7 (guards the left side) | x = −16060, y = 0 | always (dormant off-screen) | player.x < −16000 (**1000 m too far left**) |
+| 8 (guards the right side) | x = +16060, y = 0 | always (dormant off-screen) | player.x > 16000 (**1000 m too far right**) |
 
 The "one" yeti everyone knows is just the bottom guard at 2000 m. Three more punish leaving the course upward or sideways — types 7/8 spawn at game start and sit invisibly off-screen until you stray ±1000 m in x.
 
@@ -45,7 +45,7 @@ vy = clamp(dy, -10, +26);
 
 Every tick it is teleported to exactly `step` away from your *current* position on each axis, then closes by the clamped velocity. Anchored to you rather than the world, it cannot be outrun. The clamped `vx/vy` ratio picks one of its 8 run-direction sprite frames (states `0x2a`–`0x31`, by comparing |dx| vs |dy| via a slope ratio).
 
-When it arrives (|dx| < 1 and |dy| < 1), there's a **1-in-10 random chance** (`FUN_004020b0(10)`) it pauses in state `0x2b` for 4 frames — the little hesitation before the grab.
+Whenever it stands still on the ground (`vx == vy == 0`: holding its region with the player not past the trigger or no player at all, or exactly on the player), there's a **1-in-10 random chance** (`FUN_004020b0(10)`) it hops (`vz = 4`, state `0x2b`); otherwise it idles in `0x2a`. This roll runs on every grounded tick of a holding guard, not only on arrival, so all four guards draw from the RNG from tick 0.
 
 ## Catching and eating you
 
@@ -64,9 +64,9 @@ The AI then runs the eating animation as a **wall-clock state machine** (that's 
 - `0x36 → 0x37` immediately
 - `0x37 → 0x2a` once ≥ 3000 ms, else back to `0x36` (chewing loop) — back to chase state, ready for the next victim
 
-## Ambient mobs
+## Chairlift chairs
 
-Class-4 actors (dogs etc., `FUN_00404290`) cross the slope horizontally, wrap at y ∈ [−1024, 23552], and each frame have a **1-in-1000 chance** to spawn a secondary actor (type 3, variant `0x21`) behind them.
+Class-4 actors (`FUN_00404290`) are the chairlift chairs (sprites 65–67: two riders, one rider, empty). They ride the lift-pole line, up at x = −112 and down at x = −144, wrap at y ∈ [−1024, 23552], and while going up (state `0x27`) and on screen have a **1-in-1000 chance** per tick to drop a rider: a class-3 skier in state `0x21`, at the chair's own position and z = `0x20`, so it falls off the chair.
 
 ## Limitations
 
