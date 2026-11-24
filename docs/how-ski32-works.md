@@ -33,7 +33,7 @@ Reverse-engineered with [REA](https://github.com/morluto/rea) 6.10.1 + Ghidra 12
 
 | Message | Handler | Action |
 |---|---|---|
-| `WM_KEYDOWN` | `FUN_00406170` | Arrows/numpad steer; **Enter/F2** restart; **Esc** minimizes; **F3** pause |
+| `WM_KEYDOWN` | `FUN_00406170` | Arrows/numpad steer; **F2** restarts, **Enter** only once the skier is gone; **Esc** minimizes; **F3** pause |
 | `WM_MOUSEMOVE` | `FUN_00406550` | Mouse steering |
 | `WM_LBUTTONDOWN` / DBLCLK | `FUN_004066d0` | Click actions |
 | `WM_CHAR` | `FUN_00406780` | **Cheat/debug keys** (below) |
@@ -50,7 +50,7 @@ Uppercase F, R and T do nothing.
 
 ### Physics & world
 
-- Integrator `FUN_00402be0`: `position += velocity` per axis, gravity decrementing z
+- Integrator `FUN_00402be0`: `position += velocity` per axis, then gravity decrements vz while z > 0 (on the ground z and vz are reset to 0)
 - Movement `FUN_00403430` and steering `FUN_00406170` are ported faithfully — vy is the downhill speed (accelerates toward `max_speed`), vx is lateral and coupled to vy via a friction term. See `docs/skier-physics.md` for the full model.
 - Distances in **1/16-meter units** — e.g. the slalom finishes at `0x21c0` = 8640 units = 540 m; tree slalom and freestyle finish at `0x4100` = 16640 units = 1040 m (the HUD's Dist counts down to the active course's finish)
 
@@ -82,7 +82,7 @@ fails and the game has always been silent.
 
 | Id | Slot | When it plays | Call site |
 |---|---|---|---|
-| 1 | `0x40c6c0` | A hit that costs 32 style (the landing code at `0x402aeb` also has a −64 crash-landing branch, but it never runs: the landing table has no `0x11`) | `0x403e48` |
+| 1 | `0x40c6c0` | A hit that costs 32 style (the landing code also has a −64 crash-landing branch, tested at `0x402ad0`, scored at `0x402ad5`, with its sound 1 played by the shared call at `0x402aeb`; it never runs: the landing table has no `0x11`) | `0x403e48` |
 | 2 | `0x40c768` | The ramp, the automatic hop over a large rock, an airborne bounce off a rock or a large rock | `0x403ccb`, `0x403be8` |
 | 3 | `0x40c5d0` | A snowboarder knocked down by anything moving | `0x403fa8` |
 | 4 | `0x40c718` | Every landing (the landing table never yields `0x11`) | `0x402aeb` |

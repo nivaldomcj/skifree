@@ -43,7 +43,8 @@ port mirrors this with `i32` intermediates and `as i16` stores.
 
 Key consequence: **state 0 (straight down)** has `accel=1, max_speed=16,
 direction=0`, so vy climbs 1→16 and the skier descends 16 units/tick (1 m/tick,
-≈25 m/s). **States 3 and 6 (hard turns)** have `max_speed=0`, so vy scrubs to 0
+≈21 m/s at the real 46.875 ms tick; 25 m/s at the requested 40 ms).
+**States 3 and 6 (hard turns)** have `max_speed=0`, so vy scrubs to 0
 — turning fully sideways stops your descent, exactly as in the real game.
 
 ## Steering (`FUN_00406170`, `skier::steer_keyboard`)
@@ -54,8 +55,12 @@ Each cardinal key is a discrete event:
 |-----|--------|
 | **Down** (`0x28`/numpad2) | On the ground → **state 0** (ski straight down). In the air → cycle jump-trick poses (`0xd→0x13→0x12→0xd`, `0x14→0xe`, `0x15→0xf`). |
 | **Up** (`0x26`/numpad8) | On the ground, only when stopped (`vy == 0`): from state 3, 7 or `0xc` → state 9, from 6 or 8 → state 10, with `vy = -4`. This is a sidestep about 10 units uphill (y −4, −3, −2, −1 as vy comes back to 0); it also gets a fallen skier (`0xc`) back up. While moving it does nothing, so holding Up walks uphill one step every 4 ticks. In the air → cycle trick poses the other way. |
-| **Left** (`0x25`/numpad4) | Step through `LEFT_TRANSITION`: `0→1→2→3→7`. Reaching state 7 also kicks `vx = max(vx - 8, -8)`. |
-| **Right** (`0x27`/numpad6) | Step through `RIGHT_TRANSITION`: `0→4→5→6→8`. Reaching state 8 also kicks `vx = min(vx + 8, 8)`. |
+| **Left** (`0x25`/numpad4) | Step through `LEFT_TRANSITION`: `0→1→2→3→7`. Reaching state 7 also kicks `vx = max(vx - 8, -8)`. In the air the same table changes the jump pose (e.g. `0xd→0xe`). |
+| **Right** (`0x27`/numpad6) | Step through `RIGHT_TRANSITION`: `0→4→5→6→8`. Reaching state 8 also kicks `vx = min(vx + 8, 8)`. In the air the same table changes the jump pose (e.g. `0xd→0xf`). |
+
+None of the keys act while crashed (`0xb`) or crash-landing (`0x11`). A
+skier sitting in the snow (`0xc`) gets up with any of them: Down → 0,
+Left → 3, Right → 6, Up → the sidestep.
 
 The transition tables are stored interleaved at `DAT_0040a258` (8 bytes per
 state: LEFT u32 then RIGHT u32). States 0–6 are the direction fan (straight,
@@ -78,12 +83,13 @@ Diagonal keys set a skiing state directly (only on the ground):
 The two jump triggers differ, and both are ported:
 
 - **Mouse click** (`FUN_004066d0`): on the ground → `vz = 4`, state `0xd`. In
-  mid-air (and not in the flip state `0x11`) → cycles the trick poses
+  mid-air (and not crash-landing, `0x11`) → cycles the trick poses
   (`0xd→0x12→0x13→0xd`, `0xe→0x14`, `0xf→0x15`). Does nothing while crashed.
   Once the yeti has eaten the skier, a click starts a new game, like Enter
   (it jumps to `FUN_00406500`).
-- **Keyboard** (Insert/numpad0, in `FUN_00406170`): `vz = 2`, state `0xd`, and
-  scrubs downhill speed (`vy -= 4` when `vy > 4`).
+- **Keyboard** (Insert/numpad0, in `FUN_00406170`): on the ground only,
+  `vz = 2`, state `0xd`, and scrubs downhill speed (`vy -= 4` when `vy > 4`).
+  In the air it does nothing.
 
 So the mouse gives a higher hop that keeps your speed, the keyboard a smaller
 hop that also slows you down. Both are mapped in the port.
@@ -117,14 +123,15 @@ jump is therefore worth a lot.
 On touchdown the landing table (`0x40a434`) sends `0x0d`/`0x0e`/`0x0f` to
 0/3/6 and every other air state (the trick poses `0x10`, `0x12`–`0x15`, and
 the crash-landing `0x11`) to crash `0xb`. No entry is `0x11`, so the −64 /
-sound 1 branch at `0x402ad0` never runs, in the original or in the port.
+sound 1 branch (tested at `0x402ad0`, −64 at `0x402ad5`, sound through the
+shared call at `0x402aeb`) never runs, in the original or in the port.
 Every landing plays sound 4 and costs no style; landing in a trick pose only
 crashes the skier.
 
 ## Controls parity
 
-The port implements the original's full control set. Keys act per
-**key-down message**, like the original's `WM_KEYDOWN` handling: one step
+The port implements the original's full control set, plus an M key to
+mute. Keys act per **key-down message**, like the original's `WM_KEYDOWN` handling: one step
 when a key is pressed, then one per OS auto-repeat while it is held (the
 port used to step the state every frame a key was down). While the window
 is inactive or minimized all keys, mouse moves and clicks are ignored, and
@@ -141,7 +148,8 @@ the click that re-activates the window is swallowed (see
 | Enter | restart only once the skier is gone | same |
 | F3 | pause | same |
 | f, t, r (lowercase only); x/X, y/Y | fast-forward, step, repaint; teleport right/left, down/up (`WM_CHAR`, repeats while held) | same |
-| Esc | **minimize window** | mapped to **quit** (see note) |
+| Esc | **minimize window** | mapped to **quit** (see note); does nothing in the web build |
+| M | nothing | mute / unmute (port addition; `nosound` on the command line, or `?nosound` on the web, starts muted) |
 
 Note: the original maps Esc to `ShowWindow(hwnd, SW_MINIMIZE)`. The port maps
 Esc to quit instead. This is a deliberate, considered deviation: macroquad /
@@ -149,8 +157,10 @@ miniquad (the port's windowing layer) expose **no minimize API** — the
 `WindowMinimized` event is inbound-only and the native window handle is not
 public — so a literal minimize would require unsafe, platform-specific FFI or
 a windowing-library rewrite. Quit is the clean, portable choice across
-macOS / Windows / Linux and avoids leaving a hidden process running. This is
-the only deliberate deviation from the original controls.
+macOS / Windows / Linux and avoids leaving a hidden process running. A
+browser tab can neither minimize nor quit, so the web build ignores Esc.
+Apart from the M mute key, which the port adds, this is the only deliberate
+deviation from the original controls.
 
 ## Verification
 

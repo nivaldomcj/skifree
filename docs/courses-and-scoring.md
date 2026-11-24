@@ -71,7 +71,7 @@ Each detector runs after the skier update with the pre-update position:
   focus-loss pause applies). The port persists the same three lists in
   `~/.skifree/scores.json` and shows the same text in the platform's own
   modal box (`MessageBoxW` on Windows, `NSAlert` on macOS), or a drawn box
-  in the status display's style where there is none (Linux); the game is
+  in the status display's style where there is none (Linux, web); the game is
   frozen and the window inactive until OK, and the time it stays open
   still counts on the wall clock.
 - **Gates**: each gate has a flag sprite. When the player's y passes the
@@ -87,7 +87,9 @@ Each detector runs after the skier update with the pre-update position:
 ## Status display (FUN_00401b80)
 
 Four stacked rows at the **top-right** of the window (the `SkiStatus`
-child window), with exact printf formats from the string table:
+child window), with exact printf formats from the string table. They are
+repainted when more than 327 ms have passed since the last repaint (see
+`docs/how-ski32-works.md`), and at once on a course finish and on a resize:
 
 - `Time: %2u:%2.2u:%2.2u.%2.2u` — the course clock (h:mm:ss.cc), 0 before
   any course starts.
@@ -124,30 +126,36 @@ can show a nonzero Style while the Dist row reads "free-skiing". The port
 mirrors this by gating `Scoring.add` on the freestyle course flag.
 
 Sources of style points: tricks held in the air (+2/+4/+8 per tick by pose,
-see `docs/skier-physics.md`), hopping bumps and rocks (+1), flying over
-obstacles (+6, +1000 over a burning dead tree, which puts it out), setting a
-dead tree on fire by crash-landing into it (+16), collecting a flipped rock (+100), knocking into a dog
-(+20), snowboarder (+3) or crossing skier (+20), and crashes (−32); the
-snowboarder's jump puff costs −16.
+see `docs/skier-physics.md`), bouncing off a rock, hopping or bouncing off
+a large rock and launching off a ramp (+1; a snow bump scores nothing),
+flying over obstacles (+6, +1000 over a burning dead tree, which puts it
+out), setting a dead tree on fire by crash-landing into it (+16),
+collecting a flipped rock (+100), knocking into a dog (+20), snowboarder
+(+3) or crossing skier (+20), and crashes (−32); the snowboarder's jump
+puff costs −16.
 
 ## Pause
 
 F3 and **losing focus or minimizing the window** both stop the game timer:
 nothing moves. When play resumes, the original pushes the course start
-reference forward by the paused time, so **course times exclude pauses** —
-but its wall clock keeps running, so a yeti that is eating you finishes its
-meal during the pause. The port matches both: its game clock (course
-timing) freezes while paused and a separate wall clock drives the meal.
+reference forward by the paused time, so **course times exclude pauses**.
+Its wall clock keeps running, though, and the yeti's meal is timed on it:
+the meal doesn't advance while paused (no tick runs), but on resume the
+paused time has already counted toward it, so its remaining frames pass
+one per tick.
+The port matches both: `GameState::tick` returns early while the timer is
+stopped, its game clock (course timing) stands still, and a separate wall
+clock (`wall_ms`) keeps counting and drives the meal.
 
 The two pauses differ (window procedure + `FUN_00405a10`):
 
 - **F3** (`FUN_00405760`) shows "Ski Paused ... Press F3 to continue" and
   only another F3 (or F2) resumes. The notice is the **window title**
   (`SetWindowTextA`, string 2; string 1 "SkiFree" on resume); nothing is
-  drawn on the slope. The port sets the title too (`platform::title`:
-  macOS and Windows) and draws the notice in the window, in the status
-  display's style, only when no title bar can show it (fullscreen, or
-  Linux, where miniquad doesn't expose the window).
+  drawn on the slope. The port sets the title too
+  (`platform::os_window::set_title`: macOS, Windows, X11 and the web
+  page) and draws the notice in the window, in the status display's
+  style, only when the title can't be set or isn't visible (fullscreen).
 - **Focus loss / minimize** (`WM_ACTIVATE` / `WM_SIZE`) stops the timer
   silently and **ignores every key, mouse move and click** until the window
   is active again; regaining focus resumes play — unless F3 had paused it,
