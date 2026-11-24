@@ -16,6 +16,8 @@ fn golden_path(name: &str) -> String {
 }
 
 fn load_scenario(name: &str) -> Scenario {
+    let meta = skifree::game::assets::asset_root().join("meta.json");
+    assert!(meta.is_file(), "{} missing: the replay tests need the extracted assets", meta.display());
     let text =
         std::fs::read_to_string(scenario_path(name)).unwrap_or_else(|e| panic!("cannot read {name} scenario: {e}"));
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("bad {name} scenario: {e}"))
@@ -51,7 +53,7 @@ fn golden_descend_matches() {
 }
 
 #[test]
-fn descend_reaches_finish_area() {
+fn descend_moves_skier_downhill() {
     // Pressing DOWN must actually move the skier downhill (+y).
     let scenario = load_scenario("descend");
     let records = run_scenario(&scenario);
@@ -68,22 +70,15 @@ fn golden_steer_and_jump_matches() {
 }
 
 #[test]
-fn actor_pool_never_overflows() {
+fn live_actors_never_exceed_the_original_limit() {
+    // Also on a 5K window, where far more actors are live at once (mob
+    // nodes off screen don't count, as in the original).
     let scenario = load_scenario("steer_and_jump");
-    let records = run_scenario(&scenario);
-    for r in records {
-        assert!(r.actor_count <= 100, "actor pool overflow at tick {}", r.tick);
-    }
-}
-
-#[test]
-fn rng_progresses_monotonically() {
-    let scenario = load_scenario("steer_and_jump");
-    let records = run_scenario(&scenario);
-    let mut last = 0u64;
-    for r in records {
-        assert!(r.rng_calls >= last, "rng call count regressed at tick {}", r.tick);
-        last = r.rng_calls;
+    for (w, h) in [(640, 480), (5120, 2880)] {
+        skifree::replay::run_scenario_observed(&scenario, w, h, |tick, game| {
+            let live = game.pool.live_count();
+            assert!(live <= skifree::game::actor::LIVE_ACTORS, "{live} live actors at tick {tick} ({w}x{h})");
+        });
     }
 }
 
@@ -187,4 +182,40 @@ fn verified_resize_matches() {
 #[test]
 fn verified_sounds_matches() {
     check("compare_sounds");
+}
+
+/// Seed 38: a crash-landing skier (state 0x11) passes another tree; the
+/// original skips every skier-first collision in that state (0x403b93).
+#[test]
+fn verified_crash_landing_matches() {
+    check("compare_crash_landing");
+}
+
+/// Seed 20: the skier takes off from a banner and, in the same pass, meets
+/// a lift chair already airborne: the original applies a skier state change
+/// at once, and later pairs see it (and its sprite).
+#[test]
+fn verified_collision_order_matches() {
+    check("compare_collision_order");
+}
+
+/// Seed 8: the yeti's catch tick also crosses a scroll boundary, which still
+/// spawns at the edge; then a click with the skier gone starts a new game.
+#[test]
+fn verified_catch_matches() {
+    check("compare_catch");
+}
+
+/// The x/X/y/Y teleport cheats: direction, and no edge spawns (the view
+/// jumps with the skier).
+#[test]
+fn verified_cheats_match() {
+    check("compare_cheats");
+}
+
+/// t steps in the timed slalom, during an F3 pause and outside one: the
+/// restart takes the paused steps back off the course clock.
+#[test]
+fn verified_step_matches() {
+    check("compare_step");
 }

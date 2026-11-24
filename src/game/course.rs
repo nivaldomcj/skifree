@@ -57,7 +57,7 @@ impl Course {
 ///
 /// The original builds all three courses at once — slalom on the left
 /// strip, freestyle in the center, tree slalom on the right — plus the lift
-/// pole line, ambient mob proxies and the four boundary monsters. The
+/// pole line, chairlift-chair proxies and the four boundary monsters. The
 /// `left`/`top` arguments are the camera viewport origin at game start
 /// (player anchored at w/2, h/3), used by the "↓" banner formulas.
 pub fn generate_course(screen_w: i16, screen_h: i16, rng: &mut super::rng::Rng) -> Vec<SpawnEvent> {
@@ -200,7 +200,7 @@ fn generate_lift_poles(events: &mut Vec<SpawnEvent>) {
     }
 }
 
-/// Ambient mob spawner records (`FUN_00404b50`): pairs of class-4 proxies every
+/// Chairlift chair spawner records (`FUN_00404b50`): pairs of class-4 proxies every
 /// 0x800 units of y, floating at z = 0x20. State 0x27 drifts up (vy = -2) at
 /// x = -112; state 0x29 drifts down (vy = +2) at x = -144. `param` carries
 /// the initial vy for the port's merged actor.
@@ -238,13 +238,13 @@ fn generate_mob_spawns(events: &mut Vec<SpawnEvent>) {
 }
 
 fn generate_monster_spawns(events: &mut Vec<SpawnEvent>) {
-    // Monster from top (type 7)
+    // Class 7: guards the left side
     events.push(SpawnEvent { actor_idx: None, state: 0x2a, class: 7, sprite: None, x: -16060, y: 0, z: 0, param: 0 });
-    // Monster from bottom (type 8)
+    // Class 8: guards the right side
     events.push(SpawnEvent { actor_idx: None, state: 0x2a, class: 8, sprite: None, x: 16060, y: 0, z: 0, param: 0 });
-    // Monster from left (type 5)
+    // Class 5: guards uphill
     events.push(SpawnEvent { actor_idx: None, state: 0x2a, class: 5, sprite: None, x: 0, y: -2060, z: 0, param: 0 });
-    // Monster from right (type 6)
+    // Class 6: guards downhill (the 2000 m yeti)
     events.push(SpawnEvent { actor_idx: None, state: 0x2a, class: 6, sprite: None, x: 0, y: 32060, z: 0, param: 0 });
 }
 

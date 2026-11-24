@@ -49,6 +49,8 @@ pub fn update_skier(actor: &mut Actor, fast_forward: bool, sounds: &mut Vec<Soun
         // Jump states — check landing
         0x0d..=0x15 if actor.z == 0 => {
             let landing = CRASH_LANDING[(state - 0x0d) as usize];
+            // The original's branch, kept as is: its landing table has no
+            // 0x11 entry, so it never runs (every landing plays sound 4).
             if landing == 0x11 {
                 points -= 64; // botched landing (0x402ad5)
                 sounds.push(Sound::Crash);

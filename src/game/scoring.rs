@@ -79,6 +79,16 @@ impl HighScores {
         Self::insert_time_into(list, ms)
     }
 
+    /// Record a finish on `course`'s table: the time for the timed courses,
+    /// the style score for freestyle. Returns the 0-based rank, or None.
+    pub fn insert(&mut self, course: Course, ms: u64, style: i32) -> Option<usize> {
+        if course.is_timed() {
+            self.insert_time(course, ms)
+        } else {
+            self.insert_style(style)
+        }
+    }
+
     /// Record a freestyle style score; returns the 0-based rank, or None.
     pub fn insert_style(&mut self, score: i32) -> Option<usize> {
         let rank = self.freestyle_style.iter().position(|&s| s < score).unwrap_or(self.freestyle_style.len());

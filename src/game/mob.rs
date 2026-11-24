@@ -84,10 +84,11 @@ pub fn update_snowboarder(
     None
 }
 
-/// Ambient mob behavior (`FUN_004041c0` pure integration + `FUN_00404290`, class 4)
+/// Chairlift chair behavior (`FUN_004041c0` pure integration + `FUN_00404290`,
+/// class 4)
 ///
-/// The ambient mob is a spawner that drifts vertically just left of the slope
-/// center (x = -112 heading up in state 0x27, x = -144 heading down in 0x29),
+/// The chairs (sprites 65-67, with a rider or empty) ride the lift-pole line,
+/// drifting vertically just left of the slope center (x = -112 heading up in state 0x27, x = -144 heading down in 0x29),
 /// wrapping at the course ends. It floats at z = 0x20: proxy integration has
 /// no gravity and is not doubled by fast-forward.
 ///
@@ -98,7 +99,7 @@ pub fn update_snowboarder(
 /// actor ([node+0x00] != 0 in `FUN_00404290`); `materialized` carries that
 /// state from the caller (see `GameState::update_proxies`). The integration
 /// and wrap run regardless, like the original's mob nodes.
-pub fn update_ambient(actor: &mut Actor, rng: &mut Rng, materialized: bool) -> Option<SpawnRequest> {
+pub fn update_lift_chair(actor: &mut Actor, rng: &mut Rng, materialized: bool) -> Option<SpawnRequest> {
     // Proxy integration (FUN_004041c0): pure velocity add, no gravity.
     actor.x = actor.x.wrapping_add(actor.vx);
     actor.y = actor.y.wrapping_add(actor.vy);
@@ -135,8 +136,10 @@ pub fn update_ambient(actor: &mut Actor, rng: &mut Rng, materialized: bool) -> O
     None
 }
 
-/// Lift chair behavior (`FUN_004037b0`, class 10)
-pub fn update_lift(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
+/// Walking tree behavior (`FUN_004037b0`, class 10): stands as the small pine
+/// (state 0x3c, sprite 49); 1-in-100 it starts walking at vx = ±1 (states
+/// 0x3d-0x3f, sprites 87-89).
+pub fn update_walking_tree(actor: &mut Actor, rng: &mut Rng, fast_forward: bool) {
     match actor.state {
         0x3c => {
             if actor.vx != 0 {
@@ -213,8 +216,9 @@ pub fn update_crossing_skier(actor: &mut Actor, rng: &mut Rng, fast_forward: boo
     }
 }
 
-/// Eating behavior (`FUN_00403750`, class 9)
-pub fn update_eating(actor: &mut Actor, _fast_forward: bool) {
+/// Burning tree behavior (`FUN_00403750`, class 9): the flame loop
+/// 0x38 -> 0x3b -> 0x38 of a dead tree an airborne skier set on fire.
+pub fn update_burning_tree(actor: &mut Actor, _fast_forward: bool) {
     let next = actor.state + 1;
     if next > 0x3b {
         physics::change_state(actor, 0x38);
@@ -237,42 +241,42 @@ mod tests {
             .expect("an LCG seed with first roll 0 exists")
     }
 
-    fn ambient(x: i16, y: i16, z: i16, state: u16, vy: i16) -> Actor {
-        Actor { active: true, class: ActorClass::AmbientMob, x, y, z, vy, state, ..Default::default() }
+    fn lift_chair(x: i16, y: i16, z: i16, state: u16, vy: i16) -> Actor {
+        Actor { active: true, class: ActorClass::LiftChair, x, y, z, vy, state, ..Default::default() }
     }
 
     #[test]
-    fn ambient_integrates_without_gravity() {
+    fn lift_chair_integrates_without_gravity() {
         // Proxy integration is pure: z = 0x20 floats forever, no fast-forward.
         let mut rng = Rng::new(7);
-        let mut a = ambient(-112, 100, 0x20, 0x27, -2);
-        update_ambient(&mut a, &mut rng, true);
+        let mut a = lift_chair(-112, 100, 0x20, 0x27, -2);
+        update_lift_chair(&mut a, &mut rng, true);
         assert_eq!((a.x, a.y, a.z), (-112, 98, 0x20));
         assert_eq!(a.vz, 0);
     }
 
     #[test]
-    fn ambient_wraps_at_course_ends() {
+    fn lift_chair_wraps_at_course_ends() {
         let mut rng = Rng::new(7);
-        let mut a = ambient(-112, 23552, 0x20, 0x27, -2);
+        let mut a = lift_chair(-112, 23552, 0x20, 0x27, -2);
         // y + vy = 23550 is in range first; force the wrap directly.
         a.y = 23560;
-        update_ambient(&mut a, &mut rng, true);
+        update_lift_chair(&mut a, &mut rng, true);
         assert_eq!(a.state, 0x27);
         assert_eq!((a.x, a.vy), (-112, -2));
 
-        let mut b = ambient(-144, -1030, 0x20, 0x29, 2);
-        update_ambient(&mut b, &mut rng, true);
+        let mut b = lift_chair(-144, -1030, 0x20, 0x29, 2);
+        update_lift_chair(&mut b, &mut rng, true);
         assert_eq!(b.state, 0x29);
         assert_eq!((b.x, b.vy), (-144, 2));
     }
 
     #[test]
-    fn ambient_drops_crossing_skier_on_rare_roll() {
+    fn lift_chair_drops_crossing_skier_on_rare_roll() {
         let seed = seed_with_first_roll_zero(1000);
         let mut rng = Rng::new(seed);
-        let mut a = ambient(-112, 500, 0x20, 0x27, -2);
-        let req = update_ambient(&mut a, &mut rng, true).expect("should request a spawn");
+        let mut a = lift_chair(-112, 500, 0x20, 0x27, -2);
+        let req = update_lift_chair(&mut a, &mut rng, true).expect("should request a spawn");
         // Mob integrated first (y 500 -> 498), then spawned at its position.
         assert_eq!(req.class, ActorClass::CrossingSkier);
         assert_eq!(req.state, Some(0x21));
@@ -282,22 +286,22 @@ mod tests {
     }
 
     #[test]
-    fn ambient_no_spawn_on_common_roll() {
+    fn lift_chair_no_spawn_on_common_roll() {
         // Seed 1: first rand_range(1000) is 41 != 0.
         let mut rng = Rng::new(1);
-        let mut a = ambient(-112, 500, 0x20, 0x27, -2);
-        assert_eq!(update_ambient(&mut a, &mut rng, true), None);
+        let mut a = lift_chair(-112, 500, 0x20, 0x27, -2);
+        assert_eq!(update_lift_chair(&mut a, &mut rng, true), None);
         assert_eq!(a.state, 0x27);
     }
 
     #[test]
-    fn ambient_skips_roll_outside_viewport_window() {
+    fn lift_chair_skips_roll_outside_viewport_window() {
         // A winning seed, but not materialized: no roll, no spawn, and the
         // RNG stream is untouched (calls stay at 0).
         let seed = seed_with_first_roll_zero(1000);
         let mut rng = Rng::new(seed);
-        let mut a = ambient(-112, 500, 0x20, 0x27, -2);
-        assert_eq!(update_ambient(&mut a, &mut rng, false), None);
+        let mut a = lift_chair(-112, 500, 0x20, 0x27, -2);
+        assert_eq!(update_lift_chair(&mut a, &mut rng, false), None);
         assert_eq!(a.state, 0x27);
         assert_eq!(rng.call_count(), 0);
     }

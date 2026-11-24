@@ -8,13 +8,13 @@ pub enum ActorClass {
     Dog = 1,
     Snowboarder = 2,
     CrossingSkier = 3,
-    AmbientMob = 4,
-    MonsterLeft = 5,
-    MonsterRight = 6,
-    MonsterTop = 7,
-    MonsterBottom = 8,
-    Eating = 9,
-    Lift = 10,
+    LiftChair = 4,
+    MonsterUphill = 5,
+    MonsterDownhill = 6,
+    MonsterLeftEdge = 7,
+    MonsterRightEdge = 8,
+    BurningTree = 9,
+    WalkingTree = 10,
     /// Class 0xb: snow bump (sprite 27) — launches the skier on straight hits.
     SnowBump = 11,
     /// Class 0xc: slalom gate post (sprites 0x17/0x18; turns 0x19 passed /
@@ -38,13 +38,13 @@ pub enum ActorClass {
 impl ActorClass {
     /// The four boundary monsters (classes 5-8).
     pub fn is_monster(self) -> bool {
-        matches!(self, Self::MonsterLeft | Self::MonsterRight | Self::MonsterTop | Self::MonsterBottom)
+        matches!(self, Self::MonsterUphill | Self::MonsterDownhill | Self::MonsterLeftEdge | Self::MonsterRightEdge)
     }
 
-    /// The original's mob nodes (classes 4-8): ambient mobs and monsters,
+    /// The original's mob nodes (classes 4-8): chairlift chairs and monsters,
     /// which have a live actor only while on screen.
     pub fn is_mob_node(self) -> bool {
-        self == Self::AmbientMob || self.is_monster()
+        self == Self::LiftChair || self.is_monster()
     }
 
     pub fn from_u16(v: u16) -> Option<Self> {
@@ -53,13 +53,13 @@ impl ActorClass {
             1 => Some(Self::Dog),
             2 => Some(Self::Snowboarder),
             3 => Some(Self::CrossingSkier),
-            4 => Some(Self::AmbientMob),
-            5 => Some(Self::MonsterLeft),
-            6 => Some(Self::MonsterRight),
-            7 => Some(Self::MonsterTop),
-            8 => Some(Self::MonsterBottom),
-            9 => Some(Self::Eating),
-            10 => Some(Self::Lift),
+            4 => Some(Self::LiftChair),
+            5 => Some(Self::MonsterUphill),
+            6 => Some(Self::MonsterDownhill),
+            7 => Some(Self::MonsterLeftEdge),
+            8 => Some(Self::MonsterRightEdge),
+            9 => Some(Self::BurningTree),
+            10 => Some(Self::WalkingTree),
             11 => Some(Self::SnowBump),
             12 => Some(Self::Gate),
             13 => Some(Self::Tree),
@@ -133,8 +133,8 @@ impl Default for Actor {
 }
 
 /// A request to spawn a secondary actor, returned by behavior updates that
-/// create actors mid-tick (the ambient mob's 1-in-1000 crossing skier, the
-/// snowboarder's jump effect). Exactly one of `state` / `sprite` is set:
+/// create actors mid-tick (a rider dropped by a chairlift chair, 1-in-1000;
+/// the snowboarder's jump effect). Exactly one of `state` / `sprite` is set:
 /// `state` goes through the state-to-sprite table (`FUN_004020d0`), `sprite`
 /// sets a raw sprite id (`FUN_004026a0`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,7 +151,7 @@ pub struct SpawnRequest {
 /// Mirrors the original's 36-byte spawn record: when `sprite` is set the
 /// actor is created with a raw sprite id (`FUN_004026a0`, classes >= 0xb and
 /// all signage), otherwise with a state looked up in the state table
-/// (`FUN_004020d0`). `param` carries the initial vy for ambient mobs.
+/// (`FUN_004020d0`). `param` carries the initial vy for chairlift chairs.
 #[derive(Debug, Clone)]
 pub struct SpawnEvent {
     pub actor_idx: Option<usize>,

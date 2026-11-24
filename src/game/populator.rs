@@ -65,7 +65,7 @@ fn pick_default(weight: i32, area: i32, rng: &mut Rng) -> u16 {
     }
     let r = rng.rand_range(1000);
     if r < 0x32 {
-        10 // lift
+        10 // walking tree
     } else if r < 500 {
         0xd // tree
     } else if r < 700 {
@@ -238,7 +238,7 @@ mod tests {
     #[test]
     fn default_picker_distribution_boundaries() {
         let area = padded_area(640, 480);
-        // Seed 1 sequence: 41, 18467, 6334, ... -> rand_range(1000) = 41 -> lift
+        // Seed 1 sequence: 41, 18467, 6334, ... -> rand_range(1000) = 41 -> walking tree
         let mut rng = Rng::new(1);
         assert_eq!(pick_default(0, area, &mut rng), 10);
     }
@@ -264,7 +264,7 @@ mod tests {
         assert_eq!(pick_class(-0x200, 0x1000, 0, area, &mut rng), 0xb);
         // Inside the tree-slalom strip -> tree or snowboarder (seed 1: rand(64)=41 -> tree)
         assert_eq!(pick_class(0x180, 0x1000, 0, area, &mut rng), 0xd);
-        // Outside everything -> default table (fresh seed 1: 41 -> lift)
+        // Outside everything -> default table (fresh seed 1: 41 -> walking tree)
         assert_eq!(pick_class(0, 0, 0, area, &mut Rng::new(1)), 10);
     }
 }

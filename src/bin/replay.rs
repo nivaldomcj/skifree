@@ -56,6 +56,16 @@ fn main() -> ExitCode {
     };
 
     let mut frames = String::new();
+    // Sprite sizes drive the run (collisions, density, culling): without
+    // assets/ they fall back to 16x16 and the records are silently wrong.
+    let meta = skifree::game::assets::asset_root().join("meta.json");
+    if !meta.is_file() {
+        eprintln!(
+            "replay: {} not found: run from the repo root with the extracted assets (README, \"Getting the assets\")",
+            meta.display()
+        );
+        return ExitCode::FAILURE;
+    }
     let records = run_scenario_observed(
         &scenario,
         scenario.screen_w.unwrap_or(640),

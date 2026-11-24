@@ -50,14 +50,14 @@ pub const CLASS_INITIAL_STATE: [u16; 11] = [
     0x06, // 0 skier
     0x16, // 1 dog
     0x1b, // 2 snowboarder
-    0x1f, // 3 obstacle / crossing skier
-    0x27, // 4 ambient mob
+    0x1f, // 3 crossing skier
+    0x27, // 4 chairlift chair
     0x2a, // 5-8 monsters
     0x2a,
     0x2a,
     0x2a,
-    0x38, // 9 eating
-    0x3c, // 10 lift
+    0x38, // 9 burning tree
+    0x3c, // 10 walking tree
 ];
 
 /// Dog physics table (`DAT_0040a490`), states 0x16-0x1a

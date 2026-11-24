@@ -5,7 +5,10 @@ use super::types::{Actor, ActorClass};
 
 /// Monster AI (`FUN_004041c0` integration + `FUN_00404350` logic)
 ///
-/// Four boundary guards: left (5), right (6), top (7), bottom (8). Each tick
+/// Four boundary guards (world y grows downhill): 5 guards uphill (y <= -2000,
+/// chases once the player is above -2000), 6 downhill (y >= 32000: the
+/// 2000 m yeti), 7 the left side (x <= -16000) and 8 the right side
+/// (x >= 16000). Each tick
 /// the monster integrates its velocity into position, applies gravity (it can
 /// hop), then either runs the eating state machine, chases the player
 /// (rubber-banded to within one screen), holds position at its boundary, or
@@ -70,17 +73,17 @@ pub fn update_monster(
     //    drift back toward the region otherwise.
     let class = actor.class;
     let in_region = match class {
-        ActorClass::MonsterLeft => actor.y < -1999,
-        ActorClass::MonsterRight => actor.y > 31999,
-        ActorClass::MonsterTop => actor.x < -15999,
-        ActorClass::MonsterBottom => actor.x > 15999,
+        ActorClass::MonsterUphill => actor.y < -1999,
+        ActorClass::MonsterDownhill => actor.y > 31999,
+        ActorClass::MonsterLeftEdge => actor.x < -15999,
+        ActorClass::MonsterRightEdge => actor.x > 15999,
         _ => false,
     };
     let triggered = match (class, player) {
-        (ActorClass::MonsterLeft, Some(p)) => p.y < -2000,
-        (ActorClass::MonsterRight, Some(p)) => p.y > 32000,
-        (ActorClass::MonsterTop, Some(p)) => p.x < -16000,
-        (ActorClass::MonsterBottom, Some(p)) => p.x > 16000,
+        (ActorClass::MonsterUphill, Some(p)) => p.y < -2000,
+        (ActorClass::MonsterDownhill, Some(p)) => p.y > 32000,
+        (ActorClass::MonsterLeftEdge, Some(p)) => p.x < -16000,
+        (ActorClass::MonsterRightEdge, Some(p)) => p.x > 16000,
         _ => false,
     };
 
@@ -111,10 +114,10 @@ pub fn update_monster(
     } else if !in_region {
         // Drift back into the guard region.
         match class {
-            ActorClass::MonsterLeft => vy = -10,
-            ActorClass::MonsterRight => vy = 26,
-            ActorClass::MonsterTop => vx = -16,
-            ActorClass::MonsterBottom => vx = 16,
+            ActorClass::MonsterUphill => vy = -10,
+            ActorClass::MonsterDownhill => vy = 26,
+            ActorClass::MonsterLeftEdge => vx = -16,
+            ActorClass::MonsterRightEdge => vx = 16,
             _ => {}
         }
     }
@@ -135,7 +138,11 @@ pub fn update_monster(
     } else if vx < 0 {
         toggle_anim(actor, 0x2c); // left
     } else if vx == 0 && vy == 0 {
-        // Reached the player: 1-in-10 hop, else idle.
+        // Standing still: holding its region (the player isn't past the
+        // trigger, or there is none) or on the player. This runs on every
+        // grounded tick of a holding guard, so all four guards draw
+        // rand(10) here from tick 0 (0x40466b..0x404691): don't gate it on
+        // chasing. 1-in-10 hop, else idle.
         if rng.rand_range(10) == 0 {
             actor.vz = 4;
             physics::change_state(actor, 0x2b);
@@ -154,13 +161,12 @@ fn toggle_anim(actor: &mut Actor, base: u16) {
 }
 
 /// Monster catches the skier (`FUN_00403a00` case 5-8); the caller frees
-/// the skier.
+/// the skier. Only vx and vy stop: a monster caught mid-hop finishes it.
 pub fn eat_skier(monster: &mut Actor, elapsed_ms: u32) {
     physics::change_state(monster, 0x32);
     monster.timestamp = elapsed_ms;
     monster.vx = 0;
     monster.vy = 0;
-    monster.vz = 0;
 }
 
 #[cfg(test)]
@@ -183,7 +189,7 @@ mod tests {
         // Frida, compare_monster tick 803-805: the chase tick sets vz = 1;
         // the next two ticks the monster is at z = 1 and doesn't chase.
         let mut rng = Rng::new(1);
-        let mut m = monster_at(ActorClass::MonsterLeft, 0, -2060);
+        let mut m = monster_at(ActorClass::MonsterUphill, 0, -2060);
         let p = player_at(0, -2001);
         let mut sounds = Vec::new();
         update_monster(&mut m, Some(&p), &mut rng, 0, W, H, &mut sounds);
@@ -204,7 +210,7 @@ mod tests {
     #[test]
     fn guard_holds_until_player_crosses_trigger() {
         let mut rng = Rng::new(1);
-        let mut m = monster_at(ActorClass::MonsterRight, 0, 32060);
+        let mut m = monster_at(ActorClass::MonsterDownhill, 0, 32060);
         // Player has not crossed y=32000 yet: monster holds (no velocity).
         let p = player_at(0, 31999);
         update_monster(&mut m, Some(&p), &mut rng, 0, W, H, &mut Vec::new());
@@ -219,7 +225,7 @@ mod tests {
     #[test]
     fn chase_velocity_is_clamped() {
         let mut rng = Rng::new(1);
-        let mut m = monster_at(ActorClass::MonsterRight, 0, 32060);
+        let mut m = monster_at(ActorClass::MonsterDownhill, 0, 32060);
         let p = player_at(1000, 32100); // far but within one screen
         update_monster(&mut m, Some(&p), &mut rng, 0, W, H, &mut Vec::new());
         assert!(m.vx >= -16 && m.vx <= 16, "vx clamped to ±16, got {}", m.vx);
@@ -230,7 +236,7 @@ mod tests {
     fn rubber_band_uses_window_dimensions() {
         let mut rng = Rng::new(1);
         // Monster a full screen behind the player horizontally.
-        let mut m = monster_at(ActorClass::MonsterRight, 0, 32060);
+        let mut m = monster_at(ActorClass::MonsterDownhill, 0, 32060);
         let p = player_at(5000, 32100); // dx = 5000 > screen_w
         update_monster(&mut m, Some(&p), &mut rng, 0, W, H, &mut Vec::new());
         // Teleported to exactly one screen-width behind the player.
@@ -240,7 +246,7 @@ mod tests {
     #[test]
     fn monster_integrates_velocity_into_position() {
         let mut rng = Rng::new(1);
-        let mut m = monster_at(ActorClass::MonsterRight, 0, 32060);
+        let mut m = monster_at(ActorClass::MonsterDownhill, 0, 32060);
         m.vx = 5;
         m.vy = 7;
         // Player not triggering, so velocity is recomputed to 0 after moving.
@@ -253,16 +259,28 @@ mod tests {
     fn drift_when_outside_region() {
         let mut rng = Rng::new(1);
         // MonsterRight belongs at y>31999; place it inside the map (out of region).
-        let mut m = monster_at(ActorClass::MonsterRight, 0, 100);
+        let mut m = monster_at(ActorClass::MonsterDownhill, 0, 100);
         let p = player_at(0, 50);
         update_monster(&mut m, Some(&p), &mut rng, 0, W, H, &mut Vec::new());
         assert_eq!(m.vy, 26, "should drift back down toward its region");
     }
 
     #[test]
+    fn a_monster_caught_mid_hop_finishes_the_hop() {
+        // FUN_00403a00 clears only vx and vy: the hop's vz carries on.
+        let mut rng = Rng::new(1);
+        let mut m = monster_at(ActorClass::MonsterDownhill, 0, 32060);
+        (m.z, m.vz) = (1, -1);
+        eat_skier(&mut m, 1000);
+        assert_eq!(m.vz, -1);
+        update_monster(&mut m, None, &mut rng, 1000, W, H, &mut Vec::new());
+        assert_eq!(m.z, 0);
+    }
+
+    #[test]
     fn eating_sequence_timing() {
         let mut rng = Rng::new(1);
-        let mut m = monster_at(ActorClass::MonsterRight, 0, 32060);
+        let mut m = monster_at(ActorClass::MonsterDownhill, 0, 32060);
         eat_skier(&mut m, 1000); // eaten at t=1000
         assert_eq!(m.state, 0x32);
         assert_eq!(m.timestamp, 1000);
@@ -296,7 +314,7 @@ mod tests {
     #[test]
     fn airborne_monster_does_not_chase() {
         let mut rng = Rng::new(1);
-        let mut m = monster_at(ActorClass::MonsterRight, 0, 32060);
+        let mut m = monster_at(ActorClass::MonsterDownhill, 0, 32060);
         m.vz = 4; // mid-hop
         let p = player_at(100, 32100);
         update_monster(&mut m, Some(&p), &mut rng, 0, W, H, &mut Vec::new());
