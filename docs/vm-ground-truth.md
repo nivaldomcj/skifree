@@ -407,6 +407,14 @@ high-score writes) and saves each listed frame drawn by the normal
 renderer (macroquad) into an offscreen target of the scenario's client
 size, as raw RGBA.
 
+The capture quits after its last listed tick. To keep a frame on screen,
+for a screenshot, list a tick past the scenario's end as well:
+`SKIFREE_REPLAY=replays/showcase.json SKIFREE_FRAMES=/tmp/f
+SKIFREE_FRAME_TICKS=802,999999` stops on the frame after the scenario's
+last tick (802), the README screenshot, and leaves the window open. On macOS the window gets the
+scenario's exact client size through `setContentSize:` (see
+`docs/porting-guide.md`, "Native build notes").
+
 Don't capture the frame of the tick right before a `focus`/`resize` tick:
 those window messages are sent after that tick, before the capture (taken
 on entry to the next main tick), so the original's frame already shows the

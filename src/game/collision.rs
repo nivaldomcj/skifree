@@ -331,7 +331,8 @@ fn other_first(a: &mut Actor, b: &mut Actor, a_idx: usize, b_dims: (i16, i16)) -
                     super::physics::change_state(a, 0x22);
                 }
             }
-            // Bump/ramp: launched at half its speed (state 0x21).
+            // Large rock or ramp (the table at 0x404054; a snow bump does
+            // nothing): launched at half its speed (state 0x21).
             ActorClass::RockLarge | ActorClass::Banner if a.z < top => {
                 a.vz = a.vy / 2;
                 result.sound = Some(Sound::SkierLaunch);

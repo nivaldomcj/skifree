@@ -21,7 +21,7 @@ pub enum Sound {
     SnowboarderHit = 3,
     /// A clean landing (0x402aeb).
     Land = 4,
-    /// A crossing skier launched by a bump or a ramp (0x403ef3).
+    /// A crossing skier launched by a large rock or the ramp (0x403ef3).
     SkierLaunch = 5,
     /// A dog knocked over, by anything (0x403f5f).
     Dog = 6,
@@ -29,7 +29,8 @@ pub enum Sound {
     Eaten = 7,
     /// A snowboarder jumps (0x40371a).
     SnowboarderJump = 8,
-    /// The monster chases the player, every tick (0x4045d3).
+    /// The monster takes a chase step (0x4045d3): every third tick, as
+    /// each step ends in a hop.
     Chase = 9,
 }
 
