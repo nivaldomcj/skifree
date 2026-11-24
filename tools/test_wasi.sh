@@ -9,7 +9,9 @@
 # replays/ through absolute paths and assets/meta.json (sprite sizes, which
 # the goldens depend on) relative to the repo root: both are mapped in.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+# -P: the physical path, the one cargo compiles into CARGO_MANIFEST_DIR
+# (the runner maps $PWD into the sandbox).
+cd -P "$(dirname "$0")/.."
 command -v wasmtime >/dev/null || { echo "wasmtime not found (https://wasmtime.dev)" >&2; exit 1; }
 [ -f assets/meta.json ] || { echo "assets/ missing: run tools/extract_assets.py" >&2; exit 1; }
 # The array form keeps a repo path with spaces in one argument (the env

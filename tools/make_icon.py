@@ -97,33 +97,16 @@ def rounded_rect_dist(x, y, left, top, size, radius):
     return (dx * dx + dy * dy) ** 0.5 - radius
 
 
-def flood_transparent(w, h, px):
-    """Make the glyph's connected background transparent: flood from the
-    borders over pure-black and already-transparent pixels, so interior
-    black outlines survive (the source .ico has an opaque black backdrop).
+def clear_frame(w, h, px):
+    """Make the glyph's 1-pixel black frame transparent. The icon's AND mask
+    covers only its 4 corners; inside the frame the background is opaque
+    white, which blends into the white squircle. (A flood fill over black
+    from the border also ate the face's interior outline.)
     """
-    from collections import deque
-    seen = set()
-    q = deque()
-    for x in range(w):
-        q.append((x, 0))
-        q.append((x, h - 1))
     for y in range(h):
-        q.append((0, y))
-        q.append((w - 1, y))
-    while q:
-        x, y = q.popleft()
-        if (x, y) in seen:
-            continue
-        i = (y * w + x) * 4
-        if px[i + 3] != 0 and (px[i], px[i + 1], px[i + 2]) != (0, 0, 0):
-            continue
-        seen.add((x, y))
-        px[i + 3] = 0
-        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            nx, ny = x + dx, y + dy
-            if 0 <= nx < w and 0 <= ny < h and (nx, ny) not in seen:
-                q.append((nx, ny))
+        for x in range(w):
+            if x in (0, w - 1) or y in (0, h - 1):
+                px[(y * w + x) * 4 + 3] = 0
 
 
 def render(size, glyph_w, glyph_h, glyph_px):
@@ -172,7 +155,7 @@ def main():
     out_dir = sys.argv[1]
     os.makedirs(out_dir, exist_ok=True)
     gw, gh, gpx = decode_png(GLYPH_PATH)
-    flood_transparent(gw, gh, gpx)
+    clear_frame(gw, gh, gpx)
     for size in SIZES:
         px = render(size, gw, gh, gpx)
         name = f"icon_{size}x{size}.png"

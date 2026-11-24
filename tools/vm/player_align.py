@@ -39,14 +39,18 @@ def main():
 
     first = next((i for i in range(n) if o_tuple(i) != p_tuple(i)), None)
     print(f"original ticks: {len(orig)}  port ticks: {len(port)}  fields: {FIELDS} + score + course clock")
+    if not orig:
+        print("player: the original's trace has no ticks")
+        return 1
     if first is None:
         print(f"player identical for all {n} common ticks")
-        return
+        return 0
     print(f"first player mismatch at tick {first}")
     for i in range(max(0, first - ctx), min(n, first + ctx)):
         mark = ">>" if o_tuple(i) != p_tuple(i) else "  "
         print(f"{mark}{i:4d} orig {o_tuple(i)}  port {p_tuple(i)}")
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

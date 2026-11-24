@@ -8,9 +8,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP="dist/SkiFree.app"
-BIN="target/release/skifree"
 
-cargo build --release --bin skifree
+cargo build --locked --release --bin skifree
+# Where cargo put it: CARGO_TARGET_DIR and build.target-dir move target/.
+BIN="$(tools/target_dir.sh)/release/skifree"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
